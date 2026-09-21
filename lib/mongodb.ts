@@ -1,7 +1,8 @@
+import './env-loader';
 import { MongoClient, Db } from 'mongodb';
 
 function getMongoUri(): string {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
   if (!uri) {
     throw new Error('MONGODB_URI tidak terdefinisi di environment');
   }

@@ -1,3 +1,4 @@
+import './env-loader';
 import { betterAuth } from 'better-auth';
 import { username } from 'better-auth/plugins';
 import mysql from 'mysql2/promise';
@@ -6,8 +7,8 @@ import { verifySuperadminCredentials } from './mysql';
 const MYSQL_HOST = process.env.MYSQL_HOST || '';
 const MYSQL_PORT = Number(process.env.MYSQL_PORT) || 3306;
 const MYSQL_USER = process.env.MYSQL_USER || '';
-const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || '';
-const MYSQL_DATABASE = process.env.MYSQL_DATABASE || '';
+const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || process.env.MYSQL_PASS || '';
+const MYSQL_DATABASE = process.env.MYSQL_DATABASE || process.env.MYSQL_DB || '';
 
 export const authDbPool = mysql.createPool({
   host: MYSQL_HOST,

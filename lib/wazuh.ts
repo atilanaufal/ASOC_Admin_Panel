@@ -1,3 +1,4 @@
+import './env-loader';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
@@ -6,7 +7,7 @@ function getWazuhConfig() {
   return {
     url: process.env.WAZUH_API_URL || '',
     user: process.env.WAZUH_API_USER || '',
-    password: process.env.WAZUH_API_PASSWORD || '',
+    password: process.env.WAZUH_API_PASSWORD || process.env.WAZUH_API_PASS || '',
   };
 }
 

@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { AdminHeader } from '@/components/layout/AdminHeader';
+import { AutoLogout } from '@/components/layout/AutoLogout';
 
 export default function AdminLayout({
   children,
@@ -10,22 +11,40 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const activeSession = sessionStorage.getItem('asoc_browser_session');
+      if (!activeSession) {
+        // Tab closed or new session without login -> redirect
+        window.location.href = '/login?error=browser_closed';
+        return;
+      }
+      setSessionReady(true);
+    }
+  }, []);
+
+  if (!sessionReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F4F7FA]">
+        <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F4F7FA] text-slate-800">
-      {/* Top Global Header spanning full width matching Figma */}
+      <AutoLogout />
       <AdminHeader
         onToggleSidebar={() => setCollapsed(!collapsed)}
         isSidebarCollapsed={collapsed}
       />
-
-      {/* Main Body: Sidebar on Left, Page Content on Right */}
       <div className="flex-1 flex min-w-0">
         <Sidebar
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed(!collapsed)}
         />
-
         <main className="flex-1 p-4 md:p-6 2xl:p-8 max-w-[1920px] w-full mx-auto overflow-x-hidden">
           {children}
         </main>
@@ -33,5 +52,3 @@ export default function AdminLayout({
     </div>
   );
 }
-
-

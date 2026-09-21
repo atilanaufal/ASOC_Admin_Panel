@@ -1,14 +1,15 @@
+import './env-loader';
 import mysql from 'mysql2/promise';
 import crypto from 'crypto';
 
 function getMysqlHost() {
-  return process.env.MYSQL_HOST || '';
+  return process.env.MYSQL_HOST || '127.0.0.1';
 }
 
 const MYSQL_PORT = Number(process.env.MYSQL_PORT) || 3306;
 const MYSQL_USER = process.env.MYSQL_USER || '';
-const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || '';
-const MYSQL_DATABASE = process.env.MYSQL_DATABASE || '';
+const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || process.env.MYSQL_PASS || '';
+const MYSQL_DATABASE = process.env.MYSQL_DATABASE || process.env.MYSQL_DB || '';
 const MYSQL_SALT = process.env.MYSQL_SALT || 'sec_auth_salt_2026';
 
 let activePool: mysql.Pool | null = null;

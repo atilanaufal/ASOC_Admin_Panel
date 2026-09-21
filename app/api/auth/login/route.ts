@@ -36,6 +36,8 @@ export async function POST(request: NextRequest) {
       tenantCode: user.tenant_code || 'MASTER',
       campusName: user.campus_name || 'ASOC Central Management',
       tenantName: user.campus_name || 'ASOC Central Management',
+      loginTime: Date.now(),
+      lastActive: Date.now(),
       databaseName: user.database_name || '-',
       redisPrefix: user.redis_prefix || 'asoc_master',
     };
@@ -61,22 +63,22 @@ export async function POST(request: NextRequest) {
     } catch {}
 
     // 3. Set auth_session cookie for edge middleware & client state
-    const cookieMaxAge = 7 * 24 * 60 * 60; // 7 days
+    const isSecure = process.env.COOKIE_SECURE === 'true' || (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false' && (request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https'));
     response.cookies.set('auth_session', encodeURIComponent(JSON.stringify(sessionData)), {
       path: '/',
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecure,
       sameSite: 'lax',
-      maxAge: cookieMaxAge,
+      maxAge: 600,
     });
 
     // Also set a signed/dedicated token cookie
     response.cookies.set('better-auth.session_token', `superadmin_${user.id}_${Date.now()}`, {
       path: '/',
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecure,
       sameSite: 'lax',
-      maxAge: cookieMaxAge,
+      maxAge: 600,
     });
 
     return response;

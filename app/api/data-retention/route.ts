@@ -157,8 +157,8 @@ export async function POST(request: NextRequest) {
 
       // Reset default variables in script files
       await runRemoteScript(
-        `echo 032005 | sudo -S sed -i 's/^DEFAULT_MONGO_DAYS = .*/DEFAULT_MONGO_DAYS = 30/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py; ` +
-        `echo 032005 | sudo -S sed -i 's/^DEFAULT_REDIS_DAYS = .*/DEFAULT_REDIS_DAYS = 7/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py`
+        `sudo sed -i 's/^DEFAULT_MONGO_DAYS = .*/DEFAULT_MONGO_DAYS = 30/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py; ` +
+        `sudo sed -i 's/^DEFAULT_REDIS_DAYS = .*/DEFAULT_REDIS_DAYS = 7/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py`
       );
 
       return NextResponse.json({
@@ -186,8 +186,8 @@ export async function POST(request: NextRequest) {
     // If applying to all tenants, update defaults directly in script files on the remote server
     if (targetCode === 'all') {
       await runRemoteScript(
-        `echo 032005 | sudo -S sed -i 's/^DEFAULT_MONGO_DAYS = .*/DEFAULT_MONGO_DAYS = ${mongoDays}/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py; ` +
-        `echo 032005 | sudo -S sed -i 's/^DEFAULT_REDIS_DAYS = .*/DEFAULT_REDIS_DAYS = ${redisDays}/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py`
+        `sudo sed -i 's/^DEFAULT_MONGO_DAYS = .*/DEFAULT_MONGO_DAYS = ${mongoDays}/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py; ` +
+        `sudo sed -i 's/^DEFAULT_REDIS_DAYS = .*/DEFAULT_REDIS_DAYS = ${redisDays}/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py`
       );
     }
 

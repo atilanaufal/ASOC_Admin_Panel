@@ -25,7 +25,11 @@ function LoginForm() {
 
   useEffect(() => {
     const errorParam = searchParams.get('error');
-    if (errorParam === 'unauthorized') {
+    if (errorParam === 'session_expired') {
+      setErrorMessage('Sesi telah berakhir karena tidak ada aktivitas selama 10 menit. Silakan login kembali.');
+    } else if (errorParam === 'browser_closed') {
+      setErrorMessage('Browser ditutup sebelumnya. Demi keamanan, silakan login kembali.');
+    } else if (errorParam === 'unauthorized') {
       setErrorMessage('Session expired or not logged in. Please sign in again.');
     } else if (errorParam === 'tenant_forbidden') {
       setErrorMessage('Akses ditolak. Portal ini khusus untuk Superadmin. Akun Anda tidak memiliki hak akses.');
@@ -61,6 +65,9 @@ function LoginForm() {
         return;
       }
 
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('asoc_browser_session', Date.now().toString());
+      }
       setSuccessMessage('Sign in successful! Redirecting to dashboard...');
       setTimeout(() => {
         const from = searchParams.get('from') || '/database-status';

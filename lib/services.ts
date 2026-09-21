@@ -99,8 +99,16 @@ except: pass
 print(json.dumps(res))
 `;
     const { host: vmHost, user: vmUser } = getRemoteVmConfig();
-    const cmd = `ssh -o BatchMode=yes -o ConnectTimeout=3 ${vmUser}@${vmHost} '/opt/venv/bin/python -c ${JSON.stringify(pythonScript)}'`;
-    const { stdout } = await execAsync(cmd, { timeout: 6000 });
+    const isLocal = process.env.EXEC_LOCAL === 'true' || vmHost === '127.0.0.1' || vmHost === 'localhost';
+    let stdout = '';
+    if (isLocal) {
+      const res = await execAsync(`/opt/venv/bin/python -c ${JSON.stringify(pythonScript)}`, { timeout: 6000 });
+      stdout = res.stdout;
+    } else {
+      const cmd = `ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 ${vmUser}@${vmHost} '/opt/venv/bin/python -c ${JSON.stringify(pythonScript)}'`;
+      const res = await execAsync(cmd, { timeout: 6000 });
+      stdout = res.stdout;
+    }
     const parsed = JSON.parse(stdout.trim());
     cachedDaemonTelemetry = parsed;
     lastTelemetryFetch = now;
@@ -358,8 +366,16 @@ services = [
 print(json.dumps(services))
 `;
     const { host: vmHost, user: vmUser } = getRemoteVmConfig();
-    const cmd = `ssh -o BatchMode=yes -o ConnectTimeout=3 ${vmUser}@${vmHost} '/opt/venv/bin/python -c ${JSON.stringify(pyCmd)}'`;
-    const { stdout } = await execAsync(cmd, { timeout: 6000 });
+    const isLocal = process.env.EXEC_LOCAL === 'true' || vmHost === '127.0.0.1' || vmHost === 'localhost';
+    let stdout = '';
+    if (isLocal) {
+      const res = await execAsync(`/opt/venv/bin/python -c ${JSON.stringify(pyCmd)}`, { timeout: 6000 });
+      stdout = res.stdout;
+    } else {
+      const cmd = `ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 ${vmUser}@${vmHost} '/opt/venv/bin/python -c ${JSON.stringify(pyCmd)}'`;
+      const res = await execAsync(cmd, { timeout: 6000 });
+      stdout = res.stdout;
+    }
     const items = JSON.parse(stdout.trim());
     cachedRealServices = items;
     lastRealServicesFetch = now;

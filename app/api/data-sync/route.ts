@@ -484,7 +484,7 @@ export async function GET(request: NextRequest) {
     };
 
     try {
-      const cronRes = await runRemoteScript('echo 032005 | sudo -S crontab -l');
+      const cronRes = await runRemoteScript('sudo crontab -l');
       if (cronRes.success && cronRes.stdout) {
         const lines = cronRes.stdout.split('\n');
         for (const line of lines) {
@@ -556,7 +556,7 @@ export async function POST(request: NextRequest) {
 
       // Directly update root crontab on 10.20.100.86
       const isEnabledPy = enabled ? 'True' : 'False';
-      const pyScript = `import subprocess; p = subprocess.run(['sudo', '-S', 'crontab', '-l'], input='032005\\n', capture_output=True, text=True); lines = [l for l in p.stdout.splitlines() if 'cron_hourly_sync.sh' not in l and l.strip()]; line = '${schedule} /opt/multi-tenant/scripts/cron_hourly_sync.sh' if ${isEnabledPy} else '# ${schedule} /opt/multi-tenant/scripts/cron_hourly_sync.sh'; lines.append(line); new_cron = '\\n'.join(lines) + '\\n'; subprocess.run(['sudo', '-S', 'crontab', '-'], input=f'032005\\n{new_cron}', text=True, capture_output=True)`;
+      const pyScript = `import subprocess; p = subprocess.run(['sudo', 'crontab', '-l'], capture_output=True, text=True); lines = [l for l in p.stdout.splitlines() if 'cron_hourly_sync.sh' not in l and l.strip()]; line = '${schedule} /opt/multi-tenant/scripts/cron_hourly_sync.sh' if ${isEnabledPy} else '# ${schedule} /opt/multi-tenant/scripts/cron_hourly_sync.sh'; lines.append(line); new_cron = '\\n'.join(lines) + '\\n'; subprocess.run(['sudo', 'crontab', '-'], input=new_cron, text=True, capture_output=True)`;
       
       const remoteRes = await runRemoteScript(`/opt/venv/bin/python -c "${pyScript.replace(/"/g, '\\"')}"`);
 

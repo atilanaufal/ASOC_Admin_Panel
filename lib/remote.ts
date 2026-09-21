@@ -24,7 +24,12 @@ export async function runRemoteScript(
 ): Promise<{ stdout: string; stderr: string; success: boolean }> {
   try {
     const { host: vmHost, user: vmUser } = getRemoteVmConfig();
-    const remoteCmd = `ssh -o BatchMode=yes -o ConnectTimeout=8 ${vmUser}@${vmHost} "${commandStr.replace(/"/g, '\\"')}"`;
+    const isLocal = process.env.EXEC_LOCAL === 'true' || vmHost === '127.0.0.1' || vmHost === 'localhost';
+    if (isLocal) {
+      const { stdout, stderr } = await execAsync(commandStr, { timeout: timeoutMs, shell: '/bin/bash' });
+      return { stdout: (stdout || '').trim(), stderr: (stderr || '').trim(), success: true };
+    }
+    const remoteCmd = `ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 ${vmUser}@${vmHost} "${commandStr.replace(/"/g, '\\"')}"`;
     const { stdout, stderr } = await execAsync(remoteCmd, { timeout: timeoutMs });
     return { stdout: stdout.trim(), stderr: stderr.trim(), success: true };
   } catch (err: any) {

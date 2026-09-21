@@ -1,13 +1,14 @@
+import './env-loader';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
 
 function getIrisUrl(): string {
-  return process.env.IRIS_API_URL || '';
+  return process.env.IRIS_API_URL || process.env.IRIS_BASE_URL || '';
 }
 
 function getOpenSearchUrl(): string {
-  return process.env.OPENSEARCH_URL || '';
+  return process.env.OPENSEARCH_URL || process.env.INDEXER_HOST || '';
 }
 
 function getIrisApiKey(): string {
