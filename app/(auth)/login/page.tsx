@@ -63,8 +63,8 @@ function LoginForm() {
 
       setSuccessMessage('Sign in successful! Redirecting to dashboard...');
       setTimeout(() => {
-        const from = searchParams.get('from') || '/';
-        router.push(from);
+        const from = searchParams.get('from') || '/database-status';
+        router.push(from === '/' ? '/database-status' : from);
         router.refresh();
       }, 500);
     } catch (err: any) {

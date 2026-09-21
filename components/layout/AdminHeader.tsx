@@ -67,7 +67,7 @@ export function AdminHeader({
           isSidebarCollapsed ? 'w-20 justify-center' : 'w-64 lg:w-72'
         )}
       >
-        <Link href="/" className="flex items-center gap-3 overflow-hidden">
+        <Link href="/database-status" className="flex items-center gap-3 overflow-hidden">
           <div className="relative w-8 h-8 flex-shrink-0">
             <Image
               src="/infoguard.png"

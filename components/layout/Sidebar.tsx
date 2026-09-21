@@ -32,12 +32,6 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   // System Monitoring
   {
-    label: 'Overview',
-    href: '/',
-    icon: <LayoutDashboard className="w-[18px] h-[18px]" />,
-    category: 'System Monitoring',
-  },
-  {
     label: 'Database Status',
     href: '/database-status',
     icon: <Database className="w-[18px] h-[18px]" />,
@@ -47,18 +41,6 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Agent Status',
     href: '/agent-status',
     icon: <ShieldCheck className="w-[18px] h-[18px]" />,
-    category: 'System Monitoring',
-  },
-  {
-    label: 'Services Status',
-    href: '/service-monitor',
-    icon: <Server className="w-[18px] h-[18px]" />,
-    category: 'System Monitoring',
-  },
-  {
-    label: 'Resources Usage',
-    href: '/resource-usage',
-    icon: <Cpu className="w-[18px] h-[18px]" />,
     category: 'System Monitoring',
   },
 

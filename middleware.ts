@@ -33,7 +33,7 @@ export function middleware(request: NextRequest) {
   // 1. If user is at `/login`
   if (pathname === '/login') {
     if (hasValidSession && isAdmin) {
-      return NextResponse.redirect(new URL('/', request.url));
+      return NextResponse.redirect(new URL('/database-status', request.url));
     }
     return NextResponse.next();
   }
