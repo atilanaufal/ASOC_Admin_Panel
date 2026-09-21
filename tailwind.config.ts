@@ -18,6 +18,18 @@ const config: Config = {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
+        asoc: {
+          blue: "#0066FF",
+          "blue-hover": "#0052CC",
+          "blue-light": "#EDF5FE",
+          "blue-subtle": "#EBF3FF",
+          bg: "#F4F7FA",
+          card: "#FFFFFF",
+          "table-header": "#F0F4F8",
+          dark: "#1E293B",
+          muted: "#64748B",
+          border: "#E2E8F0",
+        },
         navy: {
           50: "#eaf2fb",
           100: "#d0e2f7",
@@ -35,6 +47,7 @@ const config: Config = {
         }
       },
       fontFamily: {
+        sans: ['Inter', 'Plus Jakarta Sans', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         aleo: ['Aleo', 'Georgia', 'serif'],
       },
     },

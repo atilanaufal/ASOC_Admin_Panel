@@ -24,99 +24,189 @@ export interface ListUsersParams {
 
 /**
  * Lists all users with multi-tenant filtering and search capability.
+ * Admin users are platform-level and not tied to any tenant.
  */
 export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[]> {
   const pool = getMysqlPool();
-  let query = `
-    SELECT 
-      u.id,
-      u.tenant_id,
-      COALESCE(u.name, '') AS username,
-      u.email,
-      u.role,
-      u.created_at,
-      t.tenant_code,
-      t.campus_name,
-      t.database_name,
-      t.redis_prefix,
-      t.is_active AS tenant_is_active
-    FROM users u
-    LEFT JOIN tenants t ON u.tenant_id = t.id
-    WHERE 1=1
-  `;
-  const queryParams: any[] = [];
+  const allUsers: UserItem[] = [];
 
-  if (params.tenant && params.tenant !== 'all') {
-    query += ` AND (t.tenant_code = ? OR t.database_name = ?)`;
-    queryParams.push(params.tenant, params.tenant);
+  // 1. Fetch Platform Admins from `admin_users` (unless filtered by a specific tenant)
+  const shouldIncludeAdmins = (!params.tenant || params.tenant === 'all') && (!params.role || params.role === 'all' || params.role === 'admin');
+
+  if (shouldIncludeAdmins) {
+    try {
+      let adminQuery = `
+        SELECT 
+          id,
+          0 AS tenant_id,
+          COALESCE(username, name, '') AS username,
+          email,
+          'admin' AS role,
+          created_at,
+          '-' AS tenant_code,
+          '-' AS campus_name,
+          '-' AS database_name,
+          '-' AS redis_prefix,
+          1 AS tenant_is_active
+        FROM admin_users
+        WHERE 1=1
+      `;
+      const adminParams: any[] = [];
+      if (params.search && params.search.trim()) {
+        const s = `%${params.search.trim()}%`;
+        adminQuery += ` AND (username LIKE ? OR email LIKE ? OR name LIKE ?)`;
+        adminParams.push(s, s, s);
+      }
+      adminQuery += ` ORDER BY created_at DESC`;
+      const [adminRows]: any = await pool.query(adminQuery, adminParams);
+      if (Array.isArray(adminRows)) {
+        allUsers.push(...adminRows);
+      }
+    } catch {}
   }
 
-  if (params.role && params.role !== 'all') {
-    query += ` AND u.role = ?`;
-    queryParams.push(params.role);
+  // 2. Fetch Tenant Users from `users`
+  const shouldIncludeTenantUsers = !params.role || params.role === 'all' || params.role === 'tenant';
+
+  if (shouldIncludeTenantUsers) {
+    let query = `
+      SELECT 
+        u.id,
+        u.tenant_id,
+        COALESCE(u.name, '') AS username,
+        u.email,
+        u.role,
+        u.created_at,
+        t.tenant_code,
+        t.campus_name,
+        t.database_name,
+        t.redis_prefix,
+        t.is_active AS tenant_is_active
+      FROM users u
+      LEFT JOIN tenants t ON u.tenant_id = t.id
+      WHERE 1=1
+    `;
+    const queryParams: any[] = [];
+
+    if (params.tenant && params.tenant !== 'all') {
+      query += ` AND (t.tenant_code = ? OR t.database_name = ?)`;
+      queryParams.push(params.tenant, params.tenant);
+    }
+
+    if (params.role && params.role !== 'all') {
+      const dbRole = params.role === 'admin' ? 'admin' : 'tenant';
+      query += ` AND u.role = ?`;
+      queryParams.push(dbRole);
+    }
+
+    if (params.search && params.search.trim()) {
+      const searchTerm = `%${params.search.trim()}%`;
+      query += ` AND (u.name LIKE ? OR u.email LIKE ? OR t.campus_name LIKE ? OR t.tenant_code LIKE ?)`;
+      queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    query += ` ORDER BY u.created_at DESC`;
+
+    try {
+      const [rows]: any = await pool.query(query, queryParams);
+      if (Array.isArray(rows)) {
+        allUsers.push(...rows);
+      }
+    } catch {
+      const legacyQuery = query.replace('COALESCE(u.name, \'\') AS username,', 'u.username,').replace('u.name LIKE ?', 'u.username LIKE ?');
+      const [legacyRows]: any = await pool.query(legacyQuery, queryParams);
+      if (Array.isArray(legacyRows)) {
+        allUsers.push(...legacyRows);
+      }
+    }
   }
 
-  if (params.search && params.search.trim()) {
-    const searchTerm = `%${params.search.trim()}%`;
-    query += ` AND (u.name LIKE ? OR u.email LIKE ? OR t.campus_name LIKE ? OR t.tenant_code LIKE ?)`;
-    queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
-  }
-
-  query += ` ORDER BY u.created_at DESC`;
-
-  try {
-    const [rows]: any = await pool.query(query, queryParams);
-    return rows || [];
-  } catch {
-    // Fallback if legacy table with `username` column is used
-    const legacyQuery = query.replace('COALESCE(u.name, \'\') AS username,', 'u.username,').replace('u.name LIKE ?', 'u.username LIKE ?');
-    const [legacyRows]: any = await pool.query(legacyQuery, queryParams);
-    return legacyRows || [];
-  }
+  return allUsers;
 }
 
 /**
- * Creates a new user in MySQL `users` and synchronizes with Better-Auth.
+ * Creates a new user.
+ * Role 'admin' -> Inserts into `admin_users` without tenant binding.
+ * Role 'tenant' -> Inserts into `users` tied to tenant_id.
  */
 export async function createUser(data: {
   username: string;
   email?: string;
   password: string;
   role: string;
-  tenantId: number;
+  tenantId?: number | null;
 }): Promise<{ success: boolean; user?: any; error?: string }> {
   const pool = getMysqlPool();
 
   try {
     const username = data.username.trim();
     const email = data.email?.trim() || `${username}@asoc.internal`;
-    const role = data.role || 'tenant';
-    const tenantId = Number(data.tenantId) || 1;
+    const role = data.role === 'admin' ? 'admin' : 'tenant';
+    const passwordHash = hashPasswordSHA256(data.password);
+    const newId = crypto.randomBytes(16).toString('hex');
 
-    // 1. Check if username or email already exists in `users`
-    let existing: any[] = [];
-    try {
-      const [checkRows]: any = await pool.query(
-        'SELECT id, name AS username, email FROM users WHERE name = ? OR email = ? LIMIT 1',
-        [username, email]
-      );
-      existing = checkRows || [];
-    } catch {
-      const [checkRows]: any = await pool.query(
-        'SELECT id, username, email FROM users WHERE username = ? OR email = ? LIMIT 1',
-        [username, email]
-      );
-      existing = checkRows || [];
+    // 1. Check existing in admin_users or users
+    const [adminCheck]: any = await pool.query(
+      'SELECT id FROM admin_users WHERE username = ? OR email = ? LIMIT 1',
+      [username, email]
+    );
+    if (adminCheck && adminCheck.length > 0) {
+      return { success: false, error: `Pengguna dengan username '${username}' atau email '${email}' sudah terdaftar sebagai Admin.` };
     }
 
-    if (existing && existing.length > 0) {
+    const [userCheck]: any = await pool.query(
+      'SELECT id FROM users WHERE name = ? OR email = ? LIMIT 1',
+      [username, email]
+    ).catch(async () => {
+      return await pool.query('SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1', [username, email]);
+    });
+
+    if (userCheck && userCheck[0] && userCheck[0].length > 0) {
+      return { success: false, error: `Pengguna dengan username '${username}' atau email '${email}' sudah terdaftar.` };
+    }
+
+    // 2. Branch by Role
+    if (role === 'admin') {
+      // Platform Admin: stored in `admin_users`, NO tenant binding
+      await pool.query(
+        'INSERT INTO admin_users (id, username, name, email, password, role) VALUES (?, ?, ?, ?, ?, "admin")',
+        [newId, username, username, email, passwordHash]
+      );
+
+      // Sync with Better-Auth
+      try {
+        await auth.api.signUpEmail({
+          body: {
+            email,
+            password: data.password,
+            name: username,
+            username,
+            role: 'admin',
+            tenantId: 0,
+            tenantCode: 'MASTER',
+            campusName: 'ASOC Central Management',
+            databaseName: '-',
+            redisPrefix: 'asoc_master',
+          } as any,
+        }).catch(() => {});
+      } catch {}
+
       return {
-        success: false,
-        error: `Pengguna dengan username '${username}' atau email '${email}' sudah terdaftar.`,
+        success: true,
+        user: {
+          id: newId,
+          username,
+          email,
+          role: 'admin',
+          tenantId: null,
+          campusName: '-',
+          databaseName: '-',
+        },
       };
     }
 
-    // 2. Fetch tenant info
+    // Tenant Analyst: requires tenant
+    const tenantId = Number(data.tenantId) || 1;
     let tenantInfo = {
       tenant_code: 'TNT1',
       campus_name: 'tenant1',
@@ -124,82 +214,45 @@ export async function createUser(data: {
       redis_prefix: 'tenant1:',
     };
 
-    if (tenantId > 0) {
-      const [tenants]: any = await pool.query(
-        'SELECT tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE id = ? LIMIT 1',
-        [tenantId]
-      );
-      if (tenants && tenants.length > 0) {
-        tenantInfo = tenants[0];
-      }
+    const [tenants]: any = await pool.query(
+      'SELECT tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE id = ? LIMIT 1',
+      [tenantId]
+    );
+    if (tenants && tenants.length > 0) {
+      tenantInfo = tenants[0];
     }
 
-    // 3. Hash password using SHA-256
-    const passwordHash = hashPasswordSHA256(data.password);
-    const newId = crypto.randomBytes(16).toString('hex');
-
-    // 4. Insert into MySQL `users` (handles both VM schema and legacy schema)
     let insertedId: any = newId;
     try {
       await pool.query(
         'INSERT INTO users (id, tenant_id, name, password, email, role) VALUES (?, ?, ?, ?, ?, ?)',
-        [newId, tenantId, username, passwordHash, email, role]
+        [newId, tenantId, username, passwordHash, email, 'tenant']
       );
     } catch {
       const [insertResult]: any = await pool.query(
         'INSERT INTO users (tenant_id, username, password_hash, email, role) VALUES (?, ?, ?, ?, ?)',
-        [tenantId, username, passwordHash, email, role]
+        [tenantId, username, passwordHash, email, 'tenant']
       );
       insertedId = insertResult.insertId;
     }
 
-    // 5. Synchronize with Better-Auth
+    // Sync with Better-Auth
     try {
-      // Check if Better-Auth user exists
-      const [baExisting]: any = await authDbPool.query(
-        'SELECT id FROM user WHERE username = ? OR email = ? LIMIT 1',
-        [username, email]
-      );
-
-      if (!baExisting || baExisting.length === 0) {
-        await auth.api.signUpEmail({
-          body: {
-            email,
-            password: data.password,
-            name: username,
-            username,
-            role,
-            tenantId,
-            tenantCode: tenantInfo.tenant_code,
-            campusName: tenantInfo.campus_name,
-            databaseName: tenantInfo.database_name,
-            redisPrefix: tenantInfo.redis_prefix,
-          } as any,
-        });
-      } else {
-        await authDbPool.query(
-          `UPDATE user SET 
-            role = ?, 
-            tenantId = ?, 
-            tenantCode = ?, 
-            campusName = ?, 
-            databaseName = ?, 
-            redisPrefix = ? 
-           WHERE id = ?`,
-          [
-            role,
-            tenantId,
-            tenantInfo.tenant_code,
-            tenantInfo.campus_name,
-            tenantInfo.database_name,
-            tenantInfo.redis_prefix,
-            baExisting[0].id,
-          ]
-        );
-      }
-    } catch (baErr: any) {
-      console.warn('[Better-Auth User Sync Warning]:', baErr.message);
-    }
+      await auth.api.signUpEmail({
+        body: {
+          email,
+          password: data.password,
+          name: username,
+          username,
+          role: 'tenant',
+          tenantId,
+          tenantCode: tenantInfo.tenant_code,
+          campusName: tenantInfo.campus_name,
+          databaseName: tenantInfo.database_name,
+          redisPrefix: tenantInfo.redis_prefix,
+        } as any,
+      }).catch(() => {});
+    } catch {}
 
     return {
       success: true,
@@ -207,7 +260,7 @@ export async function createUser(data: {
         id: insertedId,
         username,
         email,
-        role,
+        role: 'tenant',
         tenantId,
         campusName: tenantInfo.campus_name,
         databaseName: tenantInfo.database_name,
@@ -223,8 +276,7 @@ export async function createUser(data: {
 }
 
 /**
- * Resets user password in MySQL `users` and synchronizes to Better-Auth.
- * Also revokes all active sessions for this user.
+ * Resets user password in MySQL `admin_users` or `users` and synchronizes to Better-Auth.
  */
 export async function resetUserPassword(
   userId: number | string,
@@ -233,7 +285,24 @@ export async function resetUserPassword(
   const pool = getMysqlPool();
 
   try {
-    // 1. Fetch existing user
+    const passwordHash = hashPasswordSHA256(newPassword);
+
+    // 1. Check in `admin_users`
+    const [adminRows]: any = await pool.query(
+      'SELECT id, username, email FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
+      [userId, userId]
+    );
+
+    if (adminRows && adminRows.length > 0) {
+      const admin = adminRows[0];
+      await pool.query('UPDATE admin_users SET password = ? WHERE id = ?', [passwordHash, admin.id]);
+      return {
+        success: true,
+        message: `Password untuk Admin '${admin.username}' berhasil diperbarui.`,
+      };
+    }
+
+    // 2. Check in `users`
     let users: any[] = [];
     try {
       const [res]: any = await pool.query(
@@ -254,37 +323,11 @@ export async function resetUserPassword(
     }
 
     const user = users[0];
-    const passwordHash = hashPasswordSHA256(newPassword);
-
-    // 2. Update password hash in MySQL `users`
     try {
-      await pool.query('UPDATE users SET password = ? WHERE id = ?', [passwordHash, userId]);
+      await pool.query('UPDATE users SET password = ? WHERE id = ?', [passwordHash, user.id]);
     } catch {
-      await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, userId]);
+      await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, user.id]);
     }
-
-    // 3. Update Better-Auth user & sessions (optional/non-blocking)
-    try {
-      const userEmail = user.email || `${user.username}@asoc.internal`;
-      const [baUsers]: any = await authDbPool.query(
-        'SELECT id FROM user WHERE username = ? OR email = ? LIMIT 1',
-        [user.username, userEmail]
-      );
-
-      if (baUsers && baUsers.length > 0) {
-        const baUserId = baUsers[0].id;
-        await authDbPool.query('DELETE FROM session WHERE userId = ?', [baUserId]);
-        await authDbPool.query('DELETE FROM account WHERE userId = ? AND providerId = "credential"', [baUserId]);
-        await auth.api.signUpEmail({
-          body: {
-            email: userEmail,
-            password: newPassword,
-            name: user.username,
-            username: user.username,
-          } as any,
-        });
-      }
-    } catch {}
 
     return {
       success: true,
@@ -306,6 +349,32 @@ export async function updateUser(
   const pool = getMysqlPool();
 
   try {
+    // 1. Check if admin
+    const [adminRows]: any = await pool.query(
+      'SELECT id, username, email FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
+      [userId, userId]
+    );
+
+    if (adminRows && adminRows.length > 0) {
+      const admin = adminRows[0];
+      const updates: string[] = [];
+      const vals: any[] = [];
+      if (data.email) {
+        updates.push('email = ?');
+        vals.push(data.email.trim());
+      }
+      if (data.name || data.username) {
+        updates.push('name = ?');
+        vals.push((data.name || data.username || '').trim());
+      }
+      if (updates.length > 0) {
+        vals.push(admin.id);
+        await pool.query(`UPDATE admin_users SET ${updates.join(', ')} WHERE id = ?`, vals);
+      }
+      return { success: true, message: `Profil Admin '${admin.username}' berhasil diperbarui.` };
+    }
+
+    // 2. Update tenant user in `users`
     let users: any[] = [];
     try {
       const [res]: any = await pool.query(
@@ -333,8 +402,9 @@ export async function updateUser(
       values.push(data.email.trim());
     }
     if (data.role !== undefined) {
+      const dbRole = data.role === 'admin' ? 'admin' : 'tenant';
       updates.push('role = ?');
-      values.push(data.role);
+      values.push(dbRole);
     }
     if (data.tenantId !== undefined) {
       updates.push('tenant_id = ?');
@@ -356,40 +426,6 @@ export async function updateUser(
       await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
     }
 
-    // Optional Sync to Better-Auth user table
-    try {
-      const username = users[0].username;
-      if (data.tenantId) {
-        const [tenants]: any = await pool.query(
-          'SELECT tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE id = ? LIMIT 1',
-          [data.tenantId]
-        );
-        if (tenants && tenants.length > 0) {
-          const t = tenants[0];
-          await authDbPool.query(
-            `UPDATE user SET 
-              role = COALESCE(?, role), 
-              email = COALESCE(?, email),
-              tenantId = ?, 
-              tenantCode = ?, 
-              campusName = ?, 
-              databaseName = ?, 
-              redisPrefix = ? 
-             WHERE username = ?`,
-            [data.role, data.email, data.tenantId, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix, username]
-          );
-        }
-      } else {
-        await authDbPool.query(
-          `UPDATE user SET 
-            role = COALESCE(?, role), 
-            email = COALESCE(?, email) 
-           WHERE username = ?`,
-          [data.role, data.email, username]
-        );
-      }
-    } catch {}
-
     const username = users[0].username;
     return { success: true, message: `Profil user '${username}' berhasil diperbarui.` };
   } catch (err: any) {
@@ -399,7 +435,8 @@ export async function updateUser(
 }
 
 /**
- * Deletes user from MySQL `users`, Better-Auth `user`, `account`, and revokes sessions.
+ * Deletes user from MySQL `users` or `admin_users`.
+ * Accepts numeric and string/hex IDs.
  */
 export async function deleteUser(
   userId: number | string
@@ -408,6 +445,9 @@ export async function deleteUser(
 
   try {
     let users: any[] = [];
+    let isFromAdminTable = false;
+
+    // 1. Check in `users`
     try {
       const [res]: any = await pool.query(
         'SELECT id, COALESCE(name, "") AS username, email, role FROM users WHERE id = ? LIMIT 1',
@@ -422,21 +462,39 @@ export async function deleteUser(
       users = res || [];
     }
 
+    // 2. Check in `admin_users`
+    if (!users || users.length === 0) {
+      try {
+        const [aRes]: any = await pool.query(
+          'SELECT id, username, email, role FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
+          [userId, userId]
+        );
+        if (aRes && aRes.length > 0) {
+          users = aRes;
+          isFromAdminTable = true;
+        }
+      } catch {}
+    }
+
     if (!users || users.length === 0) {
       return { success: false, error: 'User tidak ditemukan.' };
     }
 
     const user = users[0];
 
-    // Prevent deleting the primary superadmin
-    if (user.username === 'superadmin' || user.username === 'admin') {
-      return { success: false, error: 'Akun superadmin utama tidak dapat dihapus.' };
+    // Prevent deleting the primary admin
+    if (user.username === 'admin' || user.username === 'superadmin') {
+      return { success: false, error: 'Akun admin utama tidak dapat dihapus.' };
     }
 
-    // 1. Delete from MySQL `users`
-    await pool.query('DELETE FROM users WHERE id = ?', [userId]);
+    // 3. Delete from MySQL
+    if (isFromAdminTable) {
+      await pool.query('DELETE FROM admin_users WHERE id = ?', [user.id]);
+    } else {
+      await pool.query('DELETE FROM users WHERE id = ?', [user.id]);
+    }
 
-    // 2. Delete from Better-Auth (optional)
+    // 4. Delete from Better-Auth (optional)
     try {
       const userEmail = user.email || `${user.username}@asoc.internal`;
       const [baUsers]: any = await authDbPool.query(
@@ -454,7 +512,7 @@ export async function deleteUser(
 
     return {
       success: true,
-      message: `User '${user.username}' berhasil dihapus beserta seluruh sesi aktifnya.`,
+      message: `User '${user.username}' berhasil dihapus.`,
     };
   } catch (err: any) {
     console.error('Error deleting user:', err);

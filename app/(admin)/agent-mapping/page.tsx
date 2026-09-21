@@ -17,6 +17,7 @@ import {
 import { AgentMappingTable } from '@/components/agents/AgentMappingTable';
 import { UnassignedAgentAlert } from '@/components/agents/UnassignedAgentAlert';
 import { EnrollmentScriptModal } from '@/components/agents/EnrollmentScriptModal';
+import CustomSelect from '@/components/ui/CustomSelect';
 import type { MappedAgentItem } from '@/app/api/wazuh/agents/route';
 
 export default function AgentMappingPage() {
@@ -129,7 +130,7 @@ export default function AgentMappingPage() {
             </h1>
           </div>
           <p className="text-xs md:text-sm text-slate-500">
-            Live agent inventory from Wazuh REST API (:55000) and campus database group bindings.
+            Live agent inventory from Wazuh REST API (:55000) and tenant database group bindings.
           </p>
         </div>
 
@@ -238,7 +239,7 @@ export default function AgentMappingPage() {
             >
               {loading ? '-' : unassignedCount}
             </div>
-            <span className="text-[11px] text-amber-500 font-semibold mt-1 block">Requires Campus Binding</span>
+            <span className="text-[11px] text-amber-500 font-semibold mt-1 block">Requires Tenant Binding</span>
           </div>
           <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
             <ShieldAlert className="w-6 h-6" />
@@ -255,7 +256,7 @@ export default function AgentMappingPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search agent ID, name, IP, campus..."
+            placeholder="Search agent ID, name, IP, tenant..."
             className="w-full pl-9 pr-4 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {searchQuery && (
@@ -305,21 +306,21 @@ export default function AgentMappingPage() {
           </div>
 
           {/* Campus Selector Filter */}
-          <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-xs">
-            <Building2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
-            <select
-              value={selectedCampusFilter}
-              onChange={(e) => setSelectedCampusFilter(e.target.value)}
-              className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer text-xs"
-            >
-              <option value="all">All Campuses</option>
-              {tenants.map((t) => (
-                <option key={t.id} value={t.tenantCode}>
-                  {t.campusName} ({t.tenantCode})
-                </option>
-              ))}
-            </select>
-          </div>
+          <CustomSelect
+            value={selectedCampusFilter}
+            onChange={(val) => setSelectedCampusFilter(String(val))}
+            options={[
+              { value: 'all', label: 'All Tenants', badge: 'ALL' },
+              ...tenants.map((t) => ({
+                value: t.tenantCode,
+                label: `${t.campusName} (${t.tenantCode})`,
+                badge: t.tenantCode,
+              })),
+            ]}
+            icon={<Building2 className="w-3.5 h-3.5 text-blue-500" />}
+            className="w-full sm:w-56"
+            buttonClassName="w-full sm:w-56"
+          />
         </div>
       </div>
 

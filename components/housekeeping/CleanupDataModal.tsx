@@ -3,13 +3,11 @@
 import React, { useState } from 'react';
 import {
   X,
-  Sparkles,
+  Trash2,
   Building2,
   AlertTriangle,
-  CheckCircle2,
   Loader2,
-  HardDrive,
-  Trash2,
+  Sparkles,
   Eye,
   ShieldAlert,
 } from 'lucide-react';
@@ -24,31 +22,35 @@ interface TenantOption {
 interface CleanupDataModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess: (msg: string) => void;
   tenants: TenantOption[];
-  defaultTenantCode?: string;
-  onSuccess: (message: string) => void;
 }
 
 export function CleanupDataModal({
   isOpen,
   onClose,
-  tenants,
-  defaultTenantCode = 'UI',
   onSuccess,
+  tenants,
 }: CleanupDataModalProps) {
-  const [selectedTenant, setSelectedTenant] = useState(defaultTenantCode);
+  const [selectedTenant, setSelectedTenant] = useState<string>(
+    tenants[0]?.tenantCode || 'TNTA'
+  );
   const [collection, setCollection] = useState<'all' | 'incident' | 'vulnerability'>('all');
-  const [olderThanDays, setOlderThanDays] = useState(90);
-  const [confirmKeyword, setConfirmKeyword] = useState('');
+  const [olderThanDays, setOlderThanDays] = useState<number>(90);
+  const [confirmKeyword, setConfirmKeyword] = useState<string>('');
 
-  const [dryRunResult, setDryRunResult] = useState<any>(null);
   const [simulating, setSimulating] = useState(false);
+  const [dryRunResult, setDryRunResult] = useState<{
+    deletedDocumentsCount: number;
+    estimatedStorageFreedFormatted: string;
+  } | null>(null);
+
   const [purging, setPurging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const currentTenant = tenants.find((t) => t.tenantCode === selectedTenant) || tenants[0];
+  const currentTenant = tenants.find((t) => t.tenantCode === selectedTenant);
 
   const handleSimulateDryRun = async () => {
     setSimulating(true);
@@ -67,10 +69,13 @@ export function CleanupDataModal({
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to run dry-run simulation');
+        throw new Error(json.error || 'Failed to calculate dry-run simulation');
       }
 
-      setDryRunResult(json);
+      setDryRunResult({
+        deletedDocumentsCount: json.deletedDocumentsCount || 0,
+        estimatedStorageFreedFormatted: json.estimatedStorageFreedFormatted || '0 B',
+      });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -99,7 +104,7 @@ export function CleanupDataModal({
         throw new Error(json.error || 'Failed to purge historical data');
       }
 
-      onSuccess(json.message || `Data historis ${currentTenant?.campusName} berhasil dimusnahkan.`);
+      onSuccess(json.message || `Historical data for ${currentTenant?.campusName} purged successfully.`);
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -124,10 +129,10 @@ export function CleanupDataModal({
             </div>
             <div>
               <h3 className="font-extrabold text-base text-slate-900">
-                Pembersihan Data Historis MongoDB
+                MongoDB Historical Data Cleanup
               </h3>
               <p className="text-xs text-slate-500">
-                Pemusnahan log lama berdasarkan ambang batas umur data dengan simulasi Dry-Run
+                Purge aged logs based on retention threshold with Dry-Run simulation
               </p>
             </div>
           </div>
@@ -152,7 +157,7 @@ export function CleanupDataModal({
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
               <Building2 className="w-3.5 h-3.5 text-blue-500" />
-              <span>Target Database Kampus / Tenant</span>
+              <span>Target Tenant Database</span>
             </label>
             <select
               value={selectedTenant}
@@ -160,7 +165,7 @@ export function CleanupDataModal({
                 setSelectedTenant(e.target.value);
                 setDryRunResult(null);
               }}
-              className="w-full px-3.5 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer"
+              className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 cursor-pointer transition-all"
             >
               {tenants.map((t) => (
                 <option key={t.id} value={t.tenantCode}>
@@ -174,7 +179,7 @@ export function CleanupDataModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Target Koleksi Dokumen
+                Target Collection
               </label>
               <select
                 value={collection}
@@ -182,17 +187,17 @@ export function CleanupDataModal({
                   setCollection(e.target.value as any);
                   setDryRunResult(null);
                 }}
-                className="w-full px-3.5 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer"
+                className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 cursor-pointer transition-all"
               >
-                <option value="all">All (Insiden & Kerentanan)</option>
-                <option value="incident">Koleksi Insiden (incident)</option>
-                <option value="vulnerability">Koleksi Kerentanan (vulnerability)</option>
+                <option value="all">All (Incidents & Vulnerabilities)</option>
+                <option value="incident">Incidents Collection (incident)</option>
+                <option value="vulnerability">Vulnerabilities Collection (vulnerability)</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Ambang Batas Umur Data
+                Age Retention Threshold
               </label>
               <select
                 value={olderThanDays}
@@ -200,12 +205,12 @@ export function CleanupDataModal({
                   setOlderThanDays(Number(e.target.value));
                   setDryRunResult(null);
                 }}
-                className="w-full px-3.5 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer"
+                className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 cursor-pointer transition-all"
               >
-                <option value={30}>Lebih lama dari 30 Hari</option>
-                <option value={90}>Lebih lama dari 90 Hari (3 Bulan)</option>
-                <option value={180}>Lebih lama dari 180 Hari (6 Bulan)</option>
-                <option value={365}>Lebih lama dari 1 Tahun (365 Hari)</option>
+                <option value={30}>Older than 30 Days</option>
+                <option value={90}>Older than 90 Days (3 Months)</option>
+                <option value={180}>Older than 180 Days (6 Months)</option>
+                <option value={365}>Older than 1 Year (365 Days)</option>
               </select>
             </div>
           </div>
@@ -216,10 +221,10 @@ export function CleanupDataModal({
               <div>
                 <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                   <Eye className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Simulasi Dry-Run Pra-Pemusnahan</span>
+                  <span>Pre-Purge Dry-Run Simulation</span>
                 </span>
                 <span className="text-[11px] text-slate-400 block">
-                  Uji hitung dokumen tanpa melakukan modifikasi pada database fisik
+                  Simulate document counts without modifying the physical database
                 </span>
               </div>
               <button
@@ -229,20 +234,20 @@ export function CleanupDataModal({
                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               >
                 {simulating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
-                <span>{simulating ? 'Menghitung...' : 'Uji Dry-Run'}</span>
+                <span>{simulating ? 'Calculating...' : 'Run Dry-Run'}</span>
               </button>
             </div>
 
             {dryRunResult && (
               <div className="p-3 rounded-xl bg-white border border-slate-200 space-y-1.5 text-xs animate-in fade-in">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-semibold">Total Dokumen Terdeteksi:</span>
+                  <span className="text-slate-500 font-semibold">Total Documents Identified:</span>
                   <span className="font-mono font-extrabold text-rose-600">
-                    {dryRunResult.deletedDocumentsCount} Dokumen
+                    {dryRunResult.deletedDocumentsCount} Documents
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-semibold">Estimasi Ruang Disk Dibebaskan:</span>
+                  <span className="text-slate-500 font-semibold">Estimated Storage Freed:</span>
                   <span className="font-mono font-extrabold text-emerald-600">
                     {dryRunResult.estimatedStorageFreedFormatted}
                   </span>
@@ -257,10 +262,10 @@ export function CleanupDataModal({
               <ShieldAlert className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
               <div>
                 <h4 className="text-xs font-extrabold text-rose-900">
-                  Konfirmasi Pemusnahan Data Permanen
+                  Permanent Purge Confirmation
                 </h4>
                 <p className="text-[11px] text-rose-700 mt-0.5">
-                  This action cannot be undone. Ketik <span className="font-mono font-bold select-all bg-rose-500/20 px-1 py-0.5 rounded">{currentTenant?.campusName}</span> atau <span className="font-mono font-bold bg-rose-500/20 px-1 py-0.5 rounded">PURGE</span> untuk mengaktifkan tombol eksekusi:
+                  This action cannot be undone. Type <span className="font-mono font-bold select-all bg-rose-500/20 px-1 py-0.5 rounded">{currentTenant?.campusName}</span> or <span className="font-mono font-bold bg-rose-500/20 px-1 py-0.5 rounded">PURGE</span> to enable execution:
                 </p>
               </div>
             </div>
@@ -269,7 +274,7 @@ export function CleanupDataModal({
               type="text"
               value={confirmKeyword}
               onChange={(e) => setConfirmKeyword(e.target.value)}
-              placeholder={`Ketik '${currentTenant?.campusName}' atau 'PURGE'`}
+              placeholder={`Type '${currentTenant?.campusName}' or 'PURGE'`}
               className="w-full px-3.5 py-2 bg-white rounded-xl border border-rose-300 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500"
             />
           </div>
@@ -291,7 +296,7 @@ export function CleanupDataModal({
             className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-rose-600/20 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {purging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-            <span>{purging ? 'Memusnahkan Data...' : 'Eksekusi Purge Data'}</span>
+            <span>{purging ? 'Purging Data...' : 'Execute Data Purge'}</span>
           </button>
         </div>
       </div>

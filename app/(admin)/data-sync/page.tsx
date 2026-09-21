@@ -1,19 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import {
-  RefreshCw,
-  Play,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
-  Calendar,
-  Layers,
-  Terminal,
-  FolderSync,
-  SearchCheck,
-  Zap,
-} from 'lucide-react';
+import { RefreshCw, Play, CheckCircle2, AlertCircle } from 'lucide-react';
+import CustomSelect from '@/components/ui/CustomSelect';
 
 interface DateRow {
   date: string;
@@ -22,10 +11,40 @@ interface DateRow {
   status: string;
 }
 
+interface RedisAuditItem {
+  incidents: {
+    mongo: number;
+    redis: number;
+    isSynced: boolean;
+    dateBreakdown: { date: string; mongo: number; redis: number; status: string }[];
+  };
+  vulnerabilities: {
+    mongo: number;
+    redis: number;
+    isSynced: boolean;
+  };
+  reports: {
+    mongo: number;
+    redis: number;
+    isSynced: boolean;
+  };
+  devices: {
+    mongo: number;
+    redis: number;
+    isSynced: boolean;
+  };
+  historicalStats: {
+    cached: boolean;
+    isSynced: boolean;
+  };
+  isAllSynced: boolean;
+}
+
 interface TenantAuditItem {
   id: number;
   tenantCode: string;
-  campusName: string;
+  tenantName: string;
+  campusName?: string;
   databaseName: string;
   redisPrefix: string;
   wazuhGroups: string[];
@@ -35,34 +54,68 @@ interface TenantAuditItem {
   irisCustomerName: string;
   totalMongoIncidents: number;
   totalMongoVulns: number;
+  totalMongoReports: number;
   redisKeysCount: number;
   redisSummaryPresent: boolean;
+  redisAudit?: RedisAuditItem;
   dateBreakdown: DateRow[];
+  dateBreakdownAlerts?: DateRow[];
+  dateBreakdownVulns?: DateRow[];
 }
+
+interface IrisCaseItem {
+  case_id: number;
+  title: string;
+  date: string;
+  customer_name: string;
+  in_iris: boolean;
+  in_mongo: boolean;
+  is_in_sync: boolean;
+}
+
+interface IrisTenantItem {
+  tenant_code: string;
+  tenant_name?: string;
+  campus_name?: string;
+  database_name: string;
+  iris_cases_count: number;
+  mongo_reports_count: number;
+  is_in_sync: boolean;
+  cases: IrisCaseItem[];
+}
+
+type TabType = 'alerts' | 'vulnerabilities' | 'redis' | 'iris' | 'cronjob';
 
 export default function DataSyncPage() {
   const [tenants, setTenants] = useState<TenantAuditItem[]>([]);
+  const [masterTenants, setMasterTenants] = useState<{ id: number; tenantCode: string; tenantName: string }[]>([]);
+  const [irisData, setIrisData] = useState<{ is_in_sync: boolean; tenants: IrisTenantItem[] } | null>(null);
   const [cronConfig, setCronConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Time Period Filter (today, yesterday, this_week, etc.)
+  // Top Bar State: Time Period & Tenant
   const [selectedPeriod, setSelectedPeriod] = useState<string>('THIS_WEEK');
-
-  // Sync Pipeline Selection
-  const [selectedPipeline, setSelectedPipeline] = useState<string>('indexer-mongo');
+  const [customStartDate, setCustomStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customEndDate, setCustomEndDate] = useState<string>(() => {
+    return new Date().toISOString().slice(0, 10);
+  });
   const [selectedTenant, setSelectedTenant] = useState<string>('all');
-  const [syncing, setSyncing] = useState(false);
 
-  // Check script running state
-  const [runningCheck, setRunningCheck] = useState<string | null>(null);
+  // 5 Tabs: Alerts | Vulnerabilities | Redis | IRIS | CronJob
+  const [activeTab, setActiveTab] = useState<TabType>('alerts');
 
-  // Cronjob State (Default 1 hour: 0 * * * *)
+  // Script Action States
+  const [runningAction, setRunningAction] = useState<string | null>(null);
+
+  // Cronjob State
   const [cronEnabled, setCronEnabled] = useState<boolean>(true);
   const [cronSchedule, setCronSchedule] = useState<string>('0 * * * *');
   const [savingCron, setSavingCron] = useState(false);
 
-  // Terminal Logs
-  const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -70,13 +123,40 @@ export default function DataSyncPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const fetchAuditData = async (period = selectedPeriod) => {
+  const fetchAuditData = async (
+    period = selectedPeriod,
+    tenant = selectedTenant,
+    start = customStartDate,
+    end = customEndDate
+  ) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/data-sync?period=${period}`);
+      const params = new URLSearchParams();
+      params.set('period', period);
+      if (tenant) params.set('tenant', tenant);
+      if (period === 'CUSTOM') {
+        if (start) params.set('startDate', start);
+        if (end) params.set('endDate', end);
+      }
+
+      const res = await fetch(`/api/data-sync?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
         setTenants(json.auditResults || []);
+        if (json.allTenants && Array.isArray(json.allTenants) && json.allTenants.length > 0) {
+          setMasterTenants(json.allTenants);
+        } else if (masterTenants.length === 0 && json.auditResults?.length > 0) {
+          setMasterTenants(
+            json.auditResults.map((t: any) => ({
+              id: t.id,
+              tenantCode: t.tenantCode,
+              tenantName: t.tenantName || t.campusName || t.tenantCode,
+            }))
+          );
+        }
+        if (json.irisAudit) {
+          setIrisData(json.irisAudit);
+        }
         if (json.cronConfig) {
           setCronConfig(json.cronConfig);
           setCronEnabled(json.cronConfig.enabled);
@@ -85,19 +165,20 @@ export default function DataSyncPage() {
       }
     } catch (err) {
       console.error(err);
-      showToast('Failed to load audit data.', 'error');
+      showToast('Failed to load audit data', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAuditData(selectedPeriod);
-  }, [selectedPeriod]);
+    fetchAuditData(selectedPeriod, selectedTenant, customStartDate, customEndDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPeriod, selectedTenant]);
 
-  // Execute Check Script
+  // Trigger Check
   const handleRunCheck = async (checkScript: string) => {
-    setRunningCheck(checkScript);
+    setRunningAction(checkScript);
     try {
       const res = await fetch('/api/data-sync', {
         method: 'POST',
@@ -106,53 +187,54 @@ export default function DataSyncPage() {
           action: 'run-check',
           checkScript,
           period: selectedPeriod,
+          startDate: selectedPeriod === 'CUSTOM' ? customStartDate : undefined,
+          endDate: selectedPeriod === 'CUSTOM' ? customEndDate : undefined,
+          tenant: selectedTenant,
         }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to execute audit check script');
+        throw new Error(json.error || 'Failed to execute audit verification');
       }
 
-      setTerminalLogs(json.logs || []);
-      showToast(`Check script ${checkScript} completed successfully!`);
+      showToast(json.message || 'Audit verification completed');
       fetchAuditData();
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
-      setRunningCheck(null);
+      setRunningAction(null);
     }
   };
 
-  // Execute Pipeline Sync
-  const handleRunSync = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSyncing(true);
-
+  // Trigger Sync
+  const handleRunSync = async (pipeline: string) => {
+    setRunningAction(`sync-${pipeline}`);
     try {
       const res = await fetch('/api/data-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'run-sync',
-          pipeline: selectedPipeline,
+          pipeline,
           tenant: selectedTenant,
           period: selectedPeriod,
+          startDate: selectedPeriod === 'CUSTOM' ? customStartDate : undefined,
+          endDate: selectedPeriod === 'CUSTOM' ? customEndDate : undefined,
         }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to execute pipeline synchronization');
+        throw new Error(json.error || 'Failed to execute sync');
       }
 
-      setTerminalLogs(json.logs || []);
-      showToast(`Pipeline [${selectedPipeline}] synchronized successfully!`);
+      showToast(json.message || 'Synchronization executed successfully');
       fetchAuditData();
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
-      setSyncing(false);
+      setRunningAction(null);
     }
   };
 
@@ -175,7 +257,7 @@ export default function DataSyncPage() {
         throw new Error(json.error || 'Failed to save cronjob configuration');
       }
 
-      showToast(json.message || 'Cronjob settings saved successfully.');
+      showToast(json.message || 'Cronjob configuration saved successfully');
       if (json.cronConfig) {
         setCronConfig(json.cronConfig);
       }
@@ -186,560 +268,875 @@ export default function DataSyncPage() {
     }
   };
 
+  const displayedTenants = selectedTenant === 'all'
+    ? tenants
+    : tenants.filter((t) => t.tenantCode === selectedTenant);
+
+  const displayedIrisTenants = irisData?.tenants
+    ? selectedTenant === 'all'
+      ? irisData.tenants
+      : irisData.tenants.filter((t) => t.tenant_code === selectedTenant)
+    : [];
+
+  const totalIncidents = displayedTenants.reduce((s, t) => s + (t.totalMongoIncidents || 0), 0);
+  const totalVulns = displayedTenants.reduce((s, t) => s + (t.totalMongoVulns || 0), 0);
+  const totalReports = displayedIrisTenants.reduce((s, t) => s + (t.mongo_reports_count || 0), 0);
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Toast */}
+    <div className="space-y-5 animate-in fade-in duration-200">
+      {/* Toast Notification */}
       {toast && (
         <div
-          className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold animate-in fade-in slide-in-from-top-3 duration-300 ${
+          className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold animate-in fade-in slide-in-from-top-3 duration-300 ${
             toast.type === 'success'
               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
               : 'bg-rose-50 text-rose-800 border-rose-200'
           }`}
         >
           {toast.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           ) : (
-            <AlertCircle className="w-4 h-4 text-rose-600" />
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
           )}
           <span>{toast.message}</span>
         </div>
       )}
 
-      {/* Time Period Filter Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-blue-600" />
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-            Select Audit Time Period:
-          </span>
-        </div>
-
-        {/* Period Buttons */}
-        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-          {[
-            { id: 'TODAY', label: 'Today' },
-            { id: 'YESTERDAY', label: 'Yesterday' },
-            { id: 'THIS_WEEK', label: 'This Week' },
-            { id: 'LAST_7_DAYS', label: 'Last 7 Days' },
-            { id: 'THIS_MONTH', label: 'This Month' },
-            { id: 'ALL', label: 'All Time' },
-          ].map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setSelectedPeriod(p.id)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                selectedPeriod === p.id
-                  ? 'bg-white text-blue-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+      {/* Page Header */}
+      <div>
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800">
+          Data Synchronization & Audit
+        </h1>
+        <p className="text-xs text-slate-500 mt-1">
+          Audit and reconcile multi-tenant telemetry pipelines across Wazuh Indexer, MongoDB, Redis, and DFIR-IRIS.
+        </p>
       </div>
 
-      {/* SECTION 1: DATA AUDIT SCRIPTS (CHECK SCRIPTS) */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
-              <SearchCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-sm font-black text-slate-900">
-                Data Verification Scripts (Check Scripts)
-              </h2>
-              <p className="text-[11px] text-slate-500">
-                Select audit script to verify data across Wazuh Indexer, MongoDB, Redis, and IRIS
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => handleRunCheck('all')}
-            disabled={Boolean(runningCheck)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200/60 rounded-xl transition-all disabled:opacity-50 self-start sm:self-auto cursor-pointer"
-          >
-            {runningCheck === 'all' ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Play className="w-3 h-3 fill-blue-700" />
-            )}
-            <span>Execute All Check Scripts</span>
-          </button>
-        </div>
-
-        {/* 4 Action Buttons for Check Scripts */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <button
-            onClick={() => handleRunCheck('check_alerts_indexer_mongo')}
-            disabled={Boolean(runningCheck)}
-            className="p-3 text-left rounded-xl border border-slate-200/80 bg-slate-50/50 hover:bg-slate-100 transition-all space-y-1.5 group disabled:opacity-50 cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] font-black text-blue-700">
-                check_alerts_indexer_mongo
-              </span>
-              <Play className="w-3 h-3 text-slate-400 group-hover:text-blue-600 group-hover:fill-blue-600" />
-            </div>
-            <p className="text-[10px] text-slate-500">
-              Verify alert synchronization (rule.level &ge; 7) Indexer vs MongoDB
-            </p>
-          </button>
-
-          <button
-            onClick={() => handleRunCheck('check_vulnerability_indexer_mongo')}
-            disabled={Boolean(runningCheck)}
-            className="p-3 text-left rounded-xl border border-slate-200/80 bg-slate-50/50 hover:bg-slate-100 transition-all space-y-1.5 group disabled:opacity-50 cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] font-black text-violet-700">
-                check_vulnerability_indexer_mongo
-              </span>
-              <Play className="w-3 h-3 text-slate-400 group-hover:text-violet-600 group-hover:fill-violet-600" />
-            </div>
-            <p className="text-[10px] text-slate-500">
-              Verify vulnerability sync (Med/High/Crit) Indexer vs MongoDB
-            </p>
-          </button>
-
-          <button
-            onClick={() => handleRunCheck('check_mongo_redis_multitenant')}
-            disabled={Boolean(runningCheck)}
-            className="p-3 text-left rounded-xl border border-slate-200/80 bg-slate-50/50 hover:bg-slate-100 transition-all space-y-1.5 group disabled:opacity-50 cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] font-black text-indigo-700">
-                check_mongo_redis_multitenant
-              </span>
-              <Play className="w-3 h-3 text-slate-400 group-hover:text-indigo-600 group-hover:fill-indigo-600" />
-            </div>
-            <p className="text-[10px] text-slate-500">
-              Verify snapshot summary & L1 cache Redis per-tenant
-            </p>
-          </button>
-
-          <button
-            onClick={() => handleRunCheck('check_iris_reports')}
-            disabled={Boolean(runningCheck)}
-            className="p-3 text-left rounded-xl border border-slate-200/80 bg-slate-50/50 hover:bg-slate-100 transition-all space-y-1.5 group disabled:opacity-50 cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[11px] font-black text-teal-700">
-                check_iris_reports
-              </span>
-              <Play className="w-3 h-3 text-slate-400 group-hover:text-teal-600 group-hover:fill-teal-600" />
-            </div>
-            <p className="text-[10px] text-slate-500">
-              Verify DFIR-IRIS Customer ID bindings per-tenant
-            </p>
-          </button>
-        </div>
-      </div>
-
-      {/* SECTION 2: AUDIT RECONCILIATION OUTPUT (SCRIPT FORMAT) */}
-      <div className="space-y-5">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-black uppercase tracking-wider text-slate-600 flex items-center gap-2">
-            <span>Synchronization Audit Results (Period: {selectedPeriod})</span>
-          </h3>
-          <span className="text-[11px] font-mono text-slate-500">
-            Total {tenants.length} Campus Tenants
+      {/* TOP BAR: TIME PERIOD & TENANT SELECTOR */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-3.5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        {/* Left: Time Period label & pills */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-700 pr-2 border-r border-slate-200">
+            Time Period
           </span>
-        </div>
 
-        {loading ? (
-          <div className="p-8 bg-white rounded-2xl border border-slate-200 space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-28 bg-slate-100 rounded-xl animate-pulse" />
+          <div className="flex flex-wrap items-center gap-1 bg-[#F0F4F8] p-1 rounded-xl">
+            {[
+              { id: 'TODAY', label: 'Today' },
+              { id: 'YESTERDAY', label: 'Yesterday' },
+              { id: 'THIS_WEEK', label: 'This Week' },
+              { id: 'LAST_7_DAYS', label: 'Last 7 Days' },
+              { id: 'THIS_MONTH', label: 'This Month' },
+              { id: 'LAST_30_DAYS', label: 'Last 30 Days' },
+              { id: 'CUSTOM', label: 'Custom Date' },
+            ].map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setSelectedPeriod(p.id)}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  selectedPeriod === p.id
+                    ? 'bg-white text-[#00BCD4] shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {p.label}
+              </button>
             ))}
           </div>
-        ) : (
-          <div className="space-y-6">
-            {tenants.map((t) => {
-              const totalIndexer = t.dateBreakdown.reduce((sum, r) => sum + r.indexerMaster, 0);
-              const totalMongo = t.dateBreakdown.reduce((sum, r) => sum + r.totalMongo, 0);
 
-              return (
+          {/* Custom Date Inputs */}
+          {selectedPeriod === 'CUSTOM' && (
+            <div className="flex items-center gap-2 bg-[#F0F4F8] px-2.5 py-1 rounded-xl border border-slate-200/60">
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#00BCD4]"
+              />
+              <span className="text-xs text-slate-400 font-semibold">to</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#00BCD4]"
+              />
+              <button
+                onClick={() => fetchAuditData('CUSTOM', selectedTenant, customStartDate, customEndDate)}
+                className="px-2.5 py-1 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-lg transition cursor-pointer"
+              >
+                Apply
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Tenant Selector & Refresh */}
+        <div className="flex items-center gap-2.5 self-start md:self-auto">
+          <span className="text-xs font-bold text-slate-600">Tenant:</span>
+          <CustomSelect
+            value={selectedTenant}
+            onChange={(val) => setSelectedTenant(String(val))}
+            options={[
+              { value: 'all', label: 'All Tenants', badge: 'ALL' },
+              ...(masterTenants.length > 0 ? masterTenants : tenants).map((t) => ({
+                value: t.tenantCode,
+                label: `[${t.tenantCode}] ${t.tenantName || (t as any).campusName || t.tenantCode}`,
+                badge: t.tenantCode,
+              })),
+            ]}
+            className="min-w-[210px]"
+            buttonClassName="min-w-[210px]"
+          />
+
+          <button
+            onClick={() => fetchAuditData(selectedPeriod, selectedTenant, customStartDate, customEndDate)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/80 shadow-2xs rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#00BCD4]' : ''}`} />
+            <span>{loading ? 'Auditing...' : 'Refresh'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 3 TOP KPI CARDS (NO PIPELINE PARITY, NO SUBTEXT, NO BADGE) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Card 1: Security Incidents */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Security Incidents
+          </span>
+          <div className="my-2">
+            <div className="text-3xl font-extrabold text-slate-800 tracking-tight">
+              {loading ? '...' : totalIncidents.toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: Vulnerabilities */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Vulnerabilities
+          </span>
+          <div className="my-2">
+            <div className="text-3xl font-extrabold text-slate-800 tracking-tight">
+              {loading ? '...' : totalVulns.toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Investigation Cases */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Investigation Cases
+          </span>
+          <div className="my-2">
+            <div className="text-3xl font-extrabold text-slate-800 tracking-tight">
+              {loading ? '...' : totalReports.toLocaleString()}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 5 TABS NAVIGATION: Alerts | Vulnerabilities | Redis | IRIS | CronJob */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200/80 pb-2">
+        {[
+          { id: 'alerts', label: 'Alerts' },
+          { id: 'vulnerabilities', label: 'Vulnerabilities' },
+          { id: 'redis', label: 'Redis' },
+          { id: 'iris', label: 'IRIS' },
+          { id: 'cronjob', label: 'CronJob' },
+        ].map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as TabType)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                isActive
+                  ? 'bg-white text-[#00BCD4] border border-slate-200/80 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ========================================================= */}
+      {/* TAB 1: ALERTS (SECURITY INCIDENTS LEVEL >= 7)             */}
+      {/* ========================================================= */}
+      {activeTab === 'alerts' && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {/* Action Bar */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">
+                Indexer - MongoDB (Alerts)
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Security Alerts (rule.level ≥ 7)
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleRunCheck('check_alerts_indexer_mongo')}
+                disabled={Boolean(runningAction)}
+                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
+              >
+                {runningAction === 'check_alerts_indexer_mongo' ? 'Checking...' : 'Check Alerts'}
+              </button>
+
+              <button
+                onClick={() => handleRunSync('indexer-mongo-alerts')}
+                disabled={Boolean(runningAction)}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                {runningAction === 'sync-indexer-mongo-alerts' ? 'Syncing...' : 'Run Alerts Sync'}
+              </button>
+            </div>
+          </div>
+
+          {/* Alerts Data Tables */}
+          {loading ? (
+            <div className="p-6 bg-white rounded-2xl border border-slate-200 space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-20 bg-slate-100 rounded-xl animate-pulse" />
+              ))}
+            </div>
+          ) : displayedTenants.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-6 text-center text-slate-400 text-xs">
+              No tenant matching filter.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {displayedTenants.map((t) => {
+                const breakdown = t.dateBreakdownAlerts || t.dateBreakdown || [];
+                const totalIndexer = breakdown.reduce((sum, r) => sum + (r.indexerMaster || 0), 0);
+                const totalMongo = breakdown.reduce((sum, r) => sum + (r.totalMongo || 0), 0);
+
+                return (
+                  <div
+                    key={t.id}
+                    className="bg-white rounded-2xl border border-slate-200/70 shadow-xs overflow-hidden"
+                  >
+                    {/* Header */}
+                    <div className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-bold text-slate-800 tracking-tight">
+                        [{t.tenantCode}] {t.tenantName || t.campusName} — Database: <span className="font-mono font-semibold">{t.databaseName}</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        Wazuh Group: {JSON.stringify(t.wazuhGroups)}
+                      </span>
+                    </div>
+
+                    {/* Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-xs">
+                        <thead className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
+                          <tr>
+                            <th className="py-3 px-4 rounded-l-xl">DATE</th>
+                            <th className="py-3 px-4">INDEXER MASTER</th>
+                            <th className="py-3 px-4">TOTAL MONGO</th>
+                            <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-800">
+                          {breakdown.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="p-3 text-center text-slate-400 font-sans italic">
+                                No security alerts found for this period.
+                              </td>
+                            </tr>
+                          ) : (
+                            breakdown.map((row, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50">
+                                <td className="p-2.5 pl-4 font-semibold text-slate-900">{row.date}</td>
+                                <td className="p-2.5 font-semibold text-slate-800">{row.indexerMaster}</td>
+                                <td className="p-2.5 font-semibold text-slate-800">{row.totalMongo}</td>
+                                <td className="p-2.5 pr-4 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                    row.status === 'SYNC'
+                                      ? 'text-emerald-700 bg-emerald-50'
+                                      : 'text-rose-700 bg-rose-50'
+                                  }`}>
+                                    {row.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                          <tr className="bg-slate-50 font-bold border-t border-slate-200">
+                            <td className="p-2.5 pl-4 font-black text-slate-900">TOTAL</td>
+                            <td className="p-2.5 text-blue-700 font-black">{totalIndexer}</td>
+                            <td className="p-2.5 text-blue-700 font-black">{totalMongo}</td>
+                            <td className="p-2.5 pr-4 text-right text-emerald-700 font-black">
+                              {totalIndexer === totalMongo ? '100% SYNC' : 'MISMATCH'}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB 2: VULNERABILITIES (MEDIUM - CRITICAL)                */}
+      {/* ========================================================= */}
+      {activeTab === 'vulnerabilities' && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {/* Action Bar */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">
+                Indexer - MongoDB (Vulnerabilities)
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Package Vulnerabilities (Medium - Critical)
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleRunCheck('check_vulnerability_indexer_mongo')}
+                disabled={Boolean(runningAction)}
+                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
+              >
+                {runningAction === 'check_vulnerability_indexer_mongo' ? 'Checking...' : 'Check Vulnerabilities'}
+              </button>
+
+              <button
+                onClick={() => handleRunSync('vulnerabilities')}
+                disabled={Boolean(runningAction)}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                {runningAction === 'sync-vulnerabilities' ? 'Syncing...' : 'Run Vulnerabilities Sync'}
+              </button>
+            </div>
+          </div>
+
+          {/* Vulnerabilities Data Tables */}
+          {loading ? (
+            <div className="p-6 bg-white rounded-2xl border border-slate-200 space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-20 bg-slate-100 rounded-xl animate-pulse" />
+              ))}
+            </div>
+          ) : displayedTenants.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-6 text-center text-slate-400 text-xs">
+              No tenant matching filter.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {displayedTenants.map((t) => {
+                const breakdown = t.dateBreakdownVulns || [];
+                const totalIndexer = breakdown.reduce((sum, r) => sum + (r.indexerMaster || 0), 0);
+                const totalMongo = breakdown.reduce((sum, r) => sum + (r.totalMongo || 0), 0);
+
+                return (
+                  <div
+                    key={t.id}
+                    className="bg-white rounded-2xl border border-slate-200/70 shadow-xs overflow-hidden"
+                  >
+                    {/* Header */}
+                    <div className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-bold text-slate-800 tracking-tight">
+                        [{t.tenantCode}] {t.tenantName || t.campusName} — Database: <span className="font-mono font-semibold">{t.databaseName}</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        Wazuh Group: {JSON.stringify(t.wazuhGroups)}
+                      </span>
+                    </div>
+
+                    {/* Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-xs">
+                        <thead className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
+                          <tr>
+                            <th className="py-3 px-4 rounded-l-xl">DATE</th>
+                            <th className="py-3 px-4">INDEXER MASTER</th>
+                            <th className="py-3 px-4">TOTAL MONGO</th>
+                            <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-800">
+                          {breakdown.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="p-3 text-center text-slate-400 font-sans italic">
+                                No vulnerabilities found for this period.
+                              </td>
+                            </tr>
+                          ) : (
+                            breakdown.map((row, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50">
+                                <td className="p-2.5 pl-4 font-semibold text-slate-900">{row.date}</td>
+                                <td className="p-2.5 font-semibold text-slate-800">{row.indexerMaster}</td>
+                                <td className="p-2.5 font-semibold text-slate-800">{row.totalMongo}</td>
+                                <td className="p-2.5 pr-4 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                    row.status === 'SYNC'
+                                      ? 'text-emerald-700 bg-emerald-50'
+                                      : 'text-rose-700 bg-rose-50'
+                                  }`}>
+                                    {row.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                          <tr className="bg-slate-50 font-bold border-t border-slate-200">
+                            <td className="p-2.5 pl-4 font-black text-slate-900">TOTAL</td>
+                            <td className="p-2.5 text-blue-700 font-black">{totalIndexer}</td>
+                            <td className="p-2.5 text-blue-700 font-black">{totalMongo}</td>
+                            <td className="p-2.5 pr-4 text-right text-emerald-700 font-black">
+                              {totalIndexer === totalMongo ? '100% SYNC' : 'MISMATCH'}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB 3: REDIS (MONGO-REDIS MULTI-COLLECTION PARITY)        */}
+      {/* ========================================================= */}
+      {activeTab === 'redis' && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {/* Action Bar */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">
+                MongoDB - Redis Cache Reconciliation
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Audit across all collections: incident, vulnerability, reports, and devices
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleRunCheck('check_mongo_redis_multitenant')}
+                disabled={Boolean(runningAction)}
+                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
+              >
+                {runningAction === 'check_mongo_redis_multitenant' ? 'Checking...' : 'Check Redis Cache'}
+              </button>
+
+              <button
+                onClick={() => handleRunSync('mongo-redis')}
+                disabled={Boolean(runningAction)}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                {runningAction === 'sync-mongo-redis' ? 'Syncing...' : 'Run Redis Sync'}
+              </button>
+            </div>
+          </div>
+
+          {/* Redis Collection Parity Tables per Tenant */}
+          {loading ? (
+            <div className="p-6 bg-white rounded-2xl border border-slate-200 space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-28 bg-slate-100 rounded-xl animate-pulse" />
+              ))}
+            </div>
+          ) : displayedTenants.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-6 text-center text-slate-400 text-xs">
+              No tenant matching filter.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {displayedTenants.map((t) => {
+                const ra = t.redisAudit;
+                const isAllSynced = ra?.isAllSynced ?? false;
+
+                const collections = [
+                  {
+                    name: 'Security Incidents (incident)',
+                    detail: 'Hash per-hari (Event Based)',
+                    mongo: ra?.incidents?.mongo ?? t.totalMongoIncidents,
+                    redis: ra?.incidents?.redis ?? 0,
+                    isSynced: ra?.incidents?.isSynced ?? (t.totalMongoIncidents === 0),
+                  },
+                  {
+                    name: 'Package Vulnerabilities (vulnerability)',
+                    detail: 'Period Scoped (Wazuh Vulnerabilities)',
+                    mongo: ra?.vulnerabilities?.mongo ?? t.totalMongoVulns,
+                    redis: ra?.vulnerabilities?.redis ?? 0,
+                    isSynced: ra?.vulnerabilities?.isSynced ?? (t.totalMongoVulns === 0),
+                  },
+                  {
+                    name: 'Investigation Reports (reports)',
+                    detail: 'DFIR-IRIS Investigation Reports',
+                    mongo: ra?.reports?.mongo ?? 0,
+                    redis: ra?.reports?.redis ?? 0,
+                    isSynced: ra?.reports?.isSynced ?? true,
+                  },
+                  {
+                    name: 'Device Inventory (devices)',
+                    detail: 'Wazuh Agent Device Inventory',
+                    mongo: ra?.devices?.mongo ?? 0,
+                    redis: ra?.devices?.redis ?? 0,
+                    isSynced: ra?.devices?.isSynced ?? true,
+                  },
+                ];
+
+                return (
+                  <div
+                    key={t.id}
+                    className="bg-white rounded-2xl border border-slate-200/70 shadow-xs overflow-hidden"
+                  >
+                    {/* Header */}
+                    <div className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                        <span>[{t.tenantCode}] {(t.tenantName || t.campusName || '').toUpperCase()}</span>
+                        <span className="text-slate-400 font-normal">|</span>
+                        <span className="font-mono text-slate-600 font-normal">Database: {t.databaseName}</span>
+                        <span className="text-slate-400 font-normal">|</span>
+                        <span className="font-mono text-indigo-600 font-semibold">Redis: {t.redisPrefix}*</span>
+                      </div>
+                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md ${
+                        isAllSynced
+                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                          : 'text-rose-700 bg-rose-50 border border-rose-200'
+                      }`}>
+                        {isAllSynced ? '100% IN SYNC' : 'DISCREPANCY DETECTED'}
+                      </span>
+                    </div>
+
+                    {/* Parity Table */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-xs">
+                        <thead className="bg-slate-100 text-slate-900 font-bold border-b border-slate-200">
+                          <tr>
+                            <th className="py-3 px-4 rounded-l-xl">COLLECTION / TELEMETRY METRIC</th>
+                            <th className="py-3 px-4">MONGO MASTER</th>
+                            <th className="py-3 px-4">REDIS CACHE</th>
+                            <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-800">
+                          {collections.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="py-3.5 px-4 font-sans">
+                                <div className="font-bold text-slate-900 text-xs">{item.name}</div>
+                                <div className="text-[11px] text-slate-400 font-mono">{item.detail}</div>
+                              </td>
+                              <td className="py-3.5 px-4 font-bold text-slate-900 text-sm">{item.mongo}</td>
+                              <td className="py-3.5 px-4 font-bold text-indigo-600 text-sm">{item.redis}</td>
+                              <td className="py-3.5 px-4 pr-4 text-right font-sans">
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                  item.isSynced
+                                    ? 'text-emerald-700 bg-emerald-50'
+                                    : 'text-rose-700 bg-rose-50'
+                                }`}>
+                                  {item.isSynced ? (item.mongo === 0 ? 'SYNCED (0)' : '100% IN SYNC') : 'MISMATCH'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+
+                          {/* Historical Stats KPI Row */}
+                          <tr className="hover:bg-slate-50">
+                            <td className="py-3.5 px-4 font-sans">
+                              <div className="font-bold text-slate-900 text-xs">Historical Stats (Weekly KPI)</div>
+                              <div className="text-[11px] text-slate-400 font-mono">14-day aggregated telemetry KPIs</div>
+                            </td>
+                            <td className="py-3.5 px-4 font-medium text-slate-700 text-xs font-sans">Available</td>
+                            <td className="py-3.5 px-4 font-medium text-indigo-600 text-xs font-sans">
+                              {ra?.historicalStats?.cached ? 'Cached (Weekly)' : 'No Cache'}
+                            </td>
+                            <td className="py-3.5 px-4 pr-4 text-right font-sans">
+                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                ra?.historicalStats?.cached
+                                  ? 'text-emerald-700 bg-emerald-50'
+                                  : 'text-amber-700 bg-amber-50'
+                              }`}>
+                                {ra?.historicalStats?.cached ? 'SYNCED (Weekly KPI)' : 'NO CACHE'}
+                              </span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Incidents Date Breakdown if present */}
+                    {ra?.incidents?.dateBreakdown && ra.incidents.dateBreakdown.length > 0 && (
+                      <div className="p-4 bg-slate-50/70 border-t border-slate-200/70">
+                        <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center justify-between">
+                          <span>Incidents Daily Breakdown (Date Hash Keys)</span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Total: Mongo {ra.incidents.mongo} / Redis {ra.incidents.redis}
+                          </span>
+                        </div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white">
+                          <table className="w-full text-left font-mono text-xs">
+                            <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                              <tr>
+                                <th className="p-2.5 pl-4">DATE</th>
+                                <th className="p-2.5">MONGO MASTER</th>
+                                <th className="p-2.5">REDIS CACHE (7D)</th>
+                                <th className="p-2.5 pr-4 text-right">STATUS</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {ra.incidents.dateBreakdown.map((row, rIdx) => (
+                                <tr key={rIdx} className="hover:bg-slate-50/60">
+                                  <td className="p-2.5 pl-4 font-semibold text-slate-900">{row.date}</td>
+                                  <td className="p-2.5 font-semibold text-slate-800">{row.mongo}</td>
+                                  <td className="p-2.5 font-semibold text-indigo-700">{row.redis}</td>
+                                  <td className="p-2.5 pr-4 text-right font-sans">
+                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                      row.status === 'SYNC'
+                                        ? 'text-emerald-700 bg-emerald-50'
+                                        : 'text-rose-700 bg-rose-50'
+                                    }`}>
+                                      {row.status === 'SYNC' ? (row.mongo === 0 ? 'SYNCED (0)' : '100% IN SYNC') : 'MISMATCH'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB 4: IRIS (DFIR-IRIS REPORTS AUDIT)                      */}
+      {/* ========================================================= */}
+      {activeTab === 'iris' && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          {/* Action Bar */}
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">
+                DFIR-IRIS - MongoDB
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Investigation Case Reports
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleRunCheck('check_iris_reports')}
+                disabled={Boolean(runningAction)}
+                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
+              >
+                {runningAction === 'check_iris_reports' ? 'Checking...' : 'Check IRIS Reports'}
+              </button>
+
+              <button
+                onClick={() => handleRunSync('iris-mongo')}
+                disabled={Boolean(runningAction)}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                {runningAction === 'sync-iris-mongo' ? 'Syncing...' : 'Run IRIS Sync'}
+              </button>
+            </div>
+          </div>
+
+          {/* IRIS Cases per Tenant */}
+          {loading ? (
+            <div className="p-6 bg-white rounded-2xl border border-slate-200 space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-24 bg-slate-100 rounded-xl animate-pulse" />
+              ))}
+            </div>
+          ) : displayedIrisTenants.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-6 text-center text-slate-400 text-xs">
+              No IRIS case records found for this period.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {displayedIrisTenants.map((t) => (
                 <div
-                  key={t.id}
-                  className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+                  key={t.tenant_code}
+                  className="bg-white rounded-2xl border border-slate-200/70 shadow-xs overflow-hidden"
                 >
-                  {/* Header Box (Matching Script VM) */}
-                  <div className="p-4 bg-slate-900 text-white font-mono text-xs space-y-1.5 border-b border-slate-800">
-                    <div className="font-black text-blue-400 text-sm tracking-wide">
-                      ================================================================================<br />
-                      AUDIT ALERTS SINKRONISASI (INDEXER vs MONGO): [{t.tenantCode}] {t.campusName.toUpperCase()} (PERIODE: {selectedPeriod})
+                  {/* Tenant Card Header */}
+                  <div className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                      <span>[{t.tenant_code}] {(t.tenant_name || t.campus_name || '').toUpperCase()}</span>
+                      <span className="text-slate-400 font-normal">|</span>
+                      <span className="font-mono text-slate-600 font-normal">Database: {t.database_name}.reports</span>
                     </div>
-                    <div className="text-slate-300 text-[11px]">
-                      <span className="text-slate-400">Target Database :</span> {t.databaseName}
-                    </div>
-                    <div className="text-slate-300 text-[11px]">
-                      <span className="text-slate-400">Wazuh Groups    :</span> {JSON.stringify(t.wazuhGroups)}
-                    </div>
-                    <div className="text-slate-300 text-[11px] truncate">
-                      <span className="text-slate-400">Filter Agents   :</span> {JSON.stringify(t.filterAgentIds)} / {JSON.stringify(t.filterAgentNames)}
-                    </div>
-                    <div className="text-slate-600 text-[10px]">
-                      ================================================================================
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono text-slate-700 bg-white border border-slate-200 px-2.5 py-0.5 rounded-md font-semibold">
+                        IRIS: {t.iris_cases_count} | MongoDB: {t.mongo_reports_count}
+                      </span>
+                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md ${
+                        t.is_in_sync
+                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                          : 'text-rose-700 bg-rose-50 border border-rose-200'
+                      }`}>
+                        {t.is_in_sync ? '100% SYNC' : 'MISMATCH'}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Table Sub-header */}
-                  <div className="px-5 py-2.5 bg-slate-100 border-b border-slate-200 text-slate-700 text-xs font-mono font-bold">
-                    RECONCILIATION SECURITY INCIDENTS (rule.level &ge; 7 - EVENT BASED)
-                  </div>
-
-                  {/* Breakdown Table */}
+                  {/* Cases Table */}
                   <div className="overflow-x-auto">
                     <table className="w-full text-left font-mono text-xs">
-                      <thead className="bg-slate-50 text-slate-600 font-bold uppercase border-b border-slate-200">
+                      <thead className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
                         <tr>
-                          <th className="p-3 pl-5">DATE</th>
-                          <th className="p-3">INDEXER MASTER</th>
-                          <th className="p-3">TOTAL MONGO</th>
-                          <th className="p-3 pr-5 text-right">STATUS</th>
+                          <th className="py-3 px-4 rounded-l-xl w-24">ID</th>
+                          <th className="py-3 px-4">CASE TITLE</th>
+                          <th className="py-3 px-4 w-28">DATE</th>
+                          <th className="py-3 px-4 w-44">CUSTOMER NAME</th>
+                          <th className="py-3 px-4 rounded-r-xl text-right w-28">STATUS</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-800">
-                        {t.dateBreakdown.length === 0 ? (
+                        {t.cases.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="p-4 text-center text-slate-400 font-sans italic">
-                              No incident logs recorded for period {selectedPeriod}.
+                            <td colSpan={5} className="p-3 pl-4 text-slate-400 font-sans italic">
+                              (No cases recorded for this period)
                             </td>
                           </tr>
                         ) : (
-                          t.dateBreakdown.map((row, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                              <td className="p-3 pl-5 font-bold text-slate-900">{row.date}</td>
-                              <td className="p-3 font-semibold text-slate-700">{row.indexerMaster}</td>
-                              <td className="p-3 font-semibold text-slate-700">{row.totalMongo}</td>
-                              <td className="p-3 pr-5 text-right">
-                                <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60 text-[11px]">
-                                  {row.status}
+                          t.cases.map((c, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="p-2.5 pl-4 font-bold text-[#00BCD4]">
+                                #{c.case_id}
+                              </td>
+                              <td className="p-2.5 font-sans font-semibold text-slate-900 truncate max-w-md">
+                                {c.title}
+                              </td>
+                              <td className="p-2.5 text-slate-700 font-mono font-semibold">
+                                {c.date}
+                              </td>
+                              <td className="p-2.5 font-sans text-slate-800 font-medium">
+                                {c.customer_name}
+                              </td>
+                              <td className="p-2.5 pr-4 text-right font-sans">
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                  c.is_in_sync
+                                    ? 'text-emerald-700 bg-emerald-50'
+                                    : 'text-rose-700 bg-rose-50'
+                                }`}>
+                                  {c.is_in_sync ? 'SYNCED' : 'UNSYNC'}
                                 </span>
                               </td>
                             </tr>
                           ))
                         )}
-                        {/* Summary Total Row */}
-                        <tr className="bg-slate-50 font-bold border-t-2 border-slate-200 text-slate-900">
-                          <td className="p-3 pl-5 font-black">TOTAL</td>
-                          <td className="p-3 font-black text-blue-700">{totalIndexer}</td>
-                          <td className="p-3 font-black text-blue-700">{totalMongo}</td>
-                          <td className="p-3 pr-5 text-right font-black text-emerald-600">
-                            [OK] SYNC 100%
-                          </td>
-                        </tr>
                       </tbody>
                     </table>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* SECTION 3: PIPELINE SYNCHRONIZATION & CRONJOB SETTINGS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Card A: Pipeline Synchronization Form */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-5">
-          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-            <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
-              <FolderSync className="w-4 h-4" />
+              ))}
             </div>
-            <div>
-              <h3 className="text-sm font-black text-slate-900">
-                Pipeline Synchronization Options
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                Execute synchronization pipelines on demand
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={handleRunSync} className="space-y-4">
-            {/* Pipeline Radio Options */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">
-                Select Synchronization Pipeline
-              </label>
-              <div className="space-y-2">
-                <label
-                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    selectedPipeline === 'indexer-mongo'
-                      ? 'border-blue-500 bg-blue-50/50'
-                      : 'border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="pipeline"
-                    value="indexer-mongo"
-                    checked={selectedPipeline === 'indexer-mongo'}
-                    onChange={(e) => setSelectedPipeline(e.target.value)}
-                    className="mt-0.5 text-blue-600"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block font-mono">
-                      1. indexer-mongo
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      Sync Wazuh Indexer ➔ MongoDB SSOT (Incidents & Vulnerabilities)
-                    </span>
-                  </div>
-                </label>
-
-                <label
-                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    selectedPipeline === 'mongo-redis'
-                      ? 'border-blue-500 bg-blue-50/50'
-                      : 'border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="pipeline"
-                    value="mongo-redis"
-                    checked={selectedPipeline === 'mongo-redis'}
-                    onChange={(e) => setSelectedPipeline(e.target.value)}
-                    className="mt-0.5 text-blue-600"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block font-mono">
-                      2. mongo-redis
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      Sync MongoDB ➔ Redis L1 Real-time Cache (Snapshot Refresh)
-                    </span>
-                  </div>
-                </label>
-
-                <label
-                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    selectedPipeline === 'iris-mongo'
-                      ? 'border-blue-500 bg-blue-50/50'
-                      : 'border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="pipeline"
-                    value="iris-mongo"
-                    checked={selectedPipeline === 'iris-mongo'}
-                    onChange={(e) => setSelectedPipeline(e.target.value)}
-                    className="mt-0.5 text-blue-600"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block font-mono">
-                      3. iris-mongo
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      Sync DFIR-IRIS ➔ MongoDB Reports & Incident Cases
-                    </span>
-                  </div>
-                </label>
-
-                <label
-                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    selectedPipeline === 'all'
-                      ? 'border-blue-500 bg-blue-50/50'
-                      : 'border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="pipeline"
-                    value="all"
-                    checked={selectedPipeline === 'all'}
-                    onChange={(e) => setSelectedPipeline(e.target.value)}
-                    className="mt-0.5 text-blue-600"
-                  />
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block font-mono">
-                      All Complete Pipeline
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      Execute all three pipelines sequentially
-                    </span>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            {/* Tenant Selection */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Target Campus Tenant
-              </label>
-              <select
-                value={selectedTenant}
-                onChange={(e) => setSelectedTenant(e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-              >
-                <option value="all">All Campus Tenants</option>
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.tenantCode}>
-                    [{t.tenantCode}] {t.campusName} ({t.databaseName})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              type="submit"
-              disabled={syncing}
-              className="w-full py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm cursor-pointer"
-            >
-              {syncing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Executing Synchronization Script...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-white" />
-                  <span>Run Pipeline Synchronization</span>
-                </>
-              )}
-            </button>
-          </form>
+          )}
         </div>
+      )}
 
-        {/* Card B: Automated Cronjob Settings (VM 1 Hour Default) */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-5">
-          <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-            <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
-              <Clock className="w-4 h-4" />
-            </div>
+      {/* ========================================================= */}
+      {/* TAB 5: CRONJOB CONFIGURATION                              */}
+      {/* ========================================================= */}
+      {activeTab === 'cronjob' && (
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs max-w-2xl space-y-4 animate-in fade-in duration-200">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">
+              Cron Job Configuration
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Automated multi-tenant background synchronization schedule
+            </p>
+          </div>
+
+          {/* Toggle Enable */}
+          <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200/60">
             <div>
-              <h3 className="text-sm font-black text-slate-900">
-                Cronjob Settings & Automation
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                Automated synchronization schedule on VM 10.20.100.86 (Default: 1 Hour)
-              </p>
+              <span className="text-xs font-bold text-slate-800 block">Automated Sync Schedule</span>
+              <span className="text-[11px] text-slate-500">
+                Periodic execution via background crontab
+              </span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={cronEnabled}
+                onChange={(e) => setCronEnabled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00BCD4]"></div>
+            </label>
+          </div>
+
+          {/* Frequency Dropdown */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              Schedule Frequency (Cron Expression)
+            </label>
+            <CustomSelect
+              value={cronSchedule}
+              onChange={(val) => setCronSchedule(String(val))}
+              disabled={!cronEnabled}
+              options={[
+                { value: '0 * * * *', label: 'Every 1 Hour (Standard Pipeline Default)', badge: '0 * * * *' },
+                { value: '*/30 * * * *', label: 'Every 30 Minutes', badge: '*/30 * * * *' },
+                { value: '*/15 * * * *', label: 'Every 15 Minutes', badge: '*/15 * * * *' },
+                { value: '*/5 * * * *', label: 'Every 5 Minutes (Testing / Rapid Sync)', badge: '*/5 * * * *' },
+                { value: '0 0 * * *', label: 'Daily at Midnight', badge: '0 0 * * *' },
+              ]}
+              className="w-full"
+            />
+          </div>
+
+          {/* Schedule Info */}
+          <div className="bg-[#F8FAFC] border border-slate-200/60 rounded-xl p-3 text-xs space-y-1.5 font-mono text-slate-700">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-400 font-sans">Target Server:</span>
+              <span className="font-bold text-slate-800">10.20.100.86 (Production Master)</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-400 font-sans">Last Executed:</span>
+              <span className="font-bold text-slate-800">
+                {cronConfig?.lastRunAt
+                  ? new Date(cronConfig.lastRunAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                  : '15 mins ago'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-400 font-sans">Next Run:</span>
+              <span className="font-bold text-[#00BCD4]">
+                {cronConfig?.nextRunAt
+                  ? new Date(cronConfig.nextRunAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                  : 'in 1 hour'}
+              </span>
             </div>
           </div>
 
-          <div className="space-y-4">
-            {/* Toggle Enable */}
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200/60">
-              <div>
-                <span className="text-xs font-bold text-slate-800 block">Automated Sync Status</span>
-                <span className="text-[11px] text-slate-500">
-                  Periodic background execution matching VM host crontab
-                </span>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={cronEnabled}
-                  onChange={(e) => setCronEnabled(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-              </label>
-            </div>
-
-            {/* Schedule Dropdown (Default: 1 Hour 0 * * * *) */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Schedule Frequency (Cron Expression)
-              </label>
-              <select
-                value={cronSchedule}
-                onChange={(e) => setCronSchedule(e.target.value)}
-                disabled={!cronEnabled}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 font-mono cursor-pointer"
-              >
-                <option value="0 * * * *">Every 1 Hour (0 * * * *) - VM Default</option>
-                <option value="*/30 * * * *">Every 30 Minutes (*/30 * * * *)</option>
-                <option value="*/15 * * * *">Every 15 Minutes (*/15 * * * *)</option>
-                <option value="*/5 * * * *">Every 5 Minutes (*/5 * * * *)</option>
-                <option value="0 0 * * *">Daily at Midnight (0 0 * * *)</option>
-              </select>
-            </div>
-
-            {/* Timestamps */}
-            <div className="bg-indigo-50/60 border border-indigo-200/60 rounded-xl p-3 text-xs space-y-1.5 text-indigo-900 font-mono">
-              <div className="flex items-center justify-between text-[11px]">
-                <span>Last Executed:</span>
-                <span className="font-bold">
-                  {cronConfig?.lastRunAt
-                    ? new Date(cronConfig.lastRunAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                    : '15 mins ago'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-[11px]">
-                <span>Next Run Schedule:</span>
-                <span className="font-bold text-indigo-700">
-                  {cronConfig?.nextRunAt
-                    ? new Date(cronConfig.nextRunAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                    : 'in 1 hour'}
-                </span>
-              </div>
-            </div>
-
-            <button
-              onClick={handleSaveCron}
-              disabled={savingCron}
-              className="w-full py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              {savingCron ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Saving Configuration...</span>
-                </>
-              ) : (
-                <span>Save Cronjob Configuration</span>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* SECTION 4: TERMINAL LOGS (MATCHING SCRIPT VM OUTPUT) */}
-      {terminalLogs.length > 0 && (
-        <div className="bg-slate-950 rounded-2xl p-5 border border-slate-800 shadow-xl space-y-3 font-mono text-xs">
-          <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2.5">
-            <span className="flex items-center gap-2 text-slate-300 font-bold">
-              <Terminal className="w-4 h-4 text-emerald-400" />
-              <span>Multi-Tenant Script Execution Log (VM 10.20.100.86)</span>
-            </span>
-            <span className="text-[11px] text-slate-500">{terminalLogs.length} log lines</span>
-          </div>
-
-          <div className="max-h-80 overflow-y-auto space-y-1 text-slate-300 text-[11px] leading-relaxed select-text">
-            {terminalLogs.map((logLine, idx) => {
-              const isHeader = logLine.includes('===') || logLine.includes('AUDIT ALERTS') || logLine.includes('REKONSILIASI') || logLine.includes('RECONCILIATION');
-              const isOk = logLine.includes('[OK]') || logLine.includes('✓') || logLine.includes('TERIKAT') || logLine.includes('BOUND');
-              const isWarn = logLine.includes('!');
-              const isErr = logLine.includes('✕') || logLine.includes('Error');
-
-              return (
-                <div
-                  key={idx}
-                  className={`${
-                    isHeader
-                      ? 'text-blue-400 font-bold'
-                      : isOk
-                      ? 'text-emerald-400 font-bold'
-                      : isWarn
-                      ? 'text-amber-300'
-                      : isErr
-                      ? 'text-rose-400'
-                      : 'text-slate-300'
-                  }`}
-                >
-                  {logLine}
-                </div>
-              );
-            })}
-          </div>
+          {/* Save Button */}
+          <button
+            onClick={handleSaveCron}
+            disabled={savingCron}
+            className="w-full py-2 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl transition-all disabled:opacity-50 flex items-center justify-center cursor-pointer shadow-xs"
+          >
+            {savingCron ? 'Saving...' : 'Save Configuration'}
+          </button>
         </div>
       )}
     </div>

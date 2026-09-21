@@ -25,7 +25,7 @@ export function TenantEditModal({
   onSuccess,
   tenant,
 }: TenantEditModalProps) {
-  const [campusName, setCampusName] = useState('');
+  const [tenantName, setTenantName] = useState('');
   const [picName, setPicName] = useState('');
   const [picEmail, setPicEmail] = useState('');
   const [picPhone, setPicPhone] = useState('');
@@ -35,7 +35,7 @@ export function TenantEditModal({
 
   useEffect(() => {
     if (tenant) {
-      setCampusName(tenant.campus_name || '');
+      setTenantName(tenant.campus_name || '');
       setPicName(tenant.pic_name !== '-' ? tenant.pic_name || '' : '');
       setPicEmail(tenant.pic_email !== '-' ? tenant.pic_email || '' : '');
       setPicPhone(tenant.pic_phone !== '-' ? tenant.pic_phone || '' : '');
@@ -47,8 +47,8 @@ export function TenantEditModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!campusName.trim()) {
-      setError('Nama kampus wajib diisi.');
+    if (!tenantName.trim()) {
+      setError('Tenant name is required.');
       return;
     }
 
@@ -60,7 +60,7 @@ export function TenantEditModal({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          campusName: campusName.trim(),
+          campusName: tenantName.trim(),
           picName: picName.trim() || undefined,
           picEmail: picEmail.trim() || undefined,
           picPhone: picPhone.trim() || undefined,
@@ -69,10 +69,10 @@ export function TenantEditModal({
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Gagal memperbarui data kampus');
+        throw new Error(json.error || 'Failed to update tenant details');
       }
 
-      onSuccess(`Data tenant ${campusName} updated successfully.`);
+      onSuccess(`Tenant ${tenantName} updated successfully.`);
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -92,7 +92,7 @@ export function TenantEditModal({
             </div>
             <div>
               <h3 className="font-extrabold text-base text-slate-900">
-                Edit Profil Kampus ({tenant.tenant_code})
+                Edit Tenant Profile ({tenant.tenant_code})
               </h3>
               <p className="text-xs text-slate-500 font-mono">
                 Database: {tenant.database_name}
@@ -119,26 +119,26 @@ export function TenantEditModal({
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
               <Building2 className="w-3.5 h-3.5 text-slate-400" />
-              <span>Nama Resmi Kampus</span>
+              <span>Official Tenant Name</span>
             </label>
             <input
               type="text"
               required
-              value={campusName}
-              onChange={(e) => setCampusName(e.target.value)}
+              value={tenantName}
+              onChange={(e) => setTenantName(e.target.value)}
               className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Nama PIC SOC Kampus
+              Tenant SOC PIC Name
             </label>
             <input
               type="text"
               value={picName}
               onChange={(e) => setPicName(e.target.value)}
-              placeholder="Admin SOC Kampus"
+              placeholder="Admin SOC Tenant"
               className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -147,13 +147,13 @@ export function TenantEditModal({
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5 text-slate-400" />
-                <span>Email PIC</span>
+                <span>PIC Email</span>
               </label>
               <input
                 type="email"
                 value={picEmail}
                 onChange={(e) => setPicEmail(e.target.value)}
-                placeholder="soc@kampus.ac.id"
+                placeholder="soc@tenant.org"
                 className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -161,7 +161,7 @@ export function TenantEditModal({
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5 text-slate-400" />
-                <span>No. Telepon PIC</span>
+                <span>PIC Phone</span>
               </label>
               <input
                 type="text"

@@ -8,6 +8,26 @@ import { pingIris, pingOpenSearch } from '@/lib/iris';
 
 export const dynamic = 'force-dynamic';
 
+function formatUptime(seconds?: number): string {
+  if (!seconds || seconds <= 0) return 'Online';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${d}D ${h}H ${m}M`;
+}
+
+function formatStartedAt(seconds?: number): string {
+  if (!seconds || seconds <= 0) return '-';
+  const date = new Date(Date.now() - seconds * 1000);
+  const d = String(date.getDate()).padStart(2, '0');
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const m = monthNames[date.getMonth()];
+  const y = date.getFullYear();
+  const hr = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${d} ${m} ${y} | ${hr}:${min}`;
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const targetTenantParam = searchParams.get('tenant') || 'all';
@@ -28,6 +48,8 @@ export async function GET(request: NextRequest) {
     // 2. Fetch all tenants from MySQL
     let tenantsList: any[] = [];
     let mysqlUserCount = 0;
+    let mysqlUptime = 'Online';
+    let mysqlStartedAt = '-';
     if (mysqlHealth.ok) {
       try {
         const pool = getMysqlPool();
@@ -45,6 +67,15 @@ export async function GET(request: NextRequest) {
         } catch {}
         tenantsList = Array.isArray(tRows) ? tRows : [];
         mysqlUserCount = count;
+
+        try {
+          const [uRow]: any = await pool.query("SHOW GLOBAL STATUS LIKE 'Uptime'");
+          const uptimeSec = Number(uRow?.[0]?.Value || 0);
+          if (uptimeSec > 0) {
+            mysqlUptime = formatUptime(uptimeSec);
+            mysqlStartedAt = formatStartedAt(uptimeSec);
+          }
+        } catch {}
       } catch (err) {
         console.error('Error querying MySQL tenants:', err);
       }
@@ -176,7 +207,7 @@ export async function GET(request: NextRequest) {
               openSearchHits: cnt,
               mongoCount: cnt,
               isSynced: true,
-              status: '[OK] SINKRON 100%',
+              status: '[OK] 100% Synced',
             });
           }
         } catch (err) {
@@ -211,7 +242,7 @@ export async function GET(request: NextRequest) {
           os,
           version: ver,
           lastKeepAliveWIB: keepalive,
-          syncStatus: '[OK] SINKRON 100%',
+          syncStatus: '[OK] 100% Synced',
         });
       }
 
@@ -230,7 +261,7 @@ export async function GET(request: NextRequest) {
           title: r.report_name || r.title || r.case_name || r.name || `Report #${idx + 1}`,
           incidentType: r.severity ? `[${r.severity}] ${r.client_name || r.customer_name || 'Incident Report'}` : (r.incident_type || 'Security Incident Investigation'),
           status: r.status || 'Closed',
-          syncStatus: '[OK] SINKRON 100%',
+          syncStatus: '[OK] 100% Synced',
         }));
       }
 
@@ -266,6 +297,122 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Compute Today Telemetry Count across ALL tenant databases (tenant_a, tenant_b, ...)
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let todayMongoIncidents = 0;
+    let todayMongoVulns = 0;
+    let todayMongoReports = 0;
+
+    let todayRedisIncidents = 0;
+    let todayRedisVulns = 0;
+    let todayRedisReports = 0;
+
+    if (mongoClient) {
+      const todayStart = new Date(`${todayStr}T00:00:00.000Z`);
+      const todayEnd = new Date(`${todayStr}T23:59:59.999Z`);
+
+      const mongoCounts = await Promise.all(
+        tenantsList.map(async (t) => {
+          try {
+            const db = mongoClient.db(t.database_name);
+            const [incCnt, vulnCnt, repCnt] = await Promise.all([
+              db.collection('incident').countDocuments({
+                $or: [
+                  { date: todayStr },
+                  { date: { $regex: `^${todayStr}` } },
+                  { timestamp: { $regex: `^${todayStr}` } },
+                  { first_observed: { $regex: `^${todayStr}` } }
+                ]
+              }),
+              db.collection('vulnerability').countDocuments({
+                $or: [
+                  { date: todayStr },
+                  { date: { $regex: `^${todayStr}` } },
+                  { detected_at: { $regex: `^${todayStr}` } },
+                  { timestamp: { $regex: `^${todayStr}` } }
+                ]
+              }),
+              db.collection('reports').countDocuments({
+                $or: [
+                  { report_date: todayStr },
+                  { report_date: { $regex: `^${todayStr}` } },
+                  { date_generated: { $gte: todayStart, $lte: todayEnd } },
+                  { date_generated: { $regex: `^${todayStr}` } },
+                  { created_at: { $gte: todayStart, $lte: todayEnd } },
+                  { created_at: { $regex: `^${todayStr}` } },
+                  { date: todayStr }
+                ]
+              })
+            ]);
+            return { incCnt, vulnCnt, repCnt };
+          } catch (err) {
+            console.error(`Error querying today Mongo count for ${t.database_name}:`, err);
+            return { incCnt: 0, vulnCnt: 0, repCnt: 0 };
+          }
+        })
+      );
+
+      for (const mc of mongoCounts) {
+        todayMongoIncidents += mc.incCnt;
+        todayMongoVulns += mc.vulnCnt;
+        todayMongoReports += mc.repCnt;
+      }
+    }
+
+    if (redisClient) {
+      const redisCounts = await Promise.all(
+        tenantsList.map(async (t) => {
+          let rInc = 0;
+          let rVuln = 0;
+          let rRep = 0;
+
+          try {
+            const cleanPrefix = (t.redis_prefix || `${t.database_name}:`).replace(/:+$/, '') + ':';
+            const incKey = `${cleanPrefix}incident:${todayStr}`;
+            const vulnKey = `${cleanPrefix}vulnerability:${todayStr}`;
+            const repKey = `${cleanPrefix}reports`;
+
+            const [incExists, vulnExists, rawRep] = await Promise.all([
+              redisClient.exists(incKey),
+              redisClient.exists(vulnKey),
+              redisClient.get(repKey),
+            ]);
+
+            if (incExists) {
+              rInc = await redisClient.hlen(incKey);
+            }
+            if (vulnExists) {
+              rVuln = await redisClient.hlen(vulnKey);
+            }
+            if (rawRep) {
+              try {
+                const list = JSON.parse(rawRep);
+                if (Array.isArray(list)) {
+                  const todayReports = list.filter((r: any) => {
+                    const d = r.report_date || r.date_generated || r.created_at || r.date;
+                    if (!d) return false;
+                    const dStr = typeof d === 'string' ? d : (d instanceof Date ? d.toISOString() : String(d));
+                    return dStr.includes(todayStr);
+                  });
+                  rRep = todayReports.length;
+                }
+              } catch {}
+            }
+          } catch (err) {
+            console.error(`Error querying today Redis count for ${t.database_name}:`, err);
+          }
+
+          return { rInc, rVuln, rRep };
+        })
+      );
+
+      for (const rc of redisCounts) {
+        todayRedisIncidents += rc.rInc;
+        todayRedisVulns += rc.rVuln;
+        todayRedisReports += rc.rRep;
+      }
+    }
+
     const mysqlHost = process.env.MYSQL_HOST || '';
     const redisHost = process.env.REDIS_HOST ? `${process.env.REDIS_HOST}:${process.env.REDIS_PORT || '6379'}` : '';
     const wazuhHost = process.env.WAZUH_API_URL || '';
@@ -280,13 +427,36 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
+    let mongoUptime = 'Online';
+    let mongoStartedAt = '-';
+    if (mongoClient) {
+      try {
+        const s = await mongoClient.db('admin').command({ serverStatus: 1 }).catch(() => null);
+        if (s?.uptime) {
+          mongoUptime = formatUptime(Number(s.uptime));
+          mongoStartedAt = formatStartedAt(Number(s.uptime));
+        }
+      } catch {}
+    }
+
+    let redisUptime = 'Online';
+    let redisStartedAt = '-';
+    if (redisClient) {
+      try {
+        const info = await redisClient.info('server');
+        const m = info.match(/uptime_in_seconds:(\d+)/);
+        if (m) {
+          const uptimeSec = Number(m[1]);
+          redisUptime = formatUptime(uptimeSec);
+          redisStartedAt = formatStartedAt(uptimeSec);
+        }
+      } catch {}
+    }
+
     const nodes = [
-      { id: 'mysql', name: 'MySQL Multi-Tenant & Auth', engine: 'MySQL 8.0', port: 3306, target: `${mysqlHost}:3306`, database: 'auth_db', ok: mysqlHealth.ok, latencyMs: mysqlHealth.latencyMs, userCount: mysqlUserCount, tenantCount: tenantsList.length, role: 'Master Auth & Mapping SSOT' },
-      { id: 'mongodb', name: 'MongoDB Historic Master', engine: 'MongoDB 7.0', port: 27017, target: mongoTarget, database: targetTenantParam === 'all' ? 'All Databases' : targetTenants[0]?.database_name, ok: mongoHealth.ok, latencyMs: mongoHealth.latencyMs, role: 'Permanent Document Storage' },
-      { id: 'redis', name: 'Redis Real-Time L1 Cache', engine: 'Redis 7.x (In-Memory)', port: 6379, target: redisHost, database: 'DB 0', ok: redisHealth.ok, latencyMs: redisHealth.latencyMs, role: 'L1 In-Memory Aggregation Cache' },
-      { id: 'wazuh', name: 'Wazuh Agent & Manager API', engine: `Wazuh Manager ${wazuhHealth.version || 'v4.14'}`, port: 55000, target: wazuhHost, database: 'REST API & Agent Daemon', ok: wazuhHealth.ok, latencyMs: wazuhHealth.latencyMs, version: wazuhHealth.version, role: 'Security Agent Telemetry' },
-      { id: 'opensearch', name: 'Wazuh OpenSearch Indexer', engine: `OpenSearch ${opensearchHealth.version || '2.x'}`, port: 9200, target: opensearchHost, database: 'wazuh-alerts-*', ok: opensearchHealth.ok, latencyMs: opensearchHealth.latencyMs, version: opensearchHealth.version, role: 'Raw Log Stream Indexer' },
-      { id: 'iris', name: 'DFIR-IRIS PostgreSQL', engine: 'IRIS Web / PostgreSQL', port: 8443, target: irisHost, database: 'iris_db', ok: irisHealth.ok, latencyMs: irisHealth.latencyMs, role: 'Case Management Platform' },
+      { id: 'mysql', name: 'MYSQL', engine: 'MySQL 8.0', port: 3306, target: `${mysqlHost}:3306`, database: 'auth_db', ok: mysqlHealth.ok, latencyMs: mysqlHealth.latencyMs, userCount: mysqlUserCount, tenantCount: tenantsList.length, role: 'User & Tenant Mapping', uptime: mysqlUptime, startedAt: mysqlStartedAt, lastSeen: mysqlHealth.ok ? 'Online' : 'Disconnected', logoSrc: '/mysql.png' },
+      { id: 'mongodb', name: 'MongoDB', engine: 'MongoDB 7.0', port: 27017, target: mongoTarget, database: targetTenantParam === 'all' ? 'All Databases' : targetTenants[0]?.database_name, ok: mongoHealth.ok, latencyMs: mongoHealth.latencyMs, role: 'Transactional & Aggregate Database', uptime: mongoUptime, startedAt: mongoStartedAt, lastSeen: mongoHealth.ok ? 'Online' : 'Disconnected', logoSrc: '/mongodb.png' },
+      { id: 'redis', name: 'Redis', engine: 'Redis 7.x (In-Memory)', port: 6379, target: redisHost, database: 'DB 0', ok: redisHealth.ok, latencyMs: redisHealth.latencyMs, role: 'Frequent Access Data Cache', uptime: redisUptime, startedAt: redisStartedAt, lastSeen: redisHealth.ok ? 'Online' : 'Disconnected', logoSrc: '/redis.png' },
     ];
 
     return NextResponse.json({
@@ -295,6 +465,19 @@ export async function GET(request: NextRequest) {
       tenants: tenantsList,
       nodes,
       tenantAudits,
+      todayDataCount: {
+        date: todayStr,
+        mongo: {
+          incidents: todayMongoIncidents,
+          vulns: todayMongoVulns,
+          reports: todayMongoReports,
+        },
+        redis: {
+          incidents: todayRedisIncidents,
+          vulns: todayRedisVulns,
+          reports: todayRedisReports,
+        },
+      },
       summary: {
         totalNodes: nodes.length,
         onlineNodes: nodes.filter((n) => n.ok).length,

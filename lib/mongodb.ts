@@ -13,12 +13,14 @@ let activeClientPromise: Promise<MongoClient> | null = null;
 let lastFailureTime = 0;
 const RETRY_COOLDOWN_MS = 10000;
 
-async function connectToMongo(uri: string, timeoutMs: number = 3000): Promise<MongoClient> {
+async function connectToMongo(uri: string, timeoutMs: number = 15000): Promise<MongoClient> {
   const client = new MongoClient(uri, {
     serverSelectionTimeoutMS: timeoutMs,
     connectTimeoutMS: timeoutMs,
+    socketTimeoutMS: 45000,
     maxPoolSize: 20,
-    minPoolSize: 2,
+    minPoolSize: 1,
+    directConnection: true,
   });
   await client.connect();
   return client;
@@ -50,7 +52,7 @@ export async function getMongoClient(): Promise<MongoClient> {
   }
 
   try {
-    const client = await connectToMongo(uri, 3000);
+    const client = await connectToMongo(uri, 15000);
     globalClient = client;
     activeClientPromise = Promise.resolve(client);
     lastFailureTime = 0;
@@ -65,7 +67,7 @@ export async function getMongoClient(): Promise<MongoClient> {
 
 export async function getMongoDb(databaseName?: string): Promise<Db> {
   const client = await getMongoClient();
-  const targetDb = databaseName || 'platform_master';
+  const targetDb = databaseName || 'tenant_a';
   return client.db(targetDb);
 }
 

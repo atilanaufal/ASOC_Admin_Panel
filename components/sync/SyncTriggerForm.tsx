@@ -34,12 +34,12 @@ export function SyncTriggerForm({ initialTenant = 'all' }: SyncTriggerProps) {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        setErrorMessage(data.error || 'Terjadi kesalahan saat memicu sinkronisasi.');
+        setErrorMessage(data.error || 'An error occurred while triggering synchronization.');
       } else {
         setSyncResult(data);
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Gagal terhubung ke backend server.');
+      setErrorMessage(err.message || 'Failed to connect to backend server.');
     } finally {
       setIsRunning(false);
     }
@@ -51,7 +51,7 @@ export function SyncTriggerForm({ initialTenant = 'all' }: SyncTriggerProps) {
       <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
         <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
           <RefreshCw className="w-5 h-5 text-blue-600" />
-          <span>Konfigurasi & Pemicu Eksekusi Sinkronisasi Pipeline</span>
+          <span>Pipeline Synchronization Execution & Configuration</span>
         </h3>
 
         <form onSubmit={handleRunSync} className="space-y-5">
@@ -59,33 +59,35 @@ export function SyncTriggerForm({ initialTenant = 'all' }: SyncTriggerProps) {
             {/* Tenant Selection */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                Target Kampus (Tenant)
+                Target Tenant
               </label>
               <select
                 value={selectedTenant}
                 onChange={(e) => setSelectedTenant(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50/80 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
               >
-                <option value="all">All Tenant Kampus (All)</option>
-                <option value="UI">Universitas Indonesia (UI)</option>
-                <option value="UPJ">Universitas Pembangunan Jaya (UPJ)</option>
-                <option value="ITB">Institut Teknologi Bandung (ITB)</option>
+                <option value="all">All Tenants</option>
+                <option value="TNTA">Tenant A (TNTA)</option>
+                <option value="TNTB">Tenant B (TNTB)</option>
+                <option value="TNTC">Tenant C (TNTC)</option>
+                <option value="TNTD">Tenant D (TNTD)</option>
+                <option value="TES1">Tenant TES1 (TES1)</option>
               </select>
             </div>
 
             {/* Pipeline Selection */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                Pipeline Saluran
+                Pipeline Channel
               </label>
               <select
                 value={selectedPipeline}
                 onChange={(e) => setSelectedPipeline(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50/80 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
               >
-                <option value="all">All Pipeline Lengkap (Full Sync)</option>
-                <option value="wazuh-indexer-to-mongo">Wazuh Indexer ➔ MongoDB SSOT</option>
-                <option value="mongo-to-redis">MongoDB ➔ Redis L1 Real-time Warmup</option>
+                <option value="all">All Pipelines (Full Sync)</option>
+                <option value="wazuh-indexer-to-mongo">Wazuh Indexer ➔ MongoDB</option>
+                <option value="mongo-to-redis">MongoDB ➔ Redis Real-time Warmup</option>
                 <option value="iris-to-mongo">DFIR-IRIS ➔ MongoDB Reports</option>
                 <option value="wazuh-agents">Wazuh Telemetry & Agent Discovery</option>
               </select>
@@ -94,17 +96,17 @@ export function SyncTriggerForm({ initialTenant = 'all' }: SyncTriggerProps) {
             {/* Time Range */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                Rentang Waktu Data
+                Data Time Range
               </label>
               <select
                 value={timeRange}
                 onChange={(e) => setTimeRange(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50/80 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
               >
                 <option value="24hours">Last 24 Hours</option>
                 <option value="7days">Last 7 Days</option>
                 <option value="30days">Last 30 Days</option>
-                <option value="all">Seluruh Riwayat (Historical All)</option>
+                <option value="all">All History (Historical All)</option>
               </select>
             </div>
           </div>
@@ -113,17 +115,17 @@ export function SyncTriggerForm({ initialTenant = 'all' }: SyncTriggerProps) {
             <button
               type="submit"
               disabled={isRunning}
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl flex items-center gap-2 shadow-md shadow-blue-600/20 disabled:opacity-50 transition-all cursor-pointer"
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-md shadow-blue-600/20 disabled:opacity-50 transition-all cursor-pointer"
             >
               {isRunning ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Sedang Menjalankan Sinkronisasi...</span>
+                  <span>Executing Synchronization...</span>
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4 fill-white" />
-                  <span>Jalankan Sinkronisasi Pipeline</span>
+                  <span>Run Pipeline Synchronization</span>
                 </>
               )}
             </button>
@@ -149,7 +151,7 @@ export function SyncTriggerForm({ initialTenant = 'all' }: SyncTriggerProps) {
               </div>
               <div>
                 <h4 className="font-bold text-sm text-slate-900">
-                  Sinkronisasi Pipeline Berhasil Selesai
+                  Pipeline Synchronization Completed Successfully
                 </h4>
                 <p className="text-xs text-slate-500">
                   Target Tenant: {syncResult.tenantsProcessed?.join(', ')}
@@ -159,7 +161,7 @@ export function SyncTriggerForm({ initialTenant = 'all' }: SyncTriggerProps) {
 
             <div className="flex items-center gap-4 text-xs">
               <div className="text-right">
-                <span className="text-slate-400">Total Durasi</span>
+                <span className="text-slate-400">Total Duration</span>
                 <p className="font-mono font-bold text-slate-800">
                   {syncResult.executionDurationMs} ms
                 </p>
@@ -177,7 +179,7 @@ export function SyncTriggerForm({ initialTenant = 'all' }: SyncTriggerProps) {
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 mb-2">
               <Terminal className="w-4 h-4 text-blue-500" />
-              <span>Log Eksekusi Real-Time Pipeline:</span>
+              <span>Real-Time Pipeline Execution Log:</span>
             </div>
             <div className="bg-slate-950 text-slate-200 font-mono text-xs p-4 rounded-xl border border-slate-800 space-y-1 max-h-60 overflow-y-auto custom-scrollbar">
               {(syncResult.logs || []).map((log: string, idx: number) => (

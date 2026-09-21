@@ -41,14 +41,19 @@ export function ServiceStatusGrid({
       case 'fluent_bit':
         return <Zap className="w-5 h-5 text-amber-500" />;
       case 'go_grpc_pumper':
+      case 'mongo-redis-multitenant-pumper':
         return <Activity className="w-5 h-5 text-cyan-500" />;
       case 'iris_case_shipper':
+      case 'iris-case-shipper':
         return <Layers className="w-5 h-5 text-blue-500" />;
       case 'asoc_agent_fetcher':
+      case 'wazuh-agent-full':
+      case 'wazuh-agent-stats':
         return <Clock className="w-5 h-5 text-indigo-500" />;
       case 'mongod':
         return <Database className="w-5 h-5 text-emerald-500" />;
       case 'redis':
+      case 'redis-server':
         return <Radio className="w-5 h-5 text-rose-500" />;
       case 'mysql':
         return <Database className="w-5 h-5 text-blue-500" />;
@@ -112,7 +117,7 @@ export function ServiceStatusGrid({
             {/* Bottom Meta */}
             <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono">
               <span className="text-slate-400">
-                {service.port ? `Port :${service.port}` : service.type.toUpperCase()}
+                {service.type.toUpperCase()}
               </span>
               {service.latencyMs !== undefined ? (
                 <span className="text-emerald-600 font-bold">

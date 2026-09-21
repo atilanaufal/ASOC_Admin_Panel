@@ -12,7 +12,7 @@ export default function AdminLayout({
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen flex flex-col bg-[#F4F7FA] text-slate-800">
       {/* Top Global Header spanning full width matching Figma */}
       <AdminHeader
         onToggleSidebar={() => setCollapsed(!collapsed)}

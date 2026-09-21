@@ -92,14 +92,8 @@ export function DaemonDetailModal({
 
           {/* Specs */}
           <div className="grid grid-cols-2 gap-2 font-mono">
-            {service.port && (
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-                <span className="text-slate-400 text-[10px] block">Port / Socket</span>
-                <span className="font-bold text-blue-500">:{service.port}</span>
-              </div>
-            )}
             {service.protocol && (
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 col-span-2">
                 <span className="text-slate-400 text-[10px] block">Protokol</span>
                 <span className="font-bold text-slate-800">{service.protocol}</span>
               </div>

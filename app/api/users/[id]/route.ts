@@ -7,14 +7,14 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const userId = parseInt(id, 10);
-
-    if (isNaN(userId) || userId <= 0) {
+    if (!id || !id.trim()) {
       return NextResponse.json(
         { success: false, error: 'ID Pengguna tidak valid.' },
         { status: 400 }
       );
     }
+    const cleanId = id.trim();
+    const userId = /^\d+$/.test(cleanId) ? parseInt(cleanId, 10) : cleanId;
 
     const body = await request.json();
     const { action, newPassword, email, role, tenantId } = body;
@@ -99,14 +99,14 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const userId = parseInt(id, 10);
-
-    if (isNaN(userId) || userId <= 0) {
+    if (!id || !id.trim()) {
       return NextResponse.json(
         { success: false, error: 'ID Pengguna tidak valid.' },
         { status: 400 }
       );
     }
+    const cleanId = id.trim();
+    const userId = /^\d+$/.test(cleanId) ? parseInt(cleanId, 10) : cleanId;
 
     const result = await deleteUser(userId);
 

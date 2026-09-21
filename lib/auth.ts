@@ -57,7 +57,7 @@ export const auth = betterAuth({
       databaseName: {
         type: 'string',
         required: false,
-        defaultValue: 'platform_master',
+        defaultValue: '-',
         input: true,
       },
       redisPrefix: {
@@ -113,7 +113,7 @@ export async function syncSuperadminToBetterAuth(
             masterUser.tenant_id,
             masterUser.tenant_code || 'MASTER',
             masterUser.campus_name || 'ASOC Central Management',
-            masterUser.database_name || 'platform_master',
+            masterUser.database_name || '-',
             masterUser.redis_prefix || 'asoc_master',
             baUser.id,
           ]
@@ -129,7 +129,7 @@ export async function syncSuperadminToBetterAuth(
             tenantId: masterUser.tenant_id,
             tenantCode: masterUser.tenant_code || 'MASTER',
             campusName: masterUser.campus_name || 'ASOC Central Management',
-            databaseName: masterUser.database_name || 'platform_master',
+            databaseName: masterUser.database_name || '-',
             redisPrefix: masterUser.redis_prefix || 'asoc_master',
           } as any,
         });

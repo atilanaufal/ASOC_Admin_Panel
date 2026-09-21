@@ -22,10 +22,10 @@ export function UnassignedAgentAlert({
         </div>
         <div>
           <h4 className="font-extrabold text-sm text-amber-900 flex items-center gap-2">
-            <span>Ditemukan {unassignedCount} Agen Wazuh Belum Dipetakan!</span>
+            <span>Found {unassignedCount} Unmapped Wazuh Agents!</span>
           </h4>
           <p className="text-xs text-amber-700/90 mt-0.5">
-            Terdapat agen aktif yang belum terikat pada database kampus manapun. Petakan agen ke kampus target agar alert keamanan dan telemetri perangkat tersinkronkan ke dashboard tenant.
+            Active agents detected without tenant database mapping. Map these agents to a target tenant so security alerts and telemetry synchronize to tenant dashboards.
           </p>
         </div>
       </div>
@@ -35,7 +35,7 @@ export function UnassignedAgentAlert({
         onClick={onFilterUnassigned}
         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md shadow-amber-600/20 transition-all cursor-pointer flex-shrink-0"
       >
-        <span>Lihat Agen Unassigned</span>
+        <span>View Unassigned Agents</span>
         <ArrowRight className="w-3.5 h-3.5" />
       </button>
     </div>

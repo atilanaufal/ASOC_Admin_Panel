@@ -1,6 +1,7 @@
 import { getMongoClient } from '@/lib/mongodb';
 import { getActiveRedisClient } from '@/lib/redis';
 import { getMysqlPool } from '@/lib/mysql';
+import { getRemoteVmConfig } from '@/lib/remote';
 import { formatBytes } from '@/lib/tenant-utils';
 
 export interface VmServiceResource {
@@ -31,7 +32,7 @@ export interface VmResourceSummary {
 }
 
 export async function getVmResourceMetrics(): Promise<VmResourceSummary> {
-  const targetHost = process.env.MYSQL_HOST || '10.20.100.86';
+  const { host: targetHost } = getRemoteVmConfig();
 
   // 1. Fetch MySQL Metrics
   let mysqlStats = {
@@ -190,7 +191,7 @@ export async function getVmResourceMetrics(): Promise<VmResourceSummary> {
   const services: VmServiceResource[] = [
     {
       id: 'mongodb',
-      name: 'MongoDB Multi-Tenant Master SSOT',
+      name: 'MongoDB Multi-Tenant Database',
       role: 'Document Store (Incidents & Vulnerabilities per Tenant)',
       host: `${targetHost}:27017`,
       status: mongoStats.ok ? 'ONLINE' : 'OFFLINE',
@@ -209,7 +210,7 @@ export async function getVmResourceMetrics(): Promise<VmResourceSummary> {
     {
       id: 'mysql',
       name: 'MySQL 8.0 Multi-Tenant & Auth Store',
-      role: 'Master Auth, Tenant Registry & Binding SSOT',
+      role: 'Master Auth, Tenant Registry & Binding Database',
       host: `${targetHost}:3306`,
       status: mysqlStats.ok ? 'ONLINE' : 'OFFLINE',
       ramUsedFormatted: formatBytes(mysqlStats.ramBytes),

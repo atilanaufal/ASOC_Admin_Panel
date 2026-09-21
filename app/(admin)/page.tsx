@@ -3,123 +3,51 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  Power,
-  Cpu,
-  Layers,
-  HardDrive,
   ArrowRight,
   RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  Users,
   Building2,
 } from 'lucide-react';
-
-interface OverviewSummary {
-  databases: {
-    total: number;
-    online: number;
-    offline: number;
-    healthPercent: number;
-  };
-  agents: {
-    total: number;
-    online: number;
-    offline: number;
-    healthPercent: number;
-  };
-  services: {
-    total: number;
-    online: number;
-    offline: number;
-    healthPercent: number;
-  };
-  latency: {
-    queryLatency: number;
-    writeLatency: number;
-    history: Array<{ time: string; query: number; write: number }>;
-  };
-  resources: {
-    cpuPercent: number;
-    memPercent: number;
-    diskPercent: number;
-    avgUtilization: number;
-  };
-  sync: {
-    isMismatch: boolean;
-    statusText: string;
-  };
-  agentGrouping: {
-    allGrouped: boolean;
-    unassignedCount: number;
-    statusText: string;
-  };
-}
+import { DonutGauge } from '@/components/ui/DonutGauge';
 
 interface OverviewResponse {
   success: boolean;
   timestamp: string;
-  summary?: OverviewSummary;
-  health?: any;
-  metrics?: any;
+  summary?: {
+    databases: { total: number; online: number; offline: number; healthPercent: number };
+    agents: { total: number; online: number; offline: number; healthPercent: number };
+    services: { total: number; online: number; offline: number; healthPercent: number };
+    resources: { cpuPercent: number; memPercent: number; diskPercent: number; avgUtilization: number };
+    sync?: { isMismatch: boolean; statusText: string };
+    agentGrouping?: {
+      total: number;
+      groupedCount: number;
+      ungroupedCount: number;
+      allGrouped: boolean;
+      statusText: string;
+    };
+    irisMapping?: {
+      totalTenants: number;
+      mappedCount: number;
+      unmappedCount: number;
+      allMapped: boolean;
+      statusText: string;
+    };
+  };
+  metrics?: {
+    tenantCount?: number;
+    userCount?: number;
+    tenants?: Array<{ id: number; tenant_code: string; tenant_name?: string; campus_name?: string; userCount?: number }>;
+  };
 }
-
-// Compact Vector Circular Progress Ring
-function CircularProgress({
-  percent,
-  className = 'w-16 h-16',
-  color = '#4287FF',
-  trackColor = '#E2E8F0',
-  label,
-}: {
-  percent: number;
-  className?: string;
-  color?: string;
-  trackColor?: string;
-  label?: string;
-}) {
-  const size = 80;
-  const strokeWidth = 8;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (Math.min(100, Math.max(0, percent)) / 100) * circumference;
-
-  return (
-    <div className={`relative inline-flex items-center justify-center flex-shrink-0 ${className}`}>
-      <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
-        {/* Track */}
-        <circle
-          cx={40}
-          cy={40}
-          r={radius}
-          stroke={trackColor}
-          strokeWidth={strokeWidth}
-          fill="transparent"
-        />
-        {/* Fill */}
-        <circle
-          cx={40}
-          cy={40}
-          r={radius}
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          strokeLinecap="round"
-          fill="transparent"
-          className="transition-all duration-700 ease-out"
-        />
-      </svg>
-      <span className="absolute text-xs lg:text-sm font-extrabold text-slate-800 tracking-tight">
-        {label || `${Math.round(percent)}%`}
-      </span>
-    </div>
-  );
-}
-
-
 
 export default function OverviewPage() {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [resourceTab, setResourceTab] = useState<'RAM' | 'CPU' | 'DISK'>('RAM');
 
   const fetchOverview = async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -139,360 +67,338 @@ export default function OverviewPage() {
 
   useEffect(() => {
     fetchOverview();
-    const interval = setInterval(() => fetchOverview(false), 25000);
+    const interval = setInterval(() => fetchOverview(false), 30000);
     return () => clearInterval(interval);
   }, []);
 
   const summary = data?.summary || {
-    databases: { total: 5, online: 2, offline: 3, healthPercent: 40 },
-    agents: { total: 50, online: 47, offline: 3, healthPercent: 90 },
-    services: { total: 8, online: 8, offline: 0, healthPercent: 100 },
-    latency: {
-      queryLatency: 23.7,
-      writeLatency: 10.5,
-      history: [],
+    databases: { total: 5, online: 4, offline: 1, healthPercent: 80 },
+    agents: { total: 20, online: 19, offline: 1, healthPercent: 95 },
+    services: { total: 7, online: 5, offline: 2, healthPercent: 71 },
+    resources: { cpuPercent: 28, memPercent: 32, diskPercent: 15, avgUtilization: 25 },
+    sync: { isMismatch: false, statusText: 'Synchronized' },
+    agentGrouping: {
+      total: 20,
+      groupedCount: 19,
+      ungroupedCount: 1,
+      allGrouped: false,
+      statusText: '1 Ungrouped',
     },
-    resources: {
-      cpuPercent: 23,
-      memPercent: 100,
-      diskPercent: 100,
-      avgUtilization: 63.5,
+    irisMapping: {
+      totalTenants: 5,
+      mappedCount: 4,
+      unmappedCount: 1,
+      allMapped: false,
+      statusText: '1 Unmapped',
     },
-    sync: { isMismatch: true, statusText: 'Mismatch Detected' },
-    agentGrouping: { allGrouped: true, unassignedCount: 0, statusText: 'All Agents Grouped' },
   };
 
+  const rawTenants = data?.metrics?.tenants || [];
+  const tenantUsers =
+    rawTenants.length > 0
+      ? rawTenants.map((t) => {
+          const tName = t.tenant_name || t.campus_name || '';
+          return {
+            name: tName ? `${tName.toUpperCase()} (${t.tenant_code})` : t.tenant_code,
+            users: t.userCount ?? 1,
+          };
+        })
+      : [
+          { name: 'TENANT A (TNTA)', users: 1 },
+          { name: 'TENANT B (TNTB)', users: 1 },
+          { name: 'TENANT C (TNTC)', users: 1 },
+          { name: 'TENANT D (TNTD)', users: 1 },
+          { name: 'TES1 (TES1)', users: 1 },
+        ];
+
+  const currentResourcePercent =
+    resourceTab === 'RAM'
+      ? Math.round(summary.resources.memPercent)
+      : resourceTab === 'CPU'
+      ? Math.round(summary.resources.cpuPercent)
+      : Math.round(summary.resources.diskPercent);
+
   return (
-    <div className="space-y-4 md:space-y-5 pb-6 animate-in fade-in duration-200">
-      {/* Page Heading */}
+    <div className="space-y-6 pb-8 animate-in fade-in duration-200">
+      {/* Top Bar with Refresh button */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl md:text-2xl font-bold text-[#2F2F2F] tracking-tight">
-          System Status Check
-        </h1>
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">
+            Overview
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Real-time infrastructure telemetry, tenant metrics, and synchronization health.
+          </p>
+        </div>
 
         <button
           onClick={() => fetchOverview(true)}
           disabled={refreshing}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200/80 text-slate-700 text-xs font-semibold rounded-lg shadow-sm transition-all cursor-pointer disabled:opacity-50"
+          className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200/80 text-slate-700 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
-          <span>Refresh Data</span>
+          <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
         </button>
       </div>
 
       {/* ========================================================= */}
-      {/* ROW 1: Quick Count Grid (3 Clean White Cards)             */}
+      {/* ROW 1: 3 KPI Summary Cards with Donut Gauges (Figma)      */}
       {/* ========================================================= */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Card 1: Databases */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-sm text-slate-700">Databases</h3>
-            <Link
-              href="/database-status"
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
-            >
-              <span>View Database</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          <div className="flex items-center justify-between pt-1">
-            <div className="space-y-1">
-              <div className="text-2xl lg:text-3xl font-extrabold text-[#2F2F2F] tracking-tight">
-                {summary.databases.total} Total
-              </div>
-              <div className="flex items-center gap-1.5 text-[#00A502] font-semibold text-xs">
-                <Power className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>
-                  {summary.databases.total} / {summary.databases.online} Online
-                </span>
-              </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* Card 1: Database */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex items-center justify-between hover:shadow-md transition-all">
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-slate-800">Database</h3>
+            <div className="text-2xl md:text-3xl font-extrabold text-slate-800 tracking-tight">
+              {summary.databases.total} Total
             </div>
-
-            <CircularProgress
-              percent={summary.databases.healthPercent}
-              className="w-16 h-16"
-              color="#4287FF"
-            />
+            <div className="text-xs font-bold text-emerald-600 tracking-wide uppercase">
+              {summary.databases.online} / {summary.databases.total} ONLINE
+            </div>
           </div>
+          <DonutGauge
+            percentage={summary.databases.healthPercent || 80}
+            size={96}
+            strokeWidth={9}
+            color="#0066FF"
+          />
         </div>
 
-        {/* Card 2: Wazuh Agents (with left blue accent border) */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 border-l-4 border-l-[#0037B0] p-4 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-sm text-slate-700">Wazuh Agents</h3>
-            <Link
-              href="/agent-mapping"
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
-            >
-              <span>Manage Agents</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          <div className="flex items-center justify-between pt-1">
-            <div className="space-y-1">
-              <div className="text-2xl lg:text-3xl font-extrabold text-[#2F2F2F] tracking-tight">
-                {summary.agents.total} Total
-              </div>
-              <div className="flex items-center gap-1.5 text-[#00A502] font-semibold text-xs">
-                <Power className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>
-                  {summary.agents.total} / {summary.agents.online} Online
-                </span>
-              </div>
+        {/* Card 2: Wazuh Agents */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex items-center justify-between hover:shadow-md transition-all">
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-slate-800">Wazuh Agents</h3>
+            <div className="text-2xl md:text-3xl font-extrabold text-slate-800 tracking-tight">
+              {summary.agents.total} Total
             </div>
-
-            <CircularProgress
-              percent={summary.agents.healthPercent}
-              className="w-16 h-16"
-              color="#4287FF"
-            />
+            <div className="text-xs font-bold text-emerald-600 tracking-wide uppercase">
+              {summary.agents.online} / {summary.agents.total} ONLINE
+            </div>
           </div>
+          <DonutGauge
+            percentage={summary.agents.healthPercent || 75}
+            size={96}
+            strokeWidth={9}
+            color="#0066FF"
+          />
         </div>
 
         {/* Card 3: Running Services */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-sm text-slate-700">Running Services</h3>
-            <Link
-              href="/service-monitor"
-              className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
-            >
-              <span>Service Details</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex items-center justify-between hover:shadow-md transition-all">
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-slate-800">Running Services</h3>
+            <div className="text-2xl md:text-3xl font-extrabold text-slate-800 tracking-tight">
+              {summary.services.total} Total
+            </div>
+            <div className="text-xs font-bold text-emerald-600 tracking-wide uppercase">
+              {summary.services.online} / {summary.services.total} ONLINE
+            </div>
+          </div>
+          <DonutGauge
+            percentage={summary.services.healthPercent || 100}
+            size={96}
+            strokeWidth={9}
+            color="#0066FF"
+          />
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* ROW 2: Total Users (Left) & Resources Usage (Right)        */}
+      {/* ========================================================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Total Users List Card (Left - 8 cols) */}
+        <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-800">Total Users</h3>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold">
+                {tenantUsers.reduce((sum, u) => sum + (u.users || 0), 0)}
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1">
-            <div className="space-y-1">
-              <div className="text-2xl lg:text-3xl font-extrabold text-[#2F2F2F] tracking-tight">
-                {summary.services.total} Total
-              </div>
-              <div className="flex items-center gap-1.5 text-[#00A502] font-semibold text-xs">
-                <Power className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>
-                  {summary.services.total} / {summary.services.online} Online
+          <div className="divide-y divide-slate-100 mt-2">
+            {tenantUsers.map((item) => (
+              <div
+                key={item.name}
+                className="py-3 flex items-center justify-between text-xs md:text-sm hover:bg-slate-50/50 px-2 rounded-lg transition-colors"
+              >
+                <span className="font-medium text-slate-700">{item.name}</span>
+                <span className="font-semibold text-slate-400 font-mono">
+                  {item.users} Users
                 </span>
               </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Resources Usage Donut Card (Right - 4 cols) */}
+        <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-800">Resources Usage</h3>
+              <Link
+                href="/resource-usage"
+                className="text-slate-400 hover:text-blue-600 transition-colors cursor-pointer"
+                title="View Resource Details"
+              >
+                <ArrowRight className="w-4 h-4" />
+              </Link>
             </div>
 
-            <CircularProgress
-              percent={summary.services.healthPercent}
-              className="w-16 h-16"
-              color="#4287FF"
+            {/* RAM / CPU / DISK Tabs */}
+            <div className="flex items-center gap-4 mt-4 text-xs font-bold tracking-wider">
+              <button
+                onClick={() => setResourceTab('RAM')}
+                className={`transition-colors cursor-pointer ${
+                  resourceTab === 'RAM'
+                    ? 'text-emerald-500 font-extrabold'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                RAM
+              </button>
+              <button
+                onClick={() => setResourceTab('CPU')}
+                className={`transition-colors cursor-pointer ${
+                  resourceTab === 'CPU'
+                    ? 'text-emerald-500 font-extrabold'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                CPU
+              </button>
+              <button
+                onClick={() => setResourceTab('DISK')}
+                className={`transition-colors cursor-pointer ${
+                  resourceTab === 'DISK'
+                    ? 'text-emerald-500 font-extrabold'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                DISK
+              </button>
+            </div>
+          </div>
+
+          {/* Large Donut Ring Centered */}
+          <div className="py-6 flex items-center justify-center">
+            <DonutGauge
+              percentage={currentResourcePercent}
+              size={160}
+              strokeWidth={14}
+              color="#0066FF"
             />
           </div>
         </div>
       </div>
 
       {/* ========================================================= */}
-      {/* ROW 2: Latency & Compact Resources Usage (No Gaps)        */}
+      {/* ROW 3: 3 Infrastructure Status Widgets Side-by-Side       */}
+      {/* Data Synchronization | Agent Grouping | IRIS Mapping      */}
+      {/* (Clean stat card style matching Gambar 3, no donut gauge) */}
       {/* ========================================================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Left: Multi-Tenant Campus Registry (7 Cols) */}
-        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/80 p-4 lg:p-5 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-blue-600" />
-                <h3 className="font-bold text-sm text-slate-800">Multi-Tenant Campus Registry</h3>
-              </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* Widget 1: Data Synchronization (Mismatch / Synchronized only) */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex items-center justify-between hover:shadow-md transition-all">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Data Synchronization
+              </h3>
               <Link
-                href="/tenants"
-                className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                href="/data-sync"
+                className="text-slate-400 hover:text-blue-600 transition-colors"
+                title="View Data Synchronization"
               >
-                <span>Manage Tenants</span>
-                <ArrowRight className="w-3 h-3" />
+                <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
-
-            {/* Quick Metrics Pills */}
-            <div className="grid grid-cols-3 gap-2.5 mb-3.5">
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                <p className="text-[11px] font-semibold text-slate-500">Campuses</p>
-                <p className="text-lg font-extrabold text-slate-900 font-mono mt-0.5">
-                  {data?.metrics?.tenantCount ?? 4}
-                </p>
-              </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                <p className="text-[11px] font-semibold text-slate-500">Databases</p>
-                <p className="text-lg font-extrabold text-blue-600 font-mono mt-0.5">
-                  {data?.metrics?.mongoDatabaseCount ?? 8}
-                </p>
-              </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                <p className="text-[11px] font-semibold text-slate-500">Users</p>
-                <p className="text-lg font-extrabold text-emerald-600 font-mono mt-0.5">
-                  {data?.metrics?.userCount ?? 4}
-                </p>
-              </div>
+            <div className="text-2xl font-bold text-slate-800 tracking-tight">
+              {summary.sync?.isMismatch ? 'Mismatch' : 'Synchronized'}
             </div>
-
-            {/* Tenant Fleet List */}
-            <div className="space-y-2">
-              {((data?.metrics?.tenants && data.metrics.tenants.length > 0)
-                ? data.metrics.tenants.slice(0, 4)
-                : [
-                    { id: 1, tenant_code: 'TNTA', campus_name: 'Tenant A', database_name: 'tenant_a', redis_prefix: 'tenant_a:' },
-                    { id: 2, tenant_code: 'TNTB', campus_name: 'Tenant B', database_name: 'tenant_b', redis_prefix: 'tenant_b:' },
-                    { id: 3, tenant_code: 'TNTC', campus_name: 'Tenant C', database_name: 'tenant_c', redis_prefix: 'tenant_c:' },
-                    { id: 4, tenant_code: 'TNTD', campus_name: 'Tenant D', database_name: 'tenant_d', redis_prefix: 'tenant_d:' },
-                  ]
-              ).map((tenant: any) => (
-                <div
-                  key={tenant.id}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50/70 border border-slate-100 hover:bg-slate-50 transition-colors"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white font-extrabold text-[11px] font-mono flex-shrink-0">
-                      {tenant.tenant_code}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate uppercase">
-                        {tenant.campus_name}
-                      </p>
-                      <p className="text-[10px] text-slate-400 font-mono truncate">
-                        DB: {tenant.database_name} • Redis: {tenant.redis_prefix || `${tenant.database_name}:`}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex-shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Active
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Resources Usage (5 Cols) - Fully Expanded to Fill Height */}
-        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex flex-col h-full">
-          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
-            <div>
-              <h3 className="font-bold text-sm text-slate-700">Resources Usage</h3>
-              <p className="text-[11px] font-semibold text-slate-500 mt-0.5">
-                Average System Utilization
-              </p>
-            </div>
-            <div className="text-xl lg:text-2xl font-extrabold text-[#2F2F2F] font-mono tracking-tight">
-              {summary.resources.avgUtilization.toFixed(1)} %
-            </div>
-          </div>
-
-          {/* 3 Large Circular Gauges expanding to fill entire card height */}
-          <div className="grid grid-cols-3 gap-3 pt-3 flex-1">
-            {/* CPU Gauge Card */}
-            <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50/70 border border-slate-100 hover:bg-slate-50 transition-colors h-full">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Cpu className="w-4 h-4 text-blue-600" />
-                <span className="text-xs font-bold text-slate-700">CPU</span>
-              </div>
-              <CircularProgress
-                percent={summary.resources.cpuPercent}
-                className="w-18 h-18 lg:w-20 lg:h-20"
-                color="#4287FF"
-              />
-            </div>
-
-            {/* Memory Gauge Card */}
-            <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50/70 border border-slate-100 hover:bg-slate-50 transition-colors h-full">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Layers className="w-4 h-4 text-indigo-600" />
-                <span className="text-xs font-bold text-slate-700">Memory</span>
-              </div>
-              <CircularProgress
-                percent={summary.resources.memPercent}
-                className="w-18 h-18 lg:w-20 lg:h-20"
-                color="#4287FF"
-              />
-            </div>
-
-            {/* Disk Gauge Card */}
-            <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-50/70 border border-slate-100 hover:bg-slate-50 transition-colors h-full">
-              <div className="flex items-center gap-1.5 mb-2">
-                <HardDrive className="w-4 h-4 text-emerald-600" />
-                <span className="text-xs font-bold text-slate-700">Disk</span>
-              </div>
-              <CircularProgress
-                percent={summary.resources.diskPercent}
-                className="w-18 h-18 lg:w-20 lg:h-20"
-                color="#4287FF"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ========================================================= */}
-      {/* ROW 3: Data Synchronization & Agent Grouping (100% English)*/}
-      {/* ========================================================= */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Data Synchronization */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-sm text-slate-700">Data Synchronization</h3>
-            <Link
-              href="/data-sync"
-              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 font-semibold text-xs rounded-lg transition-colors flex items-center gap-1"
-            >
-              <span>Sync Pipeline</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          <div className="pt-1">
-            <span
-              className={`text-xl lg:text-2xl font-extrabold tracking-tight ${
-                summary.sync.isMismatch ? 'text-[#C70000]' : 'text-[#00A502]'
+            <div
+              className={`text-xs font-bold tracking-wide uppercase ${
+                summary.sync?.isMismatch ? 'text-rose-600' : 'text-emerald-600'
               }`}
             >
-              {summary.sync.statusText}
-            </span>
-            <p className="text-xs text-slate-500 mt-1">
-              {summary.sync.isMismatch
-                ? 'Data discrepancies detected across engine nodes'
-                : 'All database pipelines verified and in sync'}
-            </p>
+              {summary.sync?.isMismatch ? 'PARITY MISMATCH DETECTED' : '100% SYNCHRONIZED'}
+            </div>
+          </div>
+          <div
+            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 shadow-xs ${
+              summary.sync?.isMismatch
+                ? 'bg-rose-50 text-rose-500'
+                : 'bg-emerald-50 text-emerald-600'
+            }`}
+          >
+            {summary.sync?.isMismatch ? (
+              <AlertTriangle className="w-6 h-6" />
+            ) : (
+              <CheckCircle2 className="w-6 h-6" />
+            )}
           </div>
         </div>
 
-        {/* Agent Grouping */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-sm text-slate-700">Agent Grouping</h3>
-            <Link
-              href="/agent-mapping"
-              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 font-semibold text-xs rounded-lg transition-colors flex items-center gap-1"
-            >
-              <span>Map Agents</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
+        {/* Widget 2: Agent Grouping */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex items-center justify-between hover:shadow-md transition-all">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Agent Grouping
+              </h3>
+              <Link
+                href="/wazuh-group"
+                className="text-slate-400 hover:text-blue-600 transition-colors"
+                title="View Agent Grouping"
+              >
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+            <div className="text-2xl font-bold text-slate-800 tracking-tight">
+              {summary.agentGrouping?.allGrouped
+                ? 'All Grouped'
+                : `${summary.agentGrouping?.ungroupedCount ?? 0} Ungrouped`}
+            </div>
+            <div className="text-xs font-bold text-slate-500 tracking-wide uppercase">
+              {summary.agentGrouping?.groupedCount ?? 0} / {summary.agentGrouping?.total ?? 0} GROUPED
+            </div>
           </div>
+          <div className="w-12 h-12 rounded-full bg-blue-50 text-[#0066FF] flex items-center justify-center flex-shrink-0 shadow-xs">
+            <Users className="w-6 h-6" />
+          </div>
+        </div>
 
-          <div className="pt-1">
-            <span
-              className={`text-xl lg:text-2xl font-extrabold tracking-tight ${
-                summary.agentGrouping.allGrouped ? 'text-[#00A502]' : 'text-[#C70000]'
-              }`}
-            >
-              {summary.agentGrouping.statusText}
-            </span>
-            <p className="text-xs text-slate-500 mt-1">
-              {summary.agentGrouping.allGrouped
-                ? 'All Wazuh agents mapped to tenant group clusters'
-                : `${summary.agentGrouping.unassignedCount} agents pending group assignment`}
-            </p>
+        {/* Widget 3: IRIS Mapping to Tenant */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex items-center justify-between hover:shadow-md transition-all">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                IRIS Mapping
+              </h3>
+              <Link
+                href="/iris-customer"
+                className="text-slate-400 hover:text-blue-600 transition-colors"
+                title="View IRIS Customer Mapping"
+              >
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+            <div className="text-2xl font-bold text-slate-800 tracking-tight">
+              {summary.irisMapping?.allMapped
+                ? 'All Mapped'
+                : `${summary.irisMapping?.unmappedCount ?? 0} Unmapped`}
+            </div>
+            <div className="text-xs font-bold text-slate-500 tracking-wide uppercase">
+              {summary.irisMapping?.mappedCount ?? 0} / {summary.irisMapping?.totalTenants ?? 0} MAPPED
+            </div>
+          </div>
+          <div className="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center flex-shrink-0 shadow-xs">
+            <Building2 className="w-6 h-6" />
           </div>
         </div>
       </div>
     </div>
   );
 }
-
-
-
-
-

@@ -111,20 +111,29 @@ export function AgentMappingTable({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-slate-50 text-slate-600 font-bold uppercase border-b border-slate-200">
-            <tr>
-              <th className="p-4 pl-6">ID & Nama Agen</th>
-              <th className="p-4">IP & Detak Jantung (Keepalive)</th>
-              <th className="p-4">Sistem Operasi</th>
-              <th className="p-4">Grup Wazuh Terdaftar</th>
-              <th className="p-4">Pemetaan Kampus / Tenant Target</th>
-              <th className="p-4 pr-6 text-right">Parity Status</th>
+    <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs">
+      <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-bold text-slate-800">Agent Mapping Table</h3>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold">
+            {agents.length}
+          </span>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto mt-3">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
+              <th className="py-3 px-4 rounded-l-xl">ID & Nama Agen</th>
+              <th className="py-3 px-4">IP & Keepalive</th>
+              <th className="py-3 px-4">Sistem Operasi</th>
+              <th className="py-3 px-4">Grup Wazuh</th>
+              <th className="py-3 px-4">Pemetaan Tenant</th>
+              <th className="py-3 px-4 rounded-r-xl text-right">Parity Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 text-slate-800">
+          <tbody className="divide-y divide-slate-100">
             {agents.map((agent) => {
               const isActive = agent.status === 'active';
               const currentTenantCode =
@@ -141,10 +150,10 @@ export function AgentMappingTable({
               return (
                 <tr
                   key={agent.id}
-                  className="hover:bg-slate-50/80 transition-colors"
+                  className="hover:bg-slate-50 transition-colors"
                 >
                   {/* Agent ID & Name */}
-                  <td className="p-4 pl-6">
+                  <td className="py-3.5 px-4">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600/20 to-indigo-600/20 border border-blue-500/30 flex items-center justify-center font-mono font-bold text-blue-500 flex-shrink-0">
                         {agent.id}
@@ -161,7 +170,7 @@ export function AgentMappingTable({
                   </td>
 
                   {/* IP Address & Keepalive */}
-                  <td className="p-4">
+                  <td className="py-3.5 px-4">
                     <div className="space-y-1">
                       <div className="font-mono font-bold text-slate-800 flex items-center gap-1.5">
                         <span
@@ -188,10 +197,10 @@ export function AgentMappingTable({
                   </td>
 
                   {/* OS Info */}
-                  <td className="p-4">{renderOsBadge(agent.os)}</td>
+                  <td className="py-3.5 px-4">{renderOsBadge(agent.os)}</td>
 
                   {/* Wazuh Groups */}
-                  <td className="p-4">
+                  <td className="py-3.5 px-4">
                     <div className="flex flex-wrap gap-1">
                       {agent.groups.map((g, idx) => (
                         <span
@@ -205,15 +214,15 @@ export function AgentMappingTable({
                   </td>
 
                   {/* Campus Mapping Dropdown */}
-                  <td className="p-4">
+                  <td className="py-3.5 px-4">
                     <div className="flex items-center gap-2">
                       <div className="relative">
                         <select
                           value={currentTenantCode}
                           onChange={(e) => handleSelectChange(agent.id, e.target.value)}
-                          className="px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                          className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer transition-all"
                         >
-                          <option value="">-- Belum Dipetakan --</option>
+                          <option value="">-- Unmapped --</option>
                           {tenants.map((t) => (
                             <option key={t.id} value={t.tenantCode}>
                               {t.campusName} ({t.tenantCode})
@@ -241,7 +250,7 @@ export function AgentMappingTable({
                   </td>
 
                   {/* Parity Status */}
-                  <td className="p-4 pr-6 text-right">
+                  <td className="py-3.5 px-4 text-right">
                     {agent.isMapped ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
                         <CheckCircle2 className="w-3.5 h-3.5" />

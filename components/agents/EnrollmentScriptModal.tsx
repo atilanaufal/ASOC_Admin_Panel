@@ -89,7 +89,7 @@ export function EnrollmentScriptModal({
                 Generator Skrip Pendaftaran Agen Wazuh
               </h3>
               <p className="text-xs text-slate-500">
-                Instalasi satu baris (one-liner) otomatis terikat ke grup database kampus target
+                Instalasi satu baris (one-liner) otomatis terikat ke grup database tenant target
               </p>
             </div>
           </div>
@@ -112,16 +112,16 @@ export function EnrollmentScriptModal({
 
           {/* Configuration Selectors */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Campus Selector */}
+            {/* Tenant Selector */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-blue-500" />
-                <span>Select Campus / Tenant Target</span>
+                <span>Select Tenant Target</span>
               </label>
               <select
                 value={selectedTenant}
                 onChange={(e) => setSelectedTenant(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer transition-all"
               >
                 {tenants.map((t) => (
                   <option key={t.id} value={t.tenantCode}>

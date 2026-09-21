@@ -20,6 +20,8 @@ import { UserTable } from '@/components/users/UserTable';
 import { UserModal } from '@/components/users/UserModal';
 import { ResetPasswordModal } from '@/components/users/ResetPasswordModal';
 import type { UserItem } from '@/lib/users';
+import { MorphismSummary } from '@/components/ui/MorphismSummary';
+import CustomSelect from '@/components/ui/CustomSelect';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -144,18 +146,15 @@ export default function UsersPage() {
   ).size;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      {/* Top Banner Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+    <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Morphism Top Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-              <Users className="w-6 h-6 text-blue-600" />
-              <span>User Management & Access Control (RBAC)</span>
-            </h1>
-          </div>
-          <p className="text-xs md:text-sm text-slate-500">
-            Manage Superadmin and Multi-Tenant Campus Analyst accounts, instant password resets, and centralized access control.
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800">
+            User Accounts & Access Control (RBAC)
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Role-Based Access Control, multi-tenant analysts, and security credential management.
           </p>
         </div>
 
@@ -164,15 +163,15 @@ export default function UsersPage() {
           <button
             onClick={() => fetchUsers(true)}
             disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl border border-slate-200/60 shadow-xs transition-all cursor-pointer disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#00BCD4]' : ''}`} />
             <span>Refresh</span>
           </button>
 
           <button
             onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/20 transition-all cursor-pointer"
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#00BCD4] hover:bg-[#00ACC1] text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
             <span>Add New User</span>
@@ -185,8 +184,8 @@ export default function UsersPage() {
         <div
           className={`p-4 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in duration-200 ${
             toast.type === 'success'
-              ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-700'
-              : 'bg-rose-500/10 border border-rose-500/20 text-rose-700'
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+              : 'bg-rose-50 border border-rose-200 text-rose-700'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -203,81 +202,93 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* KPI Cards Grid */}
+      {/* Variative KPI Cards (Clean Morphism Style, No Donut) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Users */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-slate-500">Total Users</span>
-            <div className="text-2xl font-extrabold text-slate-900 mt-1">
-              {loading ? '-' : totalUsers}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Total Users
+          </span>
+          <div className="my-2 flex items-center justify-between">
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
+              {loading ? '...' : totalUsers}
             </div>
-            <span className="text-[11px] text-blue-500 font-semibold mt-1 block">MySQL Synchronized</span>
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <Users className="w-5 h-5" />
+            </div>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold">
-            <Users className="w-6 h-6" />
+          <div className="text-[11px] font-semibold text-slate-500">
+            Across All Roles
           </div>
         </div>
 
-        {/* Card 2: Superadmins */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-slate-500">Global Superadmins</span>
-            <div className="text-2xl font-extrabold text-indigo-600 mt-1">
-              {loading ? '-' : superadminCount}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Superadmins
+          </span>
+          <div className="my-2 flex items-center justify-between">
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
+              {loading ? '...' : superadminCount}
             </div>
-            <span className="text-[11px] text-slate-400 font-semibold mt-1 block">Full Portal Access</span>
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+              <Shield className="w-5 h-5" />
+            </div>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center font-bold">
-            <ShieldAlert className="w-6 h-6" />
+          <div className="text-[11px] font-semibold text-indigo-600">
+            Central Authority
           </div>
         </div>
 
-        {/* Card 3: Tenant Analysts */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-slate-500">Campus Analysts</span>
-            <div className="text-2xl font-extrabold text-emerald-600 mt-1">
-              {loading ? '-' : tenantAnalystCount}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Tenant Analysts
+          </span>
+          <div className="my-2 flex items-center justify-between">
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
+              {loading ? '...' : tenantAnalystCount}
             </div>
-            <span className="text-[11px] text-emerald-500 font-semibold mt-1 block">Locked to Campus Scope</span>
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <UserCheck className="w-5 h-5" />
+            </div>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
-            <UserCheck className="w-6 h-6" />
+          <div className="text-[11px] font-semibold text-emerald-600">
+            Tenant Access Level
           </div>
         </div>
 
-        {/* Card 4: Campuses with Users */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-slate-500">Registered Campuses</span>
-            <div className="text-2xl font-extrabold text-slate-900 mt-1">
-              {loading ? '-' : uniqueCampusesCount}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Active Tenants
+          </span>
+          <div className="my-2 flex items-center justify-between">
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
+              {loading ? '...' : uniqueCampusesCount}
             </div>
-            <span className="text-[11px] text-slate-400 font-semibold mt-1 block">Out of {tenants.length} Total Campuses</span>
+            <div className="w-10 h-10 rounded-xl bg-cyan-50 text-[#00BCD4] flex items-center justify-center font-bold">
+              <Building2 className="w-5 h-5" />
+            </div>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-slate-500/10 text-slate-600 flex items-center justify-center font-bold">
-            <Building2 className="w-6 h-6" />
+          <div className="text-[11px] font-semibold text-slate-500">
+            Assigned Tenancies
           </div>
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-        {/* Search Input */}
-        <div className="relative w-full md:w-80">
+      {/* Morphism Search & Filter Bar */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-3.5 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
+        {/* Full-width Pill Search */}
+        <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search username, email, campus..."
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Search username, email, tenant..."
+            className="w-full pl-10 pr-8 py-2.5 bg-[#F0F4F8] hover:bg-[#E9EEF5] focus:bg-white rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none border border-transparent focus:border-[#00BCD4] transition-all"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -285,38 +296,37 @@ export default function UsersPage() {
         </div>
 
         {/* Dropdown Filters */}
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
           {/* Tenant Filter */}
-          <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-xs">
-            <Building2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
-            <select
-              value={selectedTenant}
-              onChange={(e) => setSelectedTenant(e.target.value)}
-              className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer text-xs"
-            >
-              <option value="all">All Campuses</option>
-              {tenants.map((t) => (
-                <option key={t.id} value={t.tenant_code}>
-                  {t.campus_name} ({t.tenant_code})
-                </option>
-              ))}
-            </select>
-          </div>
+          <CustomSelect
+            value={selectedTenant}
+            onChange={(val) => setSelectedTenant(String(val))}
+            options={[
+              { value: 'all', label: 'All Tenants', badge: 'ALL' },
+              ...tenants.map((t) => ({
+                value: t.tenant_code,
+                label: `${t.campus_name} (${t.tenant_code})`,
+                badge: t.tenant_code,
+              })),
+            ]}
+            icon={<Building2 className="w-3.5 h-3.5 text-[#00BCD4]" />}
+            className="w-full sm:w-52"
+            buttonClassName="w-full sm:w-52"
+          />
 
           {/* Role Filter */}
-          <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-xs">
-            <Shield className="w-4 h-4 text-indigo-500 flex-shrink-0" />
-            <select
-              value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value)}
-              className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer text-xs"
-            >
-              <option value="all">All Roles</option>
-              <option value="superadmin">Superadmin</option>
-              <option value="tenant_admin">Tenant Admin</option>
-              <option value="tenant">Campus Analysts</option>
-            </select>
-          </div>
+          <CustomSelect
+            value={selectedRole}
+            onChange={(val) => setSelectedRole(String(val))}
+            options={[
+              { value: 'all', label: 'All Roles', badge: 'ALL' },
+              { value: 'admin', label: 'Admin', badge: 'ADMIN' },
+              { value: 'tenant', label: 'Analyst', badge: 'ANALYST' },
+            ]}
+            icon={<Shield className="w-3.5 h-3.5 text-indigo-500" />}
+            className="w-full sm:w-48"
+            buttonClassName="w-full sm:w-48"
+          />
         </div>
       </div>
 

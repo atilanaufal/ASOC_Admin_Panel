@@ -10,15 +10,15 @@ export function middleware(request: NextRequest) {
     request.cookies.get('better-auth.session_token')?.value ||
     request.cookies.get('__Secure-better-auth.session_token')?.value;
 
-  let isSuperadmin = false;
+  let isAdmin = false;
   let hasValidSession = false;
 
   if (authSessionCookie) {
     try {
       const decoded = decodeURIComponent(authSessionCookie);
       const user = JSON.parse(decoded);
-      if (user && (user.role === 'superadmin' || user.role === 'admin')) {
-        isSuperadmin = true;
+      if (user && (user.role === 'admin' || user.role === 'superadmin')) {
+        isAdmin = true;
         hasValidSession = true;
       }
     } catch {
@@ -27,12 +27,12 @@ export function middleware(request: NextRequest) {
   } else if (betterAuthToken) {
     // If better auth token exists
     hasValidSession = true;
-    isSuperadmin = true; // By default Better-Auth on this portal issues superadmin sessions
+    isAdmin = true;
   }
 
   // 1. If user is at `/login`
   if (pathname === '/login') {
-    if (hasValidSession && isSuperadmin) {
+    if (hasValidSession && isAdmin) {
       return NextResponse.redirect(new URL('/', request.url));
     }
     return NextResponse.next();
@@ -48,11 +48,11 @@ export function middleware(request: NextRequest) {
   if (!isAuthRoute && !isPublicAsset) {
     // API route protection
     if (pathname.startsWith('/api/')) {
-      if (!hasValidSession || !isSuperadmin) {
+      if (!hasValidSession || !isAdmin) {
         return NextResponse.json(
           {
             success: false,
-            error: 'Unauthorized. Akses ditolak. Hanya Superadmin yang diizinkan.',
+            error: 'Unauthorized. Akses ditolak. Hanya Administrator yang diizinkan.',
           },
           { status: 401 }
         );
@@ -61,9 +61,9 @@ export function middleware(request: NextRequest) {
     }
 
     // Admin pages protection
-    if (!hasValidSession || !isSuperadmin) {
+    if (!hasValidSession || !isAdmin) {
       const loginUrl = new URL('/login', request.url);
-      if (authSessionCookie && !isSuperadmin) {
+      if (authSessionCookie && !isAdmin) {
         loginUrl.searchParams.set('error', 'tenant_forbidden');
       } else {
         loginUrl.searchParams.set('from', pathname);

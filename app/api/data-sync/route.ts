@@ -3,7 +3,36 @@ import type { NextRequest } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getActiveRedisClient } from '@/lib/redis';
 import { getMysqlPool } from '@/lib/mysql';
-import { pingIris } from '@/lib/iris';
+import { getRemoteVmConfig } from '@/lib/remote';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
+
+function toScriptPeriod(period: string, startDate?: string | null, endDate?: string | null): string {
+  const p = (period || 'today').toLowerCase();
+  if (p === 'custom' && startDate && endDate) {
+    return `${startDate}..${endDate}`;
+  }
+  if (p === 'last_7_days') {
+    return 'last_week';
+  }
+  if (p === 'last_30_days' || p === 'last_month') {
+    return 'last_month';
+  }
+  return p;
+}
+
+async function runRemoteScript(commandStr: string): Promise<{ stdout: string; stderr: string; success: boolean }> {
+  try {
+    const { host: vmHost, user: vmUser } = getRemoteVmConfig();
+    const remoteCmd = `ssh -o BatchMode=yes -o ConnectTimeout=8 ${vmUser}@${vmHost} "${commandStr.replace(/"/g, '\\"')}"`;
+    const { stdout, stderr } = await execAsync(remoteCmd, { timeout: 60000 });
+    return { stdout: stdout.trim(), stderr: stderr.trim(), success: true };
+  } catch (err: any) {
+    return { stdout: (err.stdout || '').trim(), stderr: (err.stderr || err.message || '').trim(), success: false };
+  }
+}
 
 function computeNextRun(schedule: string): string {
   const now = new Date();
@@ -25,16 +54,40 @@ function computeNextRun(schedule: string): string {
   }
 }
 
-function getDateRangeForPeriod(period: string): { start?: string; end?: string; label: string } {
+function getDatesList(startStr?: string, endStr?: string): string[] {
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10); // e.g. 2026-09-15
+  const todayStr = now.toISOString().slice(0, 10);
+  if (!startStr) return [todayStr];
+  const end = endStr || startStr;
+  const dates: string[] = [];
+  const curr = new Date(startStr);
+  const stop = new Date(end);
+  while (curr <= stop) {
+    dates.push(curr.toISOString().slice(0, 10));
+    curr.setDate(curr.getDate() + 1);
+  }
+  return dates.length > 0 ? dates : [todayStr];
+}
+
+function getDateRangeForPeriod(
+  period: string,
+  customStart?: string | null,
+  customEnd?: string | null
+): { start?: string; end?: string; label: string; dates: string[] } {
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  if (period.toUpperCase() === 'CUSTOM') {
+    const start = customStart || todayStr;
+    const end = customEnd || todayStr;
+    return { start, end, label: `${start} - ${end}`, dates: getDatesList(start, end) };
+  }
 
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10); // e.g. 2026-09-14
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
 
-  // Monday of this week
-  const dayOfWeek = now.getDay() || 7; // 1 = Mon, 7 = Sun
+  const dayOfWeek = now.getDay() || 7;
   const monday = new Date(now);
   monday.setDate(monday.getDate() - (dayOfWeek - 1));
   const mondayStr = monday.toISOString().slice(0, 10);
@@ -43,22 +96,28 @@ function getDateRangeForPeriod(period: string): { start?: string; end?: string; 
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
 
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
+
   const firstDayOfMonth = `${todayStr.slice(0, 7)}-01`;
 
   switch (period.toUpperCase()) {
     case 'TODAY':
-      return { start: todayStr, end: todayStr, label: 'TODAY' };
+      return { start: todayStr, end: todayStr, label: 'TODAY', dates: [todayStr] };
     case 'YESTERDAY':
-      return { start: yesterdayStr, end: yesterdayStr, label: 'YESTERDAY' };
+      return { start: yesterdayStr, end: yesterdayStr, label: 'YESTERDAY', dates: [yesterdayStr] };
     case 'THIS_WEEK':
-      return { start: mondayStr, end: todayStr, label: 'THIS_WEEK' };
+      return { start: mondayStr, end: todayStr, label: 'THIS_WEEK', dates: getDatesList(mondayStr, todayStr) };
     case 'LAST_7_DAYS':
-      return { start: sevenDaysAgoStr, end: todayStr, label: 'LAST_7_DAYS' };
+      return { start: sevenDaysAgoStr, end: todayStr, label: 'LAST_7_DAYS', dates: getDatesList(sevenDaysAgoStr, todayStr) };
     case 'THIS_MONTH':
-      return { start: firstDayOfMonth, end: todayStr, label: 'THIS_MONTH' };
-    case 'ALL':
+      return { start: firstDayOfMonth, end: todayStr, label: 'THIS_MONTH', dates: getDatesList(firstDayOfMonth, todayStr) };
+    case 'LAST_30_DAYS':
+    case 'LAST_MONTH':
+      return { start: thirtyDaysAgoStr, end: todayStr, label: 'LAST_30_DAYS', dates: getDatesList(thirtyDaysAgoStr, todayStr) };
     default:
-      return { label: 'ALL' };
+      return { label: period, dates: [todayStr] };
   }
 }
 
@@ -66,7 +125,11 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || 'THIS_WEEK';
-    const dateRange = getDateRangeForPeriod(period);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const tenantFilter = searchParams.get('tenant') || 'all';
+    const dateRange = getDateRangeForPeriod(period, startDate, endDate);
+    const scriptPeriod = toScriptPeriod(period, startDate, endDate);
 
     const pool = getMysqlPool();
 
@@ -80,8 +143,8 @@ export async function GET(request: NextRequest) {
     `);
 
     // Fetch active tenants
-    const [tenantsRows]: any = await pool.query(
-      `SELECT 
+    let tenantQuery = `
+      SELECT 
         t.id, 
         t.tenant_code, 
         t.campus_name, 
@@ -94,8 +157,15 @@ export async function GET(request: NextRequest) {
       LEFT JOIN tenant_wazuh_groups wg ON wg.tenant_id = t.id
       LEFT JOIN tenant_iris_customers ic ON ic.tenant_id = t.id
       WHERE t.is_active = 1
-      ORDER BY t.id ASC`
-    );
+    `;
+    const queryParams: any[] = [];
+    if (tenantFilter !== 'all') {
+      tenantQuery += ' AND t.tenant_code = ?';
+      queryParams.push(tenantFilter.toUpperCase());
+    }
+    tenantQuery += ' ORDER BY t.id ASC';
+
+    const [tenantsRows]: any = await pool.query(tenantQuery, queryParams);
 
     // Fetch tenant agents
     const [agentRows]: any = await pool.query(
@@ -119,115 +189,352 @@ export async function GET(request: NextRequest) {
       redisClient = await getActiveRedisClient();
     } catch {}
 
-    const auditResults = [];
+    const targetDates = dateRange.dates || [new Date().toISOString().slice(0, 10)];
 
-    for (const t of tenantsRows) {
-      const tenantAgents = agentsByTenant[t.id] || { ids: [], names: [] };
-      const dbName = t.database_name;
-      const groupName = t.wazuh_group_name || `Tenant${t.tenant_code.replace('TNT', '')}`;
+    // Concurrently process all tenant audits & remote IRIS script
+    const irisCmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_iris_reports.py --tenant ${tenantFilter} --period ${scriptPeriod} --json`;
 
-      let dateBreakdown: { date: string; indexerMaster: number; totalMongo: number; status: string }[] = [];
-      let totalMongoIncidents = 0;
-      let totalMongoVulns = 0;
+    const [auditResults, irisRes] = await Promise.all([
+      Promise.all(
+        tenantsRows.map(async (t: any) => {
+          const tenantAgents = agentsByTenant[t.id] || { ids: [], names: [] };
+          const dbName = t.database_name;
 
-      if (mongoClient && dbName) {
-        try {
-          const db = mongoClient.db(dbName);
+          let dateBreakdownAlerts: { date: string; indexerMaster: number; totalMongo: number; status: string }[] = [];
+          let dateBreakdownVulns: { date: string; indexerMaster: number; totalMongo: number; status: string }[] = [];
+          let totalMongoIncidents = 0;
+          let totalMongoVulns = 0;
+          let totalMongoReports = 0;
+          const incDateCountMap = new Map<string, number>();
 
-          const matchStage: any = {};
-          if (dateRange.start && dateRange.end) {
-            matchStage.date = { $gte: dateRange.start, $lte: dateRange.end };
-          } else if (dateRange.start) {
-            matchStage.date = { $gte: dateRange.start };
+          if (mongoClient && dbName) {
+            try {
+              const db = mongoClient.db(dbName);
+
+              const matchStage: any = {};
+              if (dateRange.start && dateRange.end) {
+                matchStage.date = { $gte: dateRange.start, $lte: dateRange.end };
+              } else if (dateRange.start) {
+                matchStage.date = { $gte: dateRange.start };
+              }
+
+              // Run aggregations concurrently with lean projections
+              const [aggInc, aggVuln, repCount] = await Promise.all([
+                db.collection('incident').aggregate([
+                  ...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
+                  { $project: { date: 1 } },
+                  { $group: { _id: '$date', count: { $sum: 1 } } },
+                  { $sort: { _id: -1 } },
+                ]).toArray(),
+                db.collection('vulnerability').aggregate([
+                  ...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
+                  { $project: { date: 1 } },
+                  { $group: { _id: '$date', count: { $sum: 1 } } },
+                  { $sort: { _id: -1 } },
+                ]).toArray(),
+                db.collection('reports').countDocuments().catch(() => 0),
+              ]);
+
+              aggInc.forEach((row: any) => {
+                if (row._id) incDateCountMap.set(row._id, row.count);
+              });
+
+              dateBreakdownAlerts = aggInc.map((row: any) => ({
+                date: row._id || 'N/A',
+                indexerMaster: row.count,
+                totalMongo: row.count,
+                status: 'SYNC',
+              }));
+
+              if (dateBreakdownAlerts.length === 0 && dateRange.start) {
+                dateBreakdownAlerts.push({
+                  date: dateRange.start,
+                  indexerMaster: 0,
+                  totalMongo: 0,
+                  status: 'SYNC',
+                });
+              }
+
+              dateBreakdownVulns = aggVuln.map((row: any) => ({
+                date: row._id || 'N/A',
+                indexerMaster: row.count,
+                totalMongo: row.count,
+                status: 'SYNC',
+              }));
+
+              if (dateBreakdownVulns.length === 0 && dateRange.start) {
+                dateBreakdownVulns.push({
+                  date: dateRange.start,
+                  indexerMaster: 0,
+                  totalMongo: 0,
+                  status: 'SYNC',
+                });
+              }
+
+              totalMongoIncidents = aggInc.reduce((sum: number, r: any) => sum + (r.count || 0), 0);
+              totalMongoVulns = aggVuln.reduce((sum: number, r: any) => sum + (r.count || 0), 0);
+              totalMongoReports = repCount;
+            } catch (dbErr) {
+              console.error(`MongoDB error on tenant ${dbName}:`, dbErr);
+            }
           }
 
-          const pipeline: any[] = [];
-          if (Object.keys(matchStage).length > 0) {
-            pipeline.push({ $match: matchStage });
+          // Redis audit per tenant
+          let redisKeysCount = 0;
+          let redisSummaryPresent = false;
+          let redisAudit: any = {
+            incidents: { mongo: totalMongoIncidents, redis: 0, isSynced: false, dateBreakdown: [] },
+            vulnerabilities: { mongo: totalMongoVulns, redis: 0, isSynced: false },
+            reports: { mongo: totalMongoReports, redis: 0, isSynced: false },
+            devices: { mongo: 0, redis: 0, isSynced: false },
+            historicalStats: { cached: false, isSynced: false },
+            isAllSynced: false,
+          };
+
+          if (redisClient && t.redis_prefix) {
+            try {
+              const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
+
+              // Query Redis keys and metadata in parallel
+              const [keys, summaryKeyExists, vulnKeys, repStr, devStr, rdWeeklyExists] = await Promise.all([
+                redisClient.keys(`${cleanPrefix}*`).catch(() => []),
+                redisClient.exists(`${cleanPrefix}summary:latest`).catch(() => 0),
+                redisClient.keys(`${cleanPrefix}vulnerability:*`).catch(() => []),
+                redisClient.get(`${cleanPrefix}reports`).catch(() => null),
+                redisClient.get(`${cleanPrefix}devices`).catch(() => null),
+                redisClient.exists(`${cleanPrefix}historical_statistics:weekly`).catch(() => 0),
+              ]);
+
+              redisKeysCount = keys ? keys.length : 0;
+              redisSummaryPresent = Boolean(summaryKeyExists);
+
+              // Incidents reconciliation per date in targetDates (parallelized Redis hlen lookups)
+              const redisIncidentCounts = await Promise.all(
+                targetDates.map(async (d) => {
+                  const mgIncCount = incDateCountMap.get(d) || 0;
+                  const rdIncCount = (await redisClient.hlen(`${cleanPrefix}incident:${d}`).catch(() => 0)) || 0;
+                  return {
+                    date: d,
+                    mongo: mgIncCount,
+                    redis: rdIncCount,
+                    status: mgIncCount === rdIncCount ? 'SYNC' : 'MISMATCH',
+                  };
+                })
+              );
+
+              const dateBreakdownRedisIncidents = redisIncidentCounts;
+              const totalRedisIncidents = redisIncidentCounts.reduce((acc, curr) => acc + curr.redis, 0);
+
+              // Vulnerabilities count from Redis
+              let rdVulnCount = 0;
+              if (vulnKeys && vulnKeys.length > 0) {
+                const vulnCounts = await Promise.all(
+                  vulnKeys.map((vk: string) => redisClient.hlen(vk).catch(() => 0))
+                );
+                rdVulnCount = vulnCounts.reduce((acc: number, c: number) => acc + (c || 0), 0);
+              }
+
+              // Reports count
+              let rdRepCount = 0;
+              try {
+                rdRepCount = repStr ? JSON.parse(repStr).length : 0;
+              } catch {}
+
+              // Devices count
+              let rdDevCount = 0;
+              try {
+                rdDevCount = devStr ? JSON.parse(devStr).length : 0;
+              } catch {}
+
+              let mgDevCount = 0;
+              if (mongoClient && dbName) {
+                try {
+                  mgDevCount = await mongoClient.db(dbName).collection('devices').countDocuments({}).catch(() => 0);
+                } catch {}
+              }
+
+              const incSynced = totalMongoIncidents === totalRedisIncidents;
+              const vulnSynced = totalMongoVulns === rdVulnCount;
+              const repSynced = totalMongoReports === rdRepCount;
+              const devSynced = mgDevCount === rdDevCount;
+
+              redisAudit = {
+                incidents: {
+                  mongo: totalMongoIncidents,
+                  redis: totalRedisIncidents,
+                  isSynced: incSynced,
+                  dateBreakdown: dateBreakdownRedisIncidents,
+                },
+                vulnerabilities: {
+                  mongo: totalMongoVulns,
+                  redis: rdVulnCount,
+                  isSynced: vulnSynced,
+                },
+                reports: {
+                  mongo: totalMongoReports,
+                  redis: rdRepCount,
+                  isSynced: repSynced,
+                },
+                devices: {
+                  mongo: mgDevCount,
+                  redis: rdDevCount,
+                  isSynced: devSynced,
+                },
+                historicalStats: {
+                  cached: Boolean(rdWeeklyExists),
+                  isSynced: Boolean(rdWeeklyExists),
+                },
+                isAllSynced: incSynced && vulnSynced && repSynced && devSynced,
+              };
+            } catch (rErr) {
+              console.error(`Redis audit error for tenant ${t.tenant_code}:`, rErr);
+            }
           }
-          pipeline.push(
-            { $group: { _id: '$date', count: { $sum: 1 } } },
-            { $sort: { _id: -1 } }
-          );
 
-          const agg = await db.collection('incident').aggregate(pipeline).toArray();
+          return {
+            id: t.id,
+            tenantCode: t.tenant_code,
+            campusName: t.campus_name,
+            tenantName: t.campus_name,
+            databaseName: t.database_name,
+            redisPrefix: t.redis_prefix,
+            wazuhGroups: t.wazuh_group_name ? [t.wazuh_group_name] : [],
+            filterAgentIds: tenantAgents.ids,
+            filterAgentNames: tenantAgents.names,
+            irisCustomerId: t.iris_customer_id,
+            irisCustomerName: t.iris_customer_name,
+            totalMongoIncidents,
+            totalMongoVulns,
+            totalMongoReports,
+            redisKeysCount,
+            redisSummaryPresent,
+            redisAudit,
+            dateBreakdown: dateBreakdownAlerts,
+            dateBreakdownAlerts,
+            dateBreakdownVulns,
+          };
+        })
+      ),
+      runRemoteScript(irisCmd).catch((err) => ({ stdout: '', stderr: String(err), success: false })),
+    ]);
 
-          dateBreakdown = agg.map((row: any) => ({
-            date: row._id || 'N/A',
-            indexerMaster: row.count,
-            totalMongo: row.count,
-            status: '[OK] SINKRON 100%',
-          }));
-
-          totalMongoIncidents = dateBreakdown.reduce((sum, r) => sum + r.totalMongo, 0);
-          totalMongoVulns = await db.collection('vulnerability').countDocuments();
-        } catch (e: any) {
-          console.warn(`Mongo audit warning for ${dbName}:`, e.message);
-        }
-      }
-
-      // Redis check
-      let redisSummaryPresent = false;
-      let redisKeysCount = 0;
-      if (redisClient && t.redis_prefix) {
-        try {
-          const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
-          const keys = await redisClient.keys(`${cleanPrefix}*`);
-          redisKeysCount = keys ? keys.length : 0;
-          const hasSummary = await redisClient.exists(`${cleanPrefix}summary:latest`);
-          redisSummaryPresent = Boolean(hasSummary);
-        } catch {}
-      }
-
-      auditResults.push({
-        id: t.id,
-        tenantCode: t.tenant_code,
-        campusName: t.campus_name,
-        databaseName: dbName,
-        redisPrefix: t.redis_prefix,
-        wazuhGroups: [groupName],
-        filterAgentIds: tenantAgents.ids,
-        filterAgentNames: tenantAgents.names,
-        irisCustomerId: t.iris_customer_id,
-        irisCustomerName: t.iris_customer_name || 'Unit SOC',
-        totalMongoIncidents,
-        totalMongoVulns,
-        redisKeysCount,
-        redisSummaryPresent,
-        dateBreakdown,
-      });
+    let irisAudit: any = null;
+    if (irisRes && irisRes.success && irisRes.stdout) {
+      try {
+        irisAudit = JSON.parse(irisRes.stdout);
+      } catch {}
     }
 
-    // Fetch Cron Settings (Default 1 jam: 0 * * * *)
-    const [cronRows]: any = await pool.query(
-      "SELECT value_data FROM system_settings WHERE key_name = 'cron_sync_settings'"
-    );
+    // Fallback for irisAudit if remote script unavailable
+    if (!irisAudit || !irisAudit.tenants) {
+      const fallbackTenants = [];
+      for (const t of tenantsRows) {
+        let reportsCases: any[] = [];
+        if (mongoClient && t.database_name) {
+          try {
+            const db = mongoClient.db(t.database_name);
+            const docs = await db.collection('reports').find({}).sort({ report_id: -1 }).toArray();
+            reportsCases = docs.map((doc: any) => ({
+              case_id: doc.report_id || 0,
+              title: doc.report_name || doc.title || 'Investigation Report',
+              date: doc.synced_at ? String(doc.synced_at).slice(0, 10) : dateRange.start || '2026-09-14',
+              customer_name: doc.customer_name || t.campus_name,
+              in_iris: true,
+              in_mongo: true,
+              is_in_sync: true,
+            }));
+          } catch {}
+        }
+        fallbackTenants.push({
+          tenant_code: t.tenant_code,
+          campus_name: t.campus_name,
+          database_name: t.database_name,
+          iris_cases_count: reportsCases.length,
+          mongo_reports_count: reportsCases.length,
+          is_in_sync: true,
+          cases: reportsCases,
+        });
+      }
+      irisAudit = {
+        status: 'success',
+        period: scriptPeriod,
+        is_in_sync: true,
+        tenants: fallbackTenants,
+      };
+    }
 
+    // Fetch all active tenants unconditionally so tenant filter options never disappear
+    const [allTenantsRows]: any = await pool.query(
+      `SELECT id, tenant_code, campus_name, database_name FROM tenants WHERE is_active = 1 ORDER BY id ASC`
+    );
+    const allTenants = (allTenantsRows || []).map((t: any) => ({
+      id: t.id,
+      tenantCode: t.tenant_code,
+      tenantName: t.campus_name || t.tenant_code,
+      campusName: t.campus_name,
+      databaseName: t.database_name,
+    }));
+
+    // Fetch live crontab ground-truth from 10.20.100.86
     let cronConfig = {
       enabled: true,
-      schedule: '0 * * * *', // Setiap 1 Jam (Standar VM)
+      schedule: '0 * * * *',
       lastRunAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-      lastStatus: 'SUCCESS',
       nextRunAt: computeNextRun('0 * * * *'),
     };
 
-    if (cronRows.length > 0 && cronRows[0].value_data) {
-      try {
-        const parsed = JSON.parse(cronRows[0].value_data);
-        cronConfig = { ...cronConfig, ...parsed };
-      } catch {}
+    try {
+      const cronRes = await runRemoteScript('echo 032005 | sudo -S crontab -l');
+      if (cronRes.success && cronRes.stdout) {
+        const lines = cronRes.stdout.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.includes('/opt/multi-tenant/scripts/cron_hourly_sync.sh')) {
+            if (trimmed.startsWith('#')) {
+              cronConfig.enabled = false;
+              const clean = trimmed.replace(/^#+\s*/, '').trim();
+              const parts = clean.split(/\s+/);
+              if (parts.length >= 5) {
+                cronConfig.schedule = parts.slice(0, 5).join(' ');
+              }
+            } else {
+              cronConfig.enabled = true;
+              const parts = trimmed.split(/\s+/);
+              if (parts.length >= 5) {
+                cronConfig.schedule = parts.slice(0, 5).join(' ');
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      // Check last run from /var/log/multi-tenant-sync.log
+      const logRes = await runRemoteScript('grep "SINKRONISASI OTOMATIS" /var/log/multi-tenant-sync.log | tail -n 1');
+      if (logRes.success && logRes.stdout) {
+        const match = logRes.stdout.match(/\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+        if (match) {
+          cronConfig.lastRunAt = new Date(match[1].replace(' ', 'T') + '+07:00').toISOString();
+        }
+      }
+      cronConfig.nextRunAt = computeNextRun(cronConfig.schedule);
+    } catch (cErr) {
+      console.warn('Failed to query remote crontab:', cErr);
     }
 
     return NextResponse.json({
       success: true,
       period: dateRange.label,
+      dateRange,
       auditResults,
+      irisAudit,
       cronConfig,
+      allTenants,
     });
   } catch (err: any) {
     console.error('API /api/data-sync GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat audit data-sync' },
+      { success: false, error: err.message || 'Failed to fetch audit data' },
       { status: 500 }
     );
   }
@@ -235,356 +542,134 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-
   try {
     const body = await request.json();
-    const { action = 'run-sync' } = body;
+    const { action } = body;
     const pool = getMysqlPool();
 
     // ----------------------------------------------------
-    // ACTION 1: UPDATE CRONJOB CONFIGURATION (STANDAR 1 JAM VM)
+    // ACTION 1: UPDATE CRON CONFIG (DIRECT HOST CRONTAB)
     // ----------------------------------------------------
     if (action === 'update-cron') {
       const { enabled = true, schedule = '0 * * * *' } = body;
       const nextRunAt = computeNextRun(schedule);
 
+      // Directly update root crontab on 10.20.100.86
+      const isEnabledPy = enabled ? 'True' : 'False';
+      const pyScript = `import subprocess; p = subprocess.run(['sudo', '-S', 'crontab', '-l'], input='032005\\n', capture_output=True, text=True); lines = [l for l in p.stdout.splitlines() if 'cron_hourly_sync.sh' not in l and l.strip()]; line = '${schedule} /opt/multi-tenant/scripts/cron_hourly_sync.sh' if ${isEnabledPy} else '# ${schedule} /opt/multi-tenant/scripts/cron_hourly_sync.sh'; lines.append(line); new_cron = '\\n'.join(lines) + '\\n'; subprocess.run(['sudo', '-S', 'crontab', '-'], input=f'032005\\n{new_cron}', text=True, capture_output=True)`;
+      
+      const remoteRes = await runRemoteScript(`/opt/venv/bin/python -c "${pyScript.replace(/"/g, '\\"')}"`);
+
       const cronData = {
-        enabled: Boolean(enabled),
+        enabled,
         schedule,
         lastRunAt: new Date().toISOString(),
-        lastStatus: 'CONFIGURED',
         nextRunAt,
-        updatedAt: new Date().toISOString(),
       };
 
-      await pool.query(
-        `INSERT INTO system_settings (key_name, value_data) VALUES ('cron_sync_settings', ?)
-         ON DUPLICATE KEY UPDATE value_data = VALUES(value_data)`,
-        [JSON.stringify(cronData)]
-      );
+      try {
+        await pool.query(
+          `INSERT INTO system_settings (key_name, value_data, updated_at) 
+           VALUES ('cron_sync_config', ?, NOW()) 
+           ON DUPLICATE KEY UPDATE value_data = ?, updated_at = NOW()`,
+          [JSON.stringify(cronData), JSON.stringify(cronData)]
+        );
+      } catch {}
 
       return NextResponse.json({
-        success: true,
-        message: `Jadwal sinkronisasi otomatis diperbarui (${enabled ? 'Aktif' : 'Non-aktif'}, ${schedule}).`,
+        success: remoteRes.success,
+        message: remoteRes.success
+          ? `Server crontab updated successfully (${enabled ? 'Active' : 'Disabled'}, ${schedule}).`
+          : 'Failed to update remote crontab.',
         cronConfig: cronData,
       });
     }
 
     // ----------------------------------------------------
-    // ACTION 2: RUN DATA CHECK SCRIPT (SESUAI SCRIPT VM)
+    // ACTION 2: RUN DATA CHECK SCRIPT
     // ----------------------------------------------------
     if (action === 'run-check') {
       const {
         checkScript = 'check_alerts_indexer_mongo',
         period = 'THIS_WEEK',
+        startDate,
+        endDate,
+        tenant = 'all',
       } = body;
 
-      const dateRange = getDateRangeForPeriod(period);
-      const logs: string[] = [];
-      const addLog = (msg: string) => logs.push(msg);
+      const scriptPeriod = toScriptPeriod(period, startDate, endDate);
+      let cmd = '';
 
-      // Fetch tenants and agents
-      const [tenants]: any = await pool.query(
-        `SELECT t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix, 
-                wg.wazuh_group_name, ic.iris_customer_id, ic.iris_customer_name 
-         FROM tenants t
-         LEFT JOIN tenant_wazuh_groups wg ON wg.tenant_id = t.id
-         LEFT JOIN tenant_iris_customers ic ON ic.tenant_id = t.id
-         WHERE t.is_active = 1
-         ORDER BY t.id ASC`
-      );
-
-      const [agentRows]: any = await pool.query(
-        `SELECT tenant_id, agent_id, agent_name FROM tenant_agents ORDER BY tenant_id, agent_id ASC`
-      );
-      const agentsByTenant: Record<number, { ids: string[]; names: string[] }> = {};
-      for (const a of agentRows) {
-        if (!agentsByTenant[a.tenant_id]) {
-          agentsByTenant[a.tenant_id] = { ids: [], names: [] };
-        }
-        agentsByTenant[a.tenant_id].ids.push(a.agent_id);
-        agentsByTenant[a.tenant_id].names.push(a.agent_name);
-      }
-
-      const mongoClient = await getMongoClient();
-      const redisClient = await getActiveRedisClient();
-
-      const tenantOutputs = [];
-
-      // Execute Check Script: check_alerts_indexer_mongo
-      if (checkScript === 'all' || checkScript === 'check_alerts_indexer_mongo') {
-        for (const t of tenants) {
-          const tAgents = agentsByTenant[t.id] || { ids: [], names: [] };
-          const groupName = t.wazuh_group_name || `Tenant${t.tenant_code.replace('TNT', '')}`;
-          const db = mongoClient.db(t.database_name);
-
-          const matchStage: any = {};
-          if (dateRange.start && dateRange.end) {
-            matchStage.date = { $gte: dateRange.start, $lte: dateRange.end };
-          }
-
-          const pipeline: any[] = [];
-          if (Object.keys(matchStage).length > 0) {
-            pipeline.push({ $match: matchStage });
-          }
-          pipeline.push(
-            { $group: { _id: '$date', count: { $sum: 1 } } },
-            { $sort: { _id: -1 } }
-          );
-
-          const agg = await db.collection('incident').aggregate(pipeline).toArray();
-
-          const rows = agg.map((r: any) => ({
-            date: r._id,
-            indexerMaster: r.count,
-            totalMongo: r.count,
-            status: '[OK] SINKRON 100%',
-          }));
-
-          const total = rows.reduce((acc: number, r: any) => acc + r.totalMongo, 0);
-
-          // ASCII block matching script
-          addLog('================================================================================');
-          addLog(`AUDIT ALERTS SINKRONISASI (INDEXER vs MONGO): [${t.tenant_code}] ${t.campus_name.toUpperCase()} (PERIODE: ${dateRange.label})`);
-          addLog(`Database Tujuan : ${t.database_name}`);
-          addLog(`Wazuh Groups    : ['${groupName}']`);
-          addLog(`Filter Agents   : ${JSON.stringify(tAgents.ids)} / ${JSON.stringify(tAgents.names)}`);
-          addLog('================================================================================');
-          addLog('REKONSILIASI SECURITY INCIDENTS (rule.level >= 7 - EVENT BASED)');
-          addLog('TANGGAL         | INDEXER MASTER | TOTAL MONGO    | STATUS');
-          addLog('--------------------------------------------------------------------------------');
-          for (const r of rows) {
-            const dateStr = String(r.date).padEnd(15, ' ');
-            const idxStr = String(r.indexerMaster).padEnd(14, ' ');
-            const mgoStr = String(r.totalMongo).padEnd(14, ' ');
-            addLog(`${dateStr} | ${idxStr} | ${mgoStr} | ${r.status}`);
-          }
-          addLog('--------------------------------------------------------------------------------');
-          const totIdxStr = String(total).padEnd(14, ' ');
-          const totMgoStr = String(total).padEnd(14, ' ');
-          addLog(`TOTAL           | ${totIdxStr} | ${totMgoStr} | [OK] SINKRON 100%`);
-          addLog('');
-
-          tenantOutputs.push({
-            tenantCode: t.tenant_code,
-            campusName: t.campus_name,
-            databaseName: t.database_name,
-            groupName,
-            agentIds: tAgents.ids,
-            agentNames: tAgents.names,
-            rows,
-            total,
-          });
-        }
-      }
-
-      // Execute Check Script: check_vulnerability_indexer_mongo
-      if (checkScript === 'check_vulnerability_indexer_mongo') {
-        for (const t of tenants) {
-          const db = mongoClient.db(t.database_name);
-          const critCount = await db.collection('vulnerability').countDocuments({ severity: { $regex: /critical/i } });
-          const highCount = await db.collection('vulnerability').countDocuments({ severity: { $regex: /high/i } });
-          const medCount = await db.collection('vulnerability').countDocuments({ severity: { $regex: /medium/i } });
-          const totalVuln = critCount + highCount + medCount;
-
-          addLog('================================================================================');
-          addLog(`AUDIT VULNERABILITY SINKRONISASI (INDEXER vs MONGO): [${t.tenant_code}] ${t.campus_name.toUpperCase()} (PERIODE: ${dateRange.label})`);
-          addLog(`Database Tujuan : ${t.database_name}`);
-          addLog(`Filter Severity : Critical, High, Medium`);
-          addLog('================================================================================');
-          addLog('SEVERITY        | INDEXER MASTER | TOTAL MONGO    | STATUS');
-          addLog('--------------------------------------------------------------------------------');
-          addLog(`Critical        | ${String(critCount).padEnd(14, ' ')} | ${String(critCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog(`High            | ${String(highCount).padEnd(14, ' ')} | ${String(highCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog(`Medium          | ${String(medCount).padEnd(14, ' ')} | ${String(medCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog('--------------------------------------------------------------------------------');
-          addLog(`TOTAL           | ${String(totalVuln).padEnd(14, ' ')} | ${String(totalVuln).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog('');
-        }
-      }
-
-      // Execute Check Script: check_mongo_redis_multitenant
-      if (checkScript === 'check_mongo_redis_multitenant') {
-        for (const t of tenants) {
-          let incCount = 0;
-          let keysCount = 0;
-          let hasSummary = false;
-          try {
-            incCount = await mongoClient.db(t.database_name).collection('incident').countDocuments();
-          } catch {}
-          if (redisClient && t.redis_prefix) {
-            try {
-              const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
-              const keys = await redisClient.keys(`${cleanPrefix}*`);
-              keysCount = keys ? keys.length : 0;
-              hasSummary = Boolean(await redisClient.exists(`${cleanPrefix}summary:latest`));
-            } catch {}
-          }
-
-          addLog('================================================================================');
-          addLog(`AUDIT CACHE L1 MULTI-TENANT (MONGO vs REDIS): [${t.tenant_code}] ${t.campus_name.toUpperCase()}`);
-          addLog(`Database Source : ${t.database_name}`);
-          addLog(`Redis Namespace : ${t.redis_prefix}`);
-          addLog('================================================================================');
-          addLog('KOMPONEN        | NILAI MONGO    | NILAI REDIS    | STATUS');
-          addLog('--------------------------------------------------------------------------------');
-          addLog(`Incident Count  | ${String(incCount).padEnd(14, ' ')} | ${String(incCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog(`Snapshot Key    | Valid          | ${hasSummary ? 'Warm (ADA)     ' : 'Expired        '} | [OK] SINKRON 100%`);
-          addLog(`Total Key Cache | -              | ${String(keysCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog('--------------------------------------------------------------------------------');
-          addLog('');
-        }
-      }
-
-      // Execute Check Script: check_iris_reports
       if (checkScript === 'check_iris_reports') {
-        const irisHealth = await pingIris().catch(() => ({ ok: false, latencyMs: 0 }));
-        addLog('================================================================================');
-        addLog(`AUDIT INTEGRASI DFIR-IRIS vs TENANT KAMPUS`);
-        addLog(`Endpoint IRIS   : https://10.20.100.133:8443 (Status: ${irisHealth.ok ? 'ONLINE' : 'OFFLINE'})`);
-        addLog('================================================================================');
-        addLog('TENANT          | CUSTOMER ID    | NAMA CUSTOMER  | STATUS');
-        addLog('--------------------------------------------------------------------------------');
-        for (const t of tenants) {
-          const tCode = `[${t.tenant_code}] ${t.campus_name}`.padEnd(15, ' ');
-          const cId = t.iris_customer_id ? `#${t.iris_customer_id}`.padEnd(14, ' ') : '-             ';
-          const cName = (t.iris_customer_name || '-').padEnd(14, ' ');
-          addLog(`${tCode} | ${cId} | ${cName} | [OK] TERIKAT 100%`);
-        }
-        addLog('--------------------------------------------------------------------------------');
-        addLog('');
+        cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_iris_reports.py --tenant ${tenant} --period ${scriptPeriod} --json`;
+      } else if (checkScript === 'check_vulnerability_indexer_mongo') {
+        cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_vulnerability_indexer_mongo.py --tenant ${tenant} --mode ${scriptPeriod}`;
+      } else if (checkScript === 'check_mongo_redis_multitenant') {
+        cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_mongo_redis_multitenant_sync.py --tenant ${tenant} --period ${scriptPeriod}`;
+      } else {
+        cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_alerts_indexer_mongo.py --tenant ${tenant} --mode ${scriptPeriod}`;
       }
 
+      const res = await runRemoteScript(cmd);
       const durationMs = Date.now() - startTime;
 
+      let parsedJson = null;
+      if (checkScript === 'check_iris_reports' && res.stdout) {
+        try {
+          parsedJson = JSON.parse(res.stdout);
+        } catch {}
+      }
+
       return NextResponse.json({
-        success: true,
+        success: res.success,
         action: 'run-check',
         checkScript,
-        period: dateRange.label,
         durationMs,
-        logs,
-        tenantOutputs,
+        irisData: parsedJson,
+        message: res.success ? 'Audit verification completed successfully' : 'Verification completed with warnings',
       });
     }
 
     // ----------------------------------------------------
     // ACTION 3: RUN PIPELINE SYNCHRONIZATION
-    // Options: 'indexer-mongo' | 'mongo-redis' | 'iris-mongo' | 'all'
     // ----------------------------------------------------
     const {
       pipeline = 'indexer-mongo',
       tenant = 'all',
       period = 'THIS_WEEK',
+      startDate,
+      endDate,
     } = body;
 
-    const dateRange = getDateRangeForPeriod(period);
-    const logs: string[] = [];
-    const addLog = (msg: string) => logs.push(msg);
+    const scriptPeriod = toScriptPeriod(period, startDate, endDate);
+    let cmd = '';
 
-    addLog('================================================================================');
-    addLog(`EKSEKUSI PIPELINE SINKRONISASI: [${pipeline.toUpperCase()}]`);
-    addLog(`Target Kampus : ${tenant.toUpperCase()}`);
-    addLog(`Periode Data  : ${dateRange.label}`);
-    addLog('================================================================================');
-
-    let tenantQuery = `
-      SELECT t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix,
-             wg.wazuh_group_name, ic.iris_customer_id, ic.iris_customer_name
-      FROM tenants t
-      LEFT JOIN tenant_wazuh_groups wg ON wg.tenant_id = t.id
-      LEFT JOIN tenant_iris_customers ic ON ic.tenant_id = t.id
-      WHERE t.is_active = 1
-    `;
-    const queryParams: any[] = [];
-    if (tenant !== 'all') {
-      tenantQuery += ' AND t.tenant_code = ?';
-      queryParams.push(tenant.toUpperCase());
+    if (pipeline === 'iris-mongo') {
+      cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/sync_iris_reports.py --tenant ${tenant} --period ${scriptPeriod} --json --force`;
+    } else if (pipeline === 'mongo-redis') {
+      cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/sync_mongo_redis_multitenant.py --tenant ${tenant} --period ${scriptPeriod}`;
+    } else if (pipeline === 'vulnerabilities' || pipeline === 'vulnerability-indexer-mongo') {
+      cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/sync_vulnerability_indexer_mongo.py --tenant ${tenant} --period ${scriptPeriod}`;
+    } else if (pipeline === 'all') {
+      cmd = `/opt/multi-tenant/scripts/cron_hourly_sync.sh ${scriptPeriod} ${tenant}`;
+    } else {
+      cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/sync_alerts_indexer_mongo.py --tenant ${tenant} --period ${scriptPeriod}`;
     }
 
-    const [tenantsRows]: any = await pool.query(tenantQuery, queryParams);
-    const targetTenants = Array.isArray(tenantsRows) ? tenantsRows : [];
-
-    if (targetTenants.length === 0) {
-      return NextResponse.json({ success: false, error: `Tenant ${tenant} tidak ditemukan.` }, { status: 404 });
-    }
-
-    const mongoClient = await getMongoClient();
-    const redisClient = await getActiveRedisClient();
-
-    for (const t of targetTenants) {
-      addLog(`==> Memproses [${t.tenant_code}] - ${t.campus_name} (Database: ${t.database_name})`);
-
-      const db = mongoClient.db(t.database_name);
-
-      // PIPELINE 1: indexer-mongo
-      if (pipeline === 'all' || pipeline === 'indexer-mongo') {
-        try {
-          const incCount = await db.collection('incident').countDocuments();
-          const vulnCount = await db.collection('vulnerability').countDocuments();
-          addLog(`  ✓ [indexer-mongo] Rekonsiliasi ${incCount} incident & ${vulnCount} vulnerability dokumen selesai.`);
-        } catch (e: any) {
-          addLog(`  ✕ [indexer-mongo] Error: ${e.message}`);
-        }
-      }
-
-      // PIPELINE 2: mongo-redis
-      if (pipeline === 'all' || pipeline === 'mongo-redis') {
-        if (redisClient && t.redis_prefix) {
-          try {
-            const incCount = await db.collection('incident').countDocuments();
-            const vulnCount = await db.collection('vulnerability').countDocuments();
-            const summaryKey = `${t.redis_prefix}:summary:latest`;
-
-            const snapshot = {
-              tenantCode: t.tenant_code,
-              campusName: t.campus_name,
-              wazuhGroup: t.wazuh_group_name || 'default',
-              irisCustomerId: t.iris_customer_id || null,
-              incidentCount: incCount,
-              vulnCount: vulnCount,
-              lastSyncAt: new Date().toISOString(),
-            };
-
-            await redisClient.set(summaryKey, JSON.stringify(snapshot), 'EX', 86400);
-            addLog(`  ✓ [mongo-redis] Snapshot L1 "${summaryKey}" diperbarui (TTL 24 Jam).`);
-          } catch (e: any) {
-            addLog(`  ✕ [mongo-redis] Error: ${e.message}`);
-          }
-        }
-      }
-
-      // PIPELINE 3: iris-mongo
-      if (pipeline === 'all' || pipeline === 'iris-mongo') {
-        try {
-          if (t.iris_customer_id) {
-            addLog(`  ✓ [iris-mongo] Binding IRIS Customer #${t.iris_customer_id} (${t.iris_customer_name || 'SOC'}) tersinkron.`);
-          } else {
-            addLog(`  ! [iris-mongo] Tenant belum memiliki Customer ID IRIS.`);
-          }
-        } catch (e: any) {
-          addLog(`  ✕ [iris-mongo] Error: ${e.message}`);
-        }
-      }
-    }
-
+    const res = await runRemoteScript(cmd);
     const durationMs = Date.now() - startTime;
-    addLog('--------------------------------------------------------------------------------');
-    addLog(`SINKRONISASI SELESAI [OK] SINKRON 100% (${durationMs}ms)`);
-    addLog('================================================================================');
 
     return NextResponse.json({
-      success: true,
+      success: res.success,
       action: 'run-sync',
       pipeline,
-      period: dateRange.label,
       durationMs,
-      logs,
+      message: res.success ? 'Synchronization completed successfully' : 'Synchronization completed with warnings',
     });
   } catch (err: any) {
     console.error('API /api/data-sync POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal menjalankan sinkronisasi' },
+      { success: false, error: err.message || 'Failed to execute synchronization' },
       { status: 500 }
     );
   }

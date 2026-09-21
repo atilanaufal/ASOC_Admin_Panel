@@ -1,9 +1,24 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
-import { getActiveRedisClient } from '@/lib/redis';
 import { getMysqlPool } from '@/lib/mysql';
 import { formatBytes } from '@/lib/tenant-utils';
+import { getRemoteVmConfig } from '@/lib/remote';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
+
+async function runRemoteScript(commandStr: string): Promise<{ stdout: string; stderr: string; success: boolean }> {
+  try {
+    const { host: vmHost, user: vmUser } = getRemoteVmConfig();
+    const remoteCmd = `ssh -o BatchMode=yes -o ConnectTimeout=8 ${vmUser}@${vmHost} "${commandStr.replace(/"/g, '\\"')}"`;
+    const { stdout, stderr } = await execAsync(remoteCmd, { timeout: 60000 });
+    return { stdout: stdout.trim(), stderr: stderr.trim(), success: true };
+  } catch (err: any) {
+    return { stdout: (err.stdout || '').trim(), stderr: (err.stderr || err.message || '').trim(), success: false };
+  }
+}
 
 export async function GET(_request: NextRequest) {
   try {
@@ -12,54 +27,58 @@ export async function GET(_request: NextRequest) {
       'SELECT id, tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE is_active = 1 ORDER BY id ASC'
     );
 
+    // 1. Fetch live ground-truth status from remote set_ttl.py script on 10.20.100.86
+    let scriptStatusList: any[] = [];
+    try {
+      const res = await runRemoteScript('/opt/venv/bin/python /opt/multi-tenant/scripts/set_ttl.py --status --json');
+      if (res.success && res.stdout) {
+        const jsonStart = res.stdout.indexOf('[');
+        if (jsonStart !== -1) {
+          scriptStatusList = JSON.parse(res.stdout.slice(jsonStart));
+        }
+      }
+    } catch (scriptErr) {
+      console.warn('Failed to query remote set_ttl.py status:', scriptErr);
+    }
+
+    // Map script status by tenant_code for fast lookup
+    const scriptMap = new Map<string, any>();
+    for (const item of scriptStatusList) {
+      if (item.tenant_code) {
+        scriptMap.set(item.tenant_code.toUpperCase(), item);
+      }
+    }
+
     let mongoClient: any = null;
-    let redisClient: any = null;
     try {
       mongoClient = await getMongoClient();
     } catch {}
-    try {
-      redisClient = await getActiveRedisClient();
-    } catch {}
-
-    // Check system_settings for stored retention policies
-    let storedPolicies: Record<string, any> = {};
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS system_settings (
-          key_name VARCHAR(100) PRIMARY KEY,
-          value_data TEXT,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        )
-      `);
-      const [settingsRows]: any = await pool.query(
-        "SELECT key_name, value_data FROM system_settings WHERE key_name LIKE 'retention_%'"
-      );
-      for (const row of settingsRows) {
-        try {
-          storedPolicies[row.key_name] = JSON.parse(row.value_data);
-        } catch {
-          storedPolicies[row.key_name] = row.value_data;
-        }
-      }
-    } catch (e) {
-      console.warn('System settings fetch warning:', e);
-    }
 
     const tenantRetentionList = [];
 
     for (const t of tenantsRows) {
       const dbName = t.database_name;
+      const code = t.tenant_code?.toUpperCase();
+      const statusFromScript = scriptMap.get(code);
+
       let incidentCount = 0;
       let vulnCount = 0;
       let diskBytes = 0;
-      let mongoTtlDays = 30; // Default 30 days
-      let redisTtlSeconds = 86400; // Default 24 hours
 
-      // Check stored custom policy
-      const policyKey = `retention_tenant_${t.id}`;
-      if (storedPolicies[policyKey]) {
-        mongoTtlDays = storedPolicies[policyKey].mongoTtlDays ?? mongoTtlDays;
-        redisTtlSeconds = storedPolicies[policyKey].redisTtlSeconds ?? redisTtlSeconds;
+      // Remote script values (ground truth)
+      // Default: Mongo 30 days (2,592,000s), Redis 7 days (604,800s)
+      let mongoTtlDays = 30;
+      let redisTtlSeconds = 604800; // 7 days (168 hours)
+      let redisKeysCount = statusFromScript?.redis_keys_count ?? 0;
+
+      if (statusFromScript) {
+        const mongoIncidentTtl = statusFromScript.mongo_ttl?.incident;
+        if (typeof mongoIncidentTtl === 'number' && mongoIncidentTtl > 0) {
+          mongoTtlDays = Math.round(mongoIncidentTtl / 86400);
+        }
+        if (typeof statusFromScript.redis_avg_ttl_seconds === 'number' && statusFromScript.redis_avg_ttl_seconds > 0) {
+          redisTtlSeconds = statusFromScript.redis_avg_ttl_seconds;
+        }
       }
 
       if (mongoClient && dbName) {
@@ -70,21 +89,14 @@ export async function GET(_request: NextRequest) {
           const stats = await db.stats();
           diskBytes = stats.storageSize || stats.dataSize || 0;
 
-          // Check if index with expireAfterSeconds exists on incident collection
-          const indexes = await db.collection('incident').indexes();
-          const ttlIdx = indexes.find((idx: any) => idx.expireAfterSeconds !== undefined);
-          if (ttlIdx && ttlIdx.expireAfterSeconds) {
-            mongoTtlDays = Math.round(ttlIdx.expireAfterSeconds / 86400);
+          // If script status not found, inspect collection index directly
+          if (!statusFromScript) {
+            const indexes = await db.collection('incident').indexes();
+            const ttlIdx = indexes.find((idx: any) => idx.expireAfterSeconds !== undefined);
+            if (ttlIdx && ttlIdx.expireAfterSeconds) {
+              mongoTtlDays = Math.round(ttlIdx.expireAfterSeconds / 86400);
+            }
           }
-        } catch {}
-      }
-
-      let redisKeysCount = 0;
-      if (redisClient && t.redis_prefix) {
-        try {
-          const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
-          const keys = await redisClient.keys(`${cleanPrefix}*`);
-          redisKeysCount = keys ? keys.length : 0;
         } catch {}
       }
 
@@ -105,19 +117,22 @@ export async function GET(_request: NextRequest) {
       });
     }
 
+    // Default global retention policy matching /opt/multi-tenant/scripts/set_ttl.py
+    const globalPolicy = {
+      mongoTtlDays: 30, // 30 Days
+      redisTtlSeconds: 604800, // 7 Days (168 Hours)
+      targetCollections: ['incident', 'vulnerability', 'reports', 'historical_statistics'],
+    };
+
     return NextResponse.json({
       success: true,
-      globalPolicy: storedPolicies['retention_global'] || {
-        mongoTtlDays: 30,
-        redisTtlSeconds: 86400,
-        targetCollections: ['incident', 'vulnerability', 'alerts'],
-      },
+      globalPolicy,
       tenants: tenantRetentionList,
     });
   } catch (err: any) {
     console.error('API /api/data-retention GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat konfigurasi data retention' },
+      { success: false, error: err.message || 'Failed to load data retention configuration' },
       { status: 500 }
     );
   }
@@ -128,115 +143,75 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       tenantId = 'all',
+      action,
       mongoTtlDays = 30,
-      redisTtlSeconds = 86400,
-      targetCollections = ['incident', 'vulnerability'],
+      redisTtlSeconds = 604800, // 7 days default
     } = body;
 
     const pool = getMysqlPool();
-    const mongoClient = await getMongoClient();
-    const redisClient = await getActiveRedisClient();
 
-    // Fetch target tenants
-    let query = 'SELECT id, tenant_code, database_name, redis_prefix FROM tenants WHERE is_active = 1';
-    const params: any[] = [];
-    if (tenantId !== 'all') {
-      query += ' AND id = ?';
-      params.push(tenantId);
-    }
+    // 1. If reset-default requested, invoke set_ttl.py with --reset-default
+    if (action === 'reset-default') {
+      const resetCmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/set_ttl.py --tenant all --reset-default --json`;
+      const res = await runRemoteScript(resetCmd);
 
-    const [tenants]: any = await pool.query(query, params);
-    const targetTenants = Array.isArray(tenants) ? tenants : [];
-
-    if (targetTenants.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Tenant tidak ditemukan.' },
-        { status: 404 }
+      // Reset default variables in script files
+      await runRemoteScript(
+        `echo 032005 | sudo -S sed -i 's/^DEFAULT_MONGO_DAYS = .*/DEFAULT_MONGO_DAYS = 30/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py; ` +
+        `echo 032005 | sudo -S sed -i 's/^DEFAULT_REDIS_DAYS = .*/DEFAULT_REDIS_DAYS = 7/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py`
       );
-    }
 
-    const ttlSeconds = Number(mongoTtlDays) * 86400;
-    const cleanRedisTtl = Number(redisTtlSeconds);
-
-    const updatedDatabases: string[] = [];
-
-    // 1. Apply MongoDB TTL Index
-    for (const t of targetTenants) {
-      const db = mongoClient.db(t.database_name);
-
-      for (const colName of targetCollections) {
-        try {
-          const col = db.collection(colName);
-          const indexes = await col.indexes();
-          const existingTtlIdx = indexes.find((idx: any) => idx.name === 'ttl_retention_idx');
-
-          if (existingTtlIdx) {
-            // Modify TTL using collMod or drop and recreate
-            try {
-              await db.command({
-                collMod: colName,
-                index: {
-                  name: 'ttl_retention_idx',
-                  expireAfterSeconds: ttlSeconds,
-                },
-              });
-            } catch {
-              await col.dropIndex('ttl_retention_idx');
-              await col.createIndex({ timestamp: 1 }, { expireAfterSeconds: ttlSeconds, name: 'ttl_retention_idx' });
-            }
-          } else {
-            await col.createIndex({ timestamp: 1 }, { expireAfterSeconds: ttlSeconds, name: 'ttl_retention_idx' });
-          }
-        } catch (colErr: any) {
-          console.warn(`Warning setting TTL on ${t.database_name}.${colName}:`, colErr.message);
-        }
-      }
-
-      // 2. Apply Redis default TTL to existing tenant keys
-      if (redisClient && t.redis_prefix) {
-        try {
-          const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
-          const keys = await redisClient.keys(`${cleanPrefix}*`);
-          if (keys && keys.length > 0) {
-            const pipeline = redisClient.pipeline();
-            for (const k of keys) {
-              pipeline.expire(k, cleanRedisTtl);
-            }
-            await pipeline.exec();
-          }
-        } catch (rErr: any) {
-          console.warn(`Warning applying TTL to Redis keys for ${t.tenant_code}:`, rErr.message);
-        }
-      }
-
-      updatedDatabases.push(t.database_name);
-
-      // Save policy in system_settings
-      const policyKey = tenantId === 'all' ? 'retention_global' : `retention_tenant_${t.id}`;
-      const policyValue = JSON.stringify({
-        tenantId: t.id,
-        mongoTtlDays,
-        redisTtlSeconds: cleanRedisTtl,
-        targetCollections,
-        updatedAt: new Date().toISOString(),
+      return NextResponse.json({
+        success: res.success,
+        message: 'Successfully reset retention policy to standard default (MongoDB: 30 Days, Redis: 7 Days / 168 Hours).',
       });
+    }
 
-      await pool.query(
-        `INSERT INTO system_settings (key_name, value_data) VALUES (?, ?)
-         ON DUPLICATE KEY UPDATE value_data = VALUES(value_data)`,
-        [policyKey, policyValue]
+    // 2. Fetch tenant code if specific tenant
+    let targetCode = 'all';
+    if (tenantId !== 'all') {
+      const [rows]: any = await pool.query('SELECT tenant_code FROM tenants WHERE id = ? LIMIT 1', [tenantId]);
+      if (rows.length > 0) {
+        targetCode = rows[0].tenant_code;
+      }
+    }
+
+    const mongoDays = Number(mongoTtlDays);
+    const redisDays = Number((Number(redisTtlSeconds) / 86400).toFixed(2));
+
+    // Execute /opt/multi-tenant/scripts/set_ttl.py directly on 10.20.100.86
+    const cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/set_ttl.py --tenant ${targetCode} --mongo-days ${mongoDays} --redis-days ${redisDays} --json`;
+    const res = await runRemoteScript(cmd);
+
+    // If applying to all tenants, update defaults directly in script files on the remote server
+    if (targetCode === 'all') {
+      await runRemoteScript(
+        `echo 032005 | sudo -S sed -i 's/^DEFAULT_MONGO_DAYS = .*/DEFAULT_MONGO_DAYS = ${mongoDays}/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py; ` +
+        `echo 032005 | sudo -S sed -i 's/^DEFAULT_REDIS_DAYS = .*/DEFAULT_REDIS_DAYS = ${redisDays}/' /opt/multi-tenant/scripts/set_ttl.py /opt/multi-tenant/scripts/configure_ttl.py`
       );
+    }
+
+    let parsedJson = null;
+    if (res.success && res.stdout) {
+      const jsonStart = res.stdout.indexOf('[');
+      if (jsonStart !== -1) {
+        try {
+          parsedJson = JSON.parse(res.stdout.slice(jsonStart));
+        } catch {}
+      }
     }
 
     return NextResponse.json({
-      success: true,
-      message: `Kebijakan data retention berhasil diperbarui: MongoDB TTL ${mongoTtlDays} hari (${ttlSeconds} detik) dan Redis L1 TTL ${cleanRedisTtl} detik untuk ${updatedDatabases.length} database tenant.`,
-      updatedDatabases,
+      success: res.success,
+      message: res.success
+        ? `Successfully applied retention policy on server: MongoDB TTL ${mongoDays} Days, Redis TTL ${redisDays} Days (${redisTtlSeconds}s) for [${targetCode.toUpperCase()}].`
+        : `Execution warning: ${res.stderr || 'Check server logs'}`,
+      updatedStatus: parsedJson,
     });
   } catch (err: any) {
     console.error('API /api/data-retention POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal menyimpan konfigurasi data retention.' },
+      { success: false, error: err.message || 'Failed to save data retention configuration.' },
       { status: 500 }
     );
   }

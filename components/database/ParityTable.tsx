@@ -39,10 +39,10 @@ export function ParityTable({ data, loading }: ParityTableProps) {
       <div className="p-6 border-b border-slate-200 flex items-center justify-between">
         <div>
           <h3 className="font-bold text-base text-slate-900">
-            Audit Rekonsiliasi & Paritas Data Lintas Database
+            Cross-Database Parity & Reconciliation Audit
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Komparasi jumlah dokumen MongoDB, cache keys Redis, dan indeks telemetri per-kampus.
+            Comparison of MongoDB documents, Redis cache keys, and telemetry indices per tenant.
           </p>
         </div>
       </div>
@@ -51,27 +51,27 @@ export function ParityTable({ data, loading }: ParityTableProps) {
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider border-b border-slate-200">
             <tr>
-              <th className="px-5 py-3.5">Tenant Kampus</th>
-              <th className="px-5 py-3.5">MongoDB Insiden</th>
+              <th className="px-5 py-3.5">Tenant</th>
+              <th className="px-5 py-3.5">MongoDB Incidents</th>
               <th className="px-5 py-3.5">MongoDB Vuln</th>
-              <th className="px-5 py-3.5">MongoDB Laporan</th>
+              <th className="px-5 py-3.5">MongoDB Reports</th>
               <th className="px-5 py-3.5">MongoDB Devices</th>
-              <th className="px-5 py-3.5">Redis Keys L1</th>
+              <th className="px-5 py-3.5">Redis Keys</th>
               <th className="px-5 py-3.5">Parity Status</th>
-              <th className="px-5 py-3.5 text-right">Aksi</th>
+              <th className="px-5 py-3.5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 font-medium">
             {loading ? (
               <tr>
                 <td colSpan={8} className="px-6 py-8 text-center text-slate-400">
-                  Melakukan audit paritas lintas database...
+                  Auditing parity across databases...
                 </td>
               </tr>
             ) : data.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-6 py-8 text-center text-slate-400">
-                  Tidak ada data tenant untuk diaudit.
+                  No tenant data available for audit.
                 </td>
               </tr>
             ) : (
@@ -91,30 +91,30 @@ export function ParityTable({ data, loading }: ParityTableProps) {
                     </div>
                   </td>
                   <td className="px-5 py-4 font-mono font-semibold text-slate-700">
-                    {record.mongo.incidents.toLocaleString('id-ID')}
+                    {record.mongo.incidents.toLocaleString('en-US')}
                   </td>
                   <td className="px-5 py-4 font-mono font-semibold text-slate-700">
-                    {record.mongo.vulnerabilities.toLocaleString('id-ID')}
+                    {record.mongo.vulnerabilities.toLocaleString('en-US')}
                   </td>
                   <td className="px-5 py-4 font-mono font-semibold text-slate-700">
-                    {record.mongo.reports.toLocaleString('id-ID')}
+                    {record.mongo.reports.toLocaleString('en-US')}
                   </td>
                   <td className="px-5 py-4 font-mono font-semibold text-slate-700">
-                    {record.mongo.devices.toLocaleString('id-ID')}
+                    {record.mongo.devices.toLocaleString('en-US')}
                   </td>
                   <td className="px-5 py-4 font-mono font-semibold text-blue-600">
-                    {record.redis.keyCount.toLocaleString('id-ID')} keys
+                    {record.redis.keyCount.toLocaleString('en-US')} keys
                   </td>
                   <td className="px-5 py-4">
                     {record.status === 'IN_SYNC' ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>Sinkron ({record.parityScore}%)</span>
+                        <span>In Sync ({record.parityScore}%)</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-600 border border-amber-500/20">
                         <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Perlu Sync ({record.parityScore}%)</span>
+                        <span>Needs Sync ({record.parityScore}%)</span>
                       </span>
                     )}
                   </td>

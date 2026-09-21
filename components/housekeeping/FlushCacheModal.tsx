@@ -6,10 +6,7 @@ import {
   Radio,
   Building2,
   AlertTriangle,
-  CheckCircle2,
   Loader2,
-  RefreshCw,
-  Layers,
   Sparkles,
 } from 'lucide-react';
 
@@ -18,45 +15,45 @@ interface TenantOption {
   tenantCode: string;
   campusName: string;
   databaseName: string;
-  redisPrefix?: string;
 }
 
 interface FlushCacheModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess: (msg: string) => void;
   tenants: TenantOption[];
-  defaultTenantCode?: string;
-  onSuccess: (message: string) => void;
 }
 
 export function FlushCacheModal({
   isOpen,
   onClose,
-  tenants,
-  defaultTenantCode = 'UI',
   onSuccess,
+  tenants,
 }: FlushCacheModalProps) {
-  const [selectedTenant, setSelectedTenant] = useState(defaultTenantCode);
+  const [selectedTenant, setSelectedTenant] = useState<string>(
+    tenants[0]?.tenantCode || 'TNTA'
+  );
   const [scope, setScope] = useState<'all' | 'incidents' | 'vulnerabilities' | 'devices' | 'reports'>('all');
-  const [autoRepump, setAutoRepump] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [autoRepump, setAutoRepump] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const currentTenant = tenants.find((t) => t.tenantCode === selectedTenant) || tenants[0];
-  const prefix = currentTenant?.databaseName || 'universitas_indonesia';
+  const currentTenant = tenants.find((t) => t.tenantCode === selectedTenant);
+  const prefix = currentTenant?.databaseName || 'tenant_db';
 
   const getScopePattern = () => {
     switch (scope) {
       case 'incidents':
-        return `${prefix}:incident:*, ${prefix}:incidents`;
+        return `${prefix}:incident:*`;
       case 'vulnerabilities':
-        return `${prefix}:vulnerability:*, ${prefix}:vulnerabilities`;
+        return `${prefix}:vulnerability:*`;
       case 'devices':
-        return `${prefix}:device:*, ${prefix}:devices:*`;
+        return `${prefix}:device:*`;
       case 'reports':
-        return `${prefix}:reports:*, ${prefix}:reports`;
+        return `${prefix}:reports:*`;
+      case 'all':
       default:
         return `${prefix}:*`;
     }
@@ -78,10 +75,10 @@ export function FlushCacheModal({
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Gagal membersihkan cache Redis');
+        throw new Error(json.error || 'Failed to flush Redis cache');
       }
 
-      onSuccess(json.message || `Cache Redis untuk ${currentTenant?.campusName} berhasil dibersihkan.`);
+      onSuccess(json.message || `Redis cache for ${currentTenant?.campusName} flushed successfully.`);
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -104,7 +101,7 @@ export function FlushCacheModal({
                 Selective Redis Cache Flush
               </h3>
               <p className="text-xs text-slate-500">
-                Pembersihan cache in-memory terisolasi per-prefix kampus
+                Flush in-memory cache keys isolated by tenant prefix
               </p>
             </div>
           </div>
@@ -125,16 +122,16 @@ export function FlushCacheModal({
             </div>
           )}
 
-          {/* Campus Selector */}
+          {/* Tenant Selector */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
               <Building2 className="w-3.5 h-3.5 text-blue-500" />
-              <span>Target Kampus / Tenant</span>
+              <span>Target Tenant</span>
             </label>
             <select
               value={selectedTenant}
               onChange={(e) => setSelectedTenant(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer transition-all"
             >
               {tenants.map((t) => (
                 <option key={t.id} value={t.tenantCode}>
@@ -147,15 +144,15 @@ export function FlushCacheModal({
           {/* Scope Selector */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-2">
-              Pilih Ruang Lingkup Entitas Cache (*Scope*)
+              Select Cache Scope
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: 'all', label: 'All Kunci Kampus', sub: `${prefix}:*` },
-                { id: 'incidents', label: 'Insiden Saja', sub: 'incident:*' },
-                { id: 'vulnerabilities', label: 'Kerentanan Saja', sub: 'vulnerability:*' },
-                { id: 'devices', label: 'Perangkat Saja', sub: 'device:*' },
-                { id: 'reports', label: 'Laporan Saja', sub: 'reports:*' },
+                { id: 'all', label: 'All Tenant Keys', sub: `${prefix}:*` },
+                { id: 'incidents', label: 'Incidents Only', sub: 'incident:*' },
+                { id: 'vulnerabilities', label: 'Vulnerabilities Only', sub: 'vulnerability:*' },
+                { id: 'devices', label: 'Devices Only', sub: 'device:*' },
+                { id: 'reports', label: 'Reports Only', sub: 'reports:*' },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -176,7 +173,7 @@ export function FlushCacheModal({
 
           {/* Pattern Preview */}
           <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-xs">
-            <span className="text-[11px] text-slate-400 block font-semibold mb-1">Pola Kunci yang Akan Dimusnahkan:</span>
+            <span className="text-[11px] text-slate-400 block font-semibold mb-1">Target Key Pattern:</span>
             <code className="font-mono text-indigo-600 font-bold break-all">
               {getScopePattern()}
             </code>
@@ -196,7 +193,7 @@ export function FlushCacheModal({
                 <span>Auto-Repump Fresh Data from MongoDB</span>
               </span>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Otomatis membaca data delta terbaru dari MongoDB dan mengisikannya kembali ke Redis L1 Cache.
+                Automatically read latest delta from MongoDB and populate Redis cache.
               </p>
             </div>
           </label>
@@ -218,7 +215,7 @@ export function FlushCacheModal({
             className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition-all cursor-pointer disabled:opacity-50"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
-            <span>{loading ? 'Membersihkan Cache...' : 'Flush Cache Sekarang'}</span>
+            <span>{loading ? 'Flushing Cache...' : 'Flush Cache Now'}</span>
           </button>
         </div>
       </div>

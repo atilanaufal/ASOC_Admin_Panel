@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMysqlPool } from '@/lib/mysql';
-import { pingIris } from '@/lib/iris';
+import { pingIris, getIrisCustomers } from '@/lib/iris';
 
 export async function GET(_request: NextRequest) {
   try {
@@ -16,7 +16,15 @@ export async function GET(_request: NextRequest) {
       'SELECT id, tenant_id, iris_customer_id, iris_customer_name, iris_customer_desc, created_at FROM tenant_iris_customers'
     );
 
-    // 3. Check IRIS API status
+    // 3. Fetch customers from IRIS API
+    let availableCustomers: { id: number; name: string; desc: string }[] = [];
+    try {
+      availableCustomers = await getIrisCustomers();
+    } catch (e) {
+      console.warn('Could not fetch IRIS customers:', e);
+    }
+
+    // 4. Check IRIS API status
     let irisHealth = { ok: false, latencyMs: 0 };
     try {
       irisHealth = await pingIris();
@@ -54,9 +62,11 @@ export async function GET(_request: NextRequest) {
         totalTenants: tenantList.length,
         mappedTenants: mappedCount,
         unmappedTenants: tenantList.length - mappedCount,
+        totalIrisCustomers: availableCustomers.length,
         irisHealth,
       },
       tenants: tenantList,
+      availableCustomers,
     });
   } catch (err: any) {
     console.error('API /api/tenant-mapping/iris-customer GET Error:', err);

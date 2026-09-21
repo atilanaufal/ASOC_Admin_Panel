@@ -10,9 +10,17 @@ function getOpenSearchUrl(): string {
   return process.env.OPENSEARCH_URL || '';
 }
 
+function getIrisApiKey(): string {
+  return process.env.IRIS_API_KEY || '';
+}
+
 function httpRequest<T = any>(
   targetUrl: string,
-  timeoutMs: number = 3000
+  options: {
+    method?: string;
+    headers?: Record<string, string>;
+    timeoutMs?: number;
+  } = {}
 ): Promise<{ statusCode: number; data: T }> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(targetUrl);
@@ -24,9 +32,10 @@ function httpRequest<T = any>(
       hostname: parsed.hostname,
       port: parsed.port || (isHttps ? 443 : 80),
       path: parsed.pathname + parsed.search,
-      method: 'GET',
+      method: options.method || 'GET',
+      headers: options.headers || {},
       rejectUnauthorized: false,
-      timeout: timeoutMs,
+      timeout: options.timeoutMs || 5000,
     };
 
     const req = lib.request(reqOptions, (res) => {
@@ -57,12 +66,52 @@ function httpRequest<T = any>(
   });
 }
 
+export interface IrisCustomerItem {
+  id: number;
+  name: string;
+  desc: string;
+}
+
+export async function getIrisCustomers(): Promise<IrisCustomerItem[]> {
+  const url = getIrisUrl();
+  const key = getIrisApiKey();
+  if (!url) return [];
+
+  const headers: Record<string, string> = {};
+  if (key) {
+    headers['Authorization'] = `Bearer ${key}`;
+  }
+
+  const listUrl = `${url.replace(/\/$/, '')}/manage/customers/list`;
+  try {
+    const res = await httpRequest<{ status?: string; data?: any[] }>(listUrl, {
+      method: 'GET',
+      headers,
+      timeoutMs: 5000,
+    });
+
+    if (res.statusCode === 200 && Array.isArray(res.data?.data)) {
+      return res.data.data
+        .filter((c: any) => c.customer_id && c.customer_name)
+        .map((c: any) => ({
+          id: Number(c.customer_id),
+          name: String(c.customer_name),
+          desc: String(c.customer_description || '-'),
+        }));
+    }
+  } catch (err) {
+    console.warn('Failed to fetch IRIS customers via /manage/customers/list:', err);
+  }
+
+  return [];
+}
+
 export async function pingIris(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
   const url = getIrisUrl();
   if (!url) return { ok: false, latencyMs: 0, error: 'IRIS_API_URL not configured' };
   const start = Date.now();
   try {
-    const res = await httpRequest(url, 3000);
+    const res = await httpRequest(url, { timeoutMs: 3000 });
     const latencyMs = Date.now() - start;
     return { ok: res.statusCode < 500, latencyMs };
   } catch (err: any) {
@@ -75,7 +124,7 @@ export async function pingOpenSearch(): Promise<{ ok: boolean; latencyMs: number
   if (!url) return { ok: false, latencyMs: 0, error: 'OPENSEARCH_URL not configured' };
   const start = Date.now();
   try {
-    const res = await httpRequest<any>(url, 3000);
+    const res = await httpRequest<any>(url, { timeoutMs: 3000 });
     const latencyMs = Date.now() - start;
     // 200 OK or 401 Unauthorized means port is responsive and service is running
     if (res.statusCode < 500) {

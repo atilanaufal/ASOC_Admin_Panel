@@ -104,7 +104,7 @@ export async function verifySuperadminCredentials(
           tenant_id: 0,
           tenant_code: 'MASTER',
           campus_name: 'ASOC Central Management',
-          database_name: 'platform_master',
+          database_name: '-',
           redis_prefix: 'asoc_master',
         };
       }
@@ -209,7 +209,7 @@ export async function verifySuperadminCredentials(
         role: 'superadmin',
         tenant_code: user.tenant_code || 'MASTER',
         campus_name: user.campus_name || 'ASOC Central Management',
-        database_name: user.database_name || 'platform_master',
+        database_name: user.database_name || '-',
         redis_prefix: user.redis_prefix || 'asoc_master',
       },
     };

@@ -120,24 +120,7 @@ export async function logAdminActivity(entry: {
         ]
       );
     } catch (mysqlErr: any) {
-      // Fallback: Log to MongoDB platform_master.admin_audit_logs
-      try {
-        const mongoClient = await getMongoClient();
-        const masterDb = mongoClient.db('platform_master');
-        await masterDb.collection('admin_audit_logs').insertOne({
-          admin_id: adminId,
-          admin_username: adminUsername,
-          ip_address: ipAddress,
-          user_agent: userAgent,
-          action_type: actionType,
-          target_resource: targetResource,
-          status,
-          details,
-          timestamp: new Date(),
-        });
-      } catch (mongoErr: any) {
-        console.error('[Audit Logger Mongo Fallback Error]:', mongoErr.message);
-      }
+      console.warn('[Audit Logger MySQL Error]:', mysqlErr.message);
     }
   })();
 }

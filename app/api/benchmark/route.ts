@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     // 2. Benchmark MongoDB (Insert & Find)
     try {
       const mongoClient = await getMongoClient();
-      const db = mongoClient.db('platform_master');
+      const db = mongoClient.db('tenant_a');
       const testCol = db.collection('benchmark_test');
 
       const mongoStart = performance.now();
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       const opsSec = Math.round((iterations * 2 / (totalMongoTime / 1000)));
 
       benchmarkResults['mongodb'] = {
-        engine: 'MongoDB 7.0 (Document SSOT)',
+        engine: 'MongoDB 7.0 (Document Database)',
         status: 'PASSED',
         iterations,
         insertLatencyAvgMs: Number((insertDuration / iterations).toFixed(3)),

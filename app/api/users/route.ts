@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       email,
       password,
       role: role || 'tenant',
-      tenantId: Number(tenantId) || 1,
+      tenantId: role === 'admin' ? null : (Number(tenantId) || 1),
     });
 
     if (!result.success) {

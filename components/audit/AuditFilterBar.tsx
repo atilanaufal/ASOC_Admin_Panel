@@ -50,8 +50,8 @@ export function AuditFilterBar({
             type="text"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Cari admin, target resource, IP address, atau tipe aksi..."
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Search admin, target resource, IP address, or action type..."
+            className="w-full pl-9 pr-4 py-2 bg-white hover:bg-slate-50 rounded-xl border border-slate-200/80 shadow-2xs text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
           />
           {search && (
             <button
@@ -77,65 +77,65 @@ export function AuditFilterBar({
       {/* Bottom Filter Row: Action, Status, Date Range */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-100 text-xs">
         {/* Action Type Dropdown */}
-        <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 bg-white hover:bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80 shadow-2xs transition-all">
           <Layers className="w-4 h-4 text-blue-500 flex-shrink-0" />
           <select
             value={actionType}
             onChange={(e) => onActionTypeChange(e.target.value)}
-            className="bg-transparent font-bold text-slate-800 outline-none w-full cursor-pointer text-xs"
+            className="bg-transparent font-semibold text-slate-800 outline-none w-full cursor-pointer text-xs"
           >
-            <option value="all">All Tipe Aksi</option>
-            <option value="AUTH_LOGIN">Login Admin (AUTH_LOGIN)</option>
-            <option value="USER_CREATE">Buat User (USER_CREATE)</option>
+            <option value="all">All Action Types</option>
+            <option value="AUTH_LOGIN">Admin Login (AUTH_LOGIN)</option>
+            <option value="USER_CREATE">Create User (USER_CREATE)</option>
             <option value="USER_UPDATE">Update User (USER_UPDATE)</option>
-            <option value="USER_DELETE">Hapus User (USER_DELETE)</option>
+            <option value="USER_DELETE">Delete User (USER_DELETE)</option>
             <option value="USER_RESET_PASSWORD">Reset Password</option>
-            <option value="TENANT_CREATE">Provisioning Tenant</option>
+            <option value="TENANT_CREATE">Tenant Provisioning</option>
             <option value="TENANT_UPDATE">Update Tenant</option>
-            <option value="TENANT_STATUS_TOGGLE">Toggle Status Tenant</option>
+            <option value="TENANT_STATUS_TOGGLE">Toggle Tenant Status</option>
             <option value="TENANT_DELETE">Delete Tenant</option>
-            <option value="AGENT_MAPPING_UPDATE">Update Mapping Agen</option>
-            <option value="MANUAL_SYNC_TRIGGER">Trigger Sync Manual</option>
+            <option value="AGENT_MAPPING_UPDATE">Update Agent Mapping</option>
+            <option value="MANUAL_SYNC_TRIGGER">Manual Sync Trigger</option>
             <option value="REDIS_CACHE_FLUSH">Flush Redis Cache</option>
-            <option value="MONGO_DATA_CLEANUP">Purge Data Mongo</option>
+            <option value="MONGO_DATA_CLEANUP">Purge Mongo Data</option>
           </select>
         </div>
 
         {/* Status Dropdown */}
-        <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 bg-white hover:bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80 shadow-2xs transition-all">
           <Activity className="w-4 h-4 text-emerald-500 flex-shrink-0" />
           <select
             value={status}
             onChange={(e) => onStatusChange(e.target.value)}
-            className="bg-transparent font-bold text-slate-800 outline-none w-full cursor-pointer text-xs"
+            className="bg-transparent font-semibold text-slate-800 outline-none w-full cursor-pointer text-xs"
           >
-            <option value="all">All Statuses (Sukses & Gagal)</option>
-            <option value="SUCCESS">Hanya Sukses (SUCCESS)</option>
-            <option value="FAILED">Hanya Gagal (FAILED)</option>
+            <option value="all">All Statuses (Success & Failed)</option>
+            <option value="SUCCESS">Success Only (SUCCESS)</option>
+            <option value="FAILED">Failed Only (FAILED)</option>
           </select>
         </div>
 
         {/* Start Date */}
-        <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 bg-white hover:bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80 shadow-2xs transition-all">
           <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
-          <span className="text-[10px] text-slate-400 font-semibold">Dari:</span>
+          <span className="text-[10px] text-slate-400 font-semibold">From:</span>
           <input
             type="date"
             value={startDate}
             onChange={(e) => onStartDateChange(e.target.value)}
-            className="bg-transparent font-mono font-bold text-slate-800 outline-none w-full text-xs"
+            className="bg-transparent font-mono font-semibold text-slate-800 outline-none w-full text-xs"
           />
         </div>
 
         {/* End Date */}
-        <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 bg-white hover:bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/80 shadow-2xs transition-all">
           <Calendar className="w-4 h-4 text-slate-400 flex-shrink-0" />
-          <span className="text-[10px] text-slate-400 font-semibold">Sampai:</span>
+          <span className="text-[10px] text-slate-400 font-semibold">To:</span>
           <input
             type="date"
             value={endDate}
             onChange={(e) => onEndDateChange(e.target.value)}
-            className="bg-transparent font-mono font-bold text-slate-800 outline-none w-full text-xs"
+            className="bg-transparent font-mono font-semibold text-slate-800 outline-none w-full text-xs"
           />
         </div>
       </div>

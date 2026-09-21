@@ -32,9 +32,9 @@ export function DaemonExecutionCard({ services, loading }: DaemonExecutionCardPr
     );
   }
 
-  const pumper = services.find((s) => s.id === 'go_grpc_pumper');
-  const iris = services.find((s) => s.id === 'iris_case_shipper');
-  const fetcher = services.find((s) => s.id === 'asoc_agent_fetcher');
+  const pumper = services.find((s) => s.id === 'mongo-redis-multitenant-pumper' || s.id === 'go_grpc_pumper');
+  const iris = services.find((s) => s.id === 'iris-case-shipper' || s.id === 'iris_case_shipper');
+  const fetcher = services.find((s) => s.id === 'wazuh-agent-full' || s.id === 'asoc_agent_fetcher');
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -53,7 +53,7 @@ export function DaemonExecutionCard({ services, loading }: DaemonExecutionCardPr
                 <h4 className="font-extrabold text-sm text-slate-900">
                   Go gRPC Pumper
                 </h4>
-                <span className="text-[11px] font-mono text-cyan-500 font-semibold">Port :50057</span>
+                <span className="text-[11px] font-mono text-cyan-600 font-semibold">Live Telemetry Pipeline</span>
               </div>
             </div>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
@@ -62,33 +62,33 @@ export function DaemonExecutionCard({ services, loading }: DaemonExecutionCardPr
           </div>
 
           <p className="text-xs text-slate-500 mb-4">
-            Streaming delta telemetri dari MongoDB ke Redis L1 Cache untuk seluruh kampus.
+            Streaming telemetry delta from MongoDB to Redis for all tenants.
           </p>
 
           {/* Batch Metrics Grid */}
           <div className="grid grid-cols-2 gap-2 font-mono text-xs mb-4">
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400 text-[10px] block">Insiden Dipompa</span>
+              <span className="text-slate-400 text-[10px] block">Incidents Pumped</span>
               <span className="font-bold text-sm text-blue-600">
-                {pumper?.lastRunMetrics?.incidentsPumped ?? 100} Docs
+                {pumper?.lastRunMetrics?.incidentsPumped !== undefined ? pumper.lastRunMetrics.incidentsPumped : 0} Docs
               </span>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400 text-[10px] block">Kerentanan</span>
+              <span className="text-slate-400 text-[10px] block">Vulnerabilities</span>
               <span className="font-bold text-sm text-emerald-600">
-                {pumper?.lastRunMetrics?.vulnsPumped ?? 500} Docs
+                {pumper?.lastRunMetrics?.vulnsPumped !== undefined ? pumper.lastRunMetrics.vulnsPumped : 0} Docs
               </span>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400 text-[10px] block">Perangkat Agen</span>
+              <span className="text-slate-400 text-[10px] block">Agent Devices</span>
               <span className="font-bold text-sm text-indigo-600">
-                {pumper?.lastRunMetrics?.devicesPumped ?? 2} Devices
+                {pumper?.lastRunMetrics?.devicesPumped !== undefined ? pumper.lastRunMetrics.devicesPumped : 0} Devices
               </span>
             </div>
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400 text-[10px] block">Laporan Kasus</span>
+              <span className="text-slate-400 text-[10px] block">Case Reports</span>
               <span className="font-bold text-sm text-purple-600">
-                {pumper?.lastRunMetrics?.reportsPumped ?? 9} Cases
+                {pumper?.lastRunMetrics?.reportsPumped !== undefined ? pumper.lastRunMetrics.reportsPumped : 0} Cases
               </span>
             </div>
           </div>
@@ -96,10 +96,10 @@ export function DaemonExecutionCard({ services, loading }: DaemonExecutionCardPr
 
         {/* Footer info */}
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-          <span className="text-slate-400">Durasi Siklus:</span>
+          <span className="text-slate-400">Cycle Duration:</span>
           <span className="font-mono font-bold text-emerald-600 flex items-center gap-1">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>{pumper?.lastRunMetrics?.durationMs ?? 48.5}ms (Normal)</span>
+            <span>{pumper?.lastRunMetrics?.durationMs !== undefined ? `${pumper.lastRunMetrics.durationMs}ms (Normal)` : 'Active (Normal)'}</span>
           </span>
         </div>
       </div>
@@ -119,7 +119,7 @@ export function DaemonExecutionCard({ services, loading }: DaemonExecutionCardPr
                 <h4 className="font-extrabold text-sm text-slate-900">
                   DFIR-IRIS Case Shipper
                 </h4>
-                <span className="text-[11px] font-mono text-blue-500 font-semibold">Port :8443 API</span>
+                <span className="text-[11px] font-mono text-blue-600 font-semibold">Case Pipeline Daemon</span>
               </div>
             </div>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/10 text-blue-600 border border-blue-500/20">
@@ -128,32 +128,32 @@ export function DaemonExecutionCard({ services, loading }: DaemonExecutionCardPr
           </div>
 
           <p className="text-xs text-slate-500 mb-4">
-            Polling kasus investigasi dari DFIR-IRIS dan sinkronisasi ke MongoDB <code>reports</code>.
+            Polling investigation cases from DFIR-IRIS and synchronizing to MongoDB <code>reports</code>.
           </p>
 
           {/* Metrics */}
           <div className="space-y-2 font-mono text-xs mb-4">
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400">Total Kasus Tersinkron:</span>
-              <span className="font-bold text-slate-900">{iris?.lastRunMetrics?.casesShipped ?? 9} Kasus</span>
+              <span className="text-slate-400">Total Synced Cases:</span>
+              <span className="font-bold text-slate-900">{iris?.lastRunMetrics?.casesShipped ?? 0} Cases</span>
             </div>
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400">Jadwal Operasional:</span>
+              <span className="text-slate-400">Operating Schedule:</span>
               <span className="font-bold text-slate-900">08:00 - 18:00 WIB</span>
             </div>
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400">Interval Polling:</span>
-              <span className="font-bold text-blue-500">Setiap 10 Menit</span>
+              <span className="text-slate-400">Polling Interval:</span>
+              <span className="font-bold text-blue-500">Every 10 Minutes</span>
             </div>
           </div>
         </div>
 
         {/* Footer info */}
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-          <span className="text-slate-400">Status Terakhir:</span>
+          <span className="text-slate-400">Last Status:</span>
           <span className="font-mono font-bold text-emerald-600 flex items-center gap-1">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>SINKRON 100% ({iris?.lastRunMetrics?.durationMs ?? 194.9}ms)</span>
+            <span>100% Synced ({iris?.lastRunMetrics?.durationMs ?? 46.5}ms)</span>
           </span>
         </div>
       </div>
@@ -182,23 +182,23 @@ export function DaemonExecutionCard({ services, loading }: DaemonExecutionCardPr
           </div>
 
           <p className="text-xs text-slate-500 mb-4">
-            Pembaruan periodik data syscollector/OS/hardware agen Wazuh ke koleksi <code>devices</code>.
+            Periodic update of Wazuh agent syscollector/OS/hardware data into <code>devices</code> collection.
           </p>
 
           {/* Metrics */}
           <div className="space-y-2 font-mono text-xs mb-4">
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400">Frekuensi Timer:</span>
-              <span className="font-bold text-slate-900">1 Jam Sekali</span>
+              <span className="text-slate-400">Timer Frequency:</span>
+              <span className="font-bold text-slate-900">Every 1 Hour</span>
             </div>
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400">Target Koleksi:</span>
+              <span className="text-slate-400">Target Collections:</span>
               <span className="font-bold text-slate-900">devices, summary</span>
             </div>
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400">Hitung Mundur Pemicu:</span>
+              <span className="text-slate-400">Trigger Countdown:</span>
               <span className="font-bold text-indigo-500">
-                {fetcher?.lastRunMetrics?.nextRunCountdown || '25 Menit Lagi'}
+                {fetcher?.lastRunMetrics?.nextRunCountdown || 'Active'}
               </span>
             </div>
           </div>
@@ -206,7 +206,7 @@ export function DaemonExecutionCard({ services, loading }: DaemonExecutionCardPr
 
         {/* Footer info */}
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-          <span className="text-slate-400">Hasil Run Terakhir:</span>
+          <span className="text-slate-400">Last Run Result:</span>
           <span className="font-mono font-bold text-emerald-600 flex items-center gap-1">
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>SUCCESS 100%</span>

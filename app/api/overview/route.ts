@@ -3,7 +3,7 @@ import os from 'os';
 import { pingMysql, getMysqlPool } from '@/lib/mysql';
 import { pingMongo, listMongoDatabases } from '@/lib/mongodb';
 import { pingRedis, getActiveRedisClient } from '@/lib/redis';
-import { pingWazuh, getWazuhAgentSummary, getWazuhAgents } from '@/lib/wazuh';
+import { pingWazuh, getWazuhAgentSummary, getWazuhAgents, fetchWazuhAgents } from '@/lib/wazuh';
 import { pingOpenSearch } from '@/lib/iris';
 import { auditBackgroundServices } from '@/lib/services';
 import { getVmResourceMetrics } from '@/lib/resource-stats';
@@ -42,7 +42,17 @@ export async function GET() {
           'SELECT id, tenant_code, campus_name, database_name, redis_prefix, created_at FROM tenants'
         );
         const [usersRows]: any = await pool.query('SELECT COUNT(*) as count FROM users');
-        tenantsList = Array.isArray(tenantsRows) ? tenantsRows : [];
+        const [userCounts]: any = await pool.query(
+          'SELECT tenant_id, COUNT(*) as cnt FROM users WHERE tenant_id IS NOT NULL GROUP BY tenant_id'
+        );
+        const userCountMap = new Map<number, number>();
+        for (const u of (userCounts || [])) {
+          userCountMap.set(u.tenant_id, Number(u.cnt) || 0);
+        }
+        tenantsList = (Array.isArray(tenantsRows) ? tenantsRows : []).map((t: any) => ({
+          ...t,
+          userCount: userCountMap.get(t.id) || 1,
+        }));
         tenantCount = tenantsList.length;
         userCount = usersRows[0]?.count || 0;
       } catch (err: any) {
@@ -63,15 +73,40 @@ export async function GET() {
 
     if (wazuhHealth.ok) {
       try {
-        wazuhSummary = await getWazuhAgentSummary();
-        totalWazuhAgents = wazuhSummary.total || 0;
-        const agentsList = await getWazuhAgents();
-        if (Array.isArray(agentsList)) {
-          unassignedAgentsCount = agentsList.filter(
-            (a: any) => !a.group || a.group.length === 0 || (a.group.length === 1 && a.group[0] === 'default')
-          ).length;
-        }
-      } catch {}
+        const agentsList = await fetchWazuhAgents(500);
+        totalWazuhAgents = agentsList.length;
+        const activeAgents = agentsList.filter((a) => a.status === 'active').length;
+        const discAgents = agentsList.length - activeAgents;
+        wazuhSummary = {
+          active: activeAgents,
+          disconnected: discAgents,
+          never_connected: 0,
+          pending: 0,
+          total: agentsList.length,
+        };
+        unassignedAgentsCount = agentsList.filter(
+          (a: any) => !a.group || a.group.length === 0 || (a.group.length === 1 && a.group[0] === 'default')
+        ).length;
+      } catch (err) {
+        console.error('Error fetching Wazuh agents for overview:', err);
+      }
+    }
+
+    // 4b. Fetch IRIS mapping to tenants
+    let irisMappedCount = 0;
+    let irisUnmappedCount = 0;
+    if (mysqlHealth.ok) {
+      try {
+        const pool = getMysqlPool();
+        const [irisRows]: any = await pool.query(
+          'SELECT tenant_id FROM tenant_iris_customers WHERE iris_customer_id IS NOT NULL'
+        );
+        const mappedSet = new Set(irisRows.map((r: any) => r.tenant_id));
+        irisMappedCount = tenantsList.filter((t) => mappedSet.has(t.id)).length;
+        irisUnmappedCount = tenantsList.length - irisMappedCount;
+      } catch (err) {
+        console.error('Error querying IRIS mapping for overview:', err);
+      }
     }
 
     // 5. Compute Database status
@@ -166,10 +201,10 @@ export async function GET() {
           healthPercent: databaseHealthPercent,
         },
         agents: {
-          total: totalWazuhAgents || 50,
-          online: onlineAgents || 47,
-          offline: (totalWazuhAgents || 50) - (onlineAgents || 47),
-          healthPercent: agentHealthPercent || 94,
+          total: totalWazuhAgents,
+          online: onlineAgents,
+          offline: totalWazuhAgents - onlineAgents,
+          healthPercent: agentHealthPercent,
         },
         services: {
           total: totalServices,
@@ -190,12 +225,21 @@ export async function GET() {
         },
         sync: {
           isMismatch: hasSyncMismatch,
-          statusText: hasSyncMismatch ? 'Mismatch Detected' : 'All Synced',
+          statusText: hasSyncMismatch ? 'Mismatch' : 'Synchronized',
         },
         agentGrouping: {
+          total: totalWazuhAgents,
+          groupedCount: totalWazuhAgents - unassignedAgentsCount,
+          ungroupedCount: unassignedAgentsCount,
           allGrouped: unassignedAgentsCount === 0,
-          unassignedCount: unassignedAgentsCount,
-          statusText: unassignedAgentsCount === 0 ? 'All Agents Grouped' : `${unassignedAgentsCount} Unassigned Agents`,
+          statusText: unassignedAgentsCount === 0 ? 'All Grouped' : `${unassignedAgentsCount} Ungrouped`,
+        },
+        irisMapping: {
+          totalTenants: tenantCount,
+          mappedCount: irisMappedCount,
+          unmappedCount: irisUnmappedCount,
+          allMapped: irisUnmappedCount === 0,
+          statusText: irisUnmappedCount === 0 ? 'All Mapped' : `${irisUnmappedCount} Unmapped`,
         },
       },
       health: {
@@ -207,14 +251,14 @@ export async function GET() {
           error: mysqlHealth.error,
         },
         mongodb: {
-          name: 'MongoDB Multi-Tenant SSOT',
+          name: 'MongoDB Multi-Tenant Database',
           port: 27017,
           ok: mongoHealth.ok,
           latency: mongoHealth.latencyMs,
           error: mongoHealth.error,
         },
         redis: {
-          name: 'Redis Realtime L1 Cache',
+          name: 'Redis Realtime Cache',
           port: 6379,
           ok: redisHealth.ok,
           latency: redisHealth.latencyMs,

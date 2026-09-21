@@ -16,6 +16,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import type { UserItem } from '@/lib/users';
+import CustomSelect from '@/components/ui/CustomSelect';
 
 interface TenantOption {
   id: number;
@@ -95,7 +96,7 @@ export function UserModal({
           body: JSON.stringify({
             email,
             role,
-            tenantId: Number(tenantId),
+            tenantId: role === 'admin' ? undefined : Number(tenantId),
           }),
         });
         const json = await res.json();
@@ -116,7 +117,7 @@ export function UserModal({
             email: email.trim() || undefined,
             password,
             role,
-            tenantId: Number(tenantId),
+            tenantId: role === 'admin' ? undefined : Number(tenantId),
           }),
         });
         const json = await res.json();
@@ -149,8 +150,8 @@ export function UserModal({
               </h3>
               <p className="text-xs text-slate-500">
                 {isEditing
-                  ? `Memperbarui hak akses dan metadata untuk @${userToEdit?.username}`
-                  : 'Daftarkan akun analis baru ke MySQL auth_db & Better-Auth'}
+                  ? `Update permissions and metadata for @${userToEdit?.username}`
+                  : 'Register new analyst account to MySQL auth_db & Better-Auth'}
               </p>
             </div>
           </div>
@@ -182,11 +183,11 @@ export function UserModal({
               disabled={isEditing}
               value={username}
               onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-              placeholder="contoh: analyst_ui_2"
+              placeholder="e.g. analyst_tnta_1"
               className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
             />
             {isEditing && (
-              <p className="text-[11px] text-slate-400 mt-1">Username tidak dapat diubah setelah terdaftar.</p>
+              <p className="text-[11px] text-slate-400 mt-1">Username cannot be modified after registration.</p>
             )}
           </div>
 
@@ -194,13 +195,13 @@ export function UserModal({
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5 text-slate-400" />
-              <span>Alamat Email (Opsional)</span>
+              <span>Email Address (Optional)</span>
             </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="contoh: soc@kampus.ac.id"
+              placeholder="e.g. soc@tenant.org"
               className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -211,37 +212,47 @@ export function UserModal({
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-slate-400" />
-                <span>Hak Akses (Role)</span>
+                <span>Role / Access Level</span>
               </label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-              >
-                <option value="tenant">Campus Analysts (Tenant)</option>
-                <option value="tenant_admin">Campus Admin (Tenant Admin)</option>
-                <option value="superadmin">Superadmin (Global Portal)</option>
-              </select>
+              <CustomSelect
+                value={role === 'admin' ? 'admin' : 'tenant'}
+                onChange={(val) => setRole(String(val))}
+                options={[
+                  { value: 'tenant', label: 'Analyst', badge: 'ANALYST', subLabel: 'Tenant Analyst' },
+                  { value: 'admin', label: 'Admin', badge: 'ADMIN', subLabel: 'Central Administrator' },
+                ]}
+                className="w-full"
+              />
             </div>
 
-            {/* Tenant Campus */}
+            {/* Tenant Selection */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                <span>Kampus / Tenant Terikat</span>
+                <span>Assigned Tenant</span>
               </label>
-              <select
-                value={tenantId}
-                disabled={role === 'superadmin'}
-                onChange={(e) => setTenantId(Number(e.target.value))}
-                className="w-full px-3 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
-              >
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.campus_name} ({t.tenant_code})
-                  </option>
-                ))}
-              </select>
+              {role === 'admin' ? (
+                <div className="w-full px-3.5 py-2.5 bg-slate-100 rounded-xl border border-slate-200 text-xs text-slate-600 font-medium flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Admin Platform (Semua Tenant)</span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                    GLOBAL
+                  </span>
+                </div>
+              ) : (
+                <CustomSelect
+                  value={tenantId}
+                  onChange={(val) => setTenantId(Number(val))}
+                  options={tenants.map((t) => ({
+                    value: t.id,
+                    label: `${t.campus_name} (${t.tenant_code})`,
+                    badge: t.tenant_code,
+                  }))}
+                  className="w-full"
+                />
+              )}
             </div>
           </div>
 
@@ -251,7 +262,7 @@ export function UserModal({
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Password Akun</span>
+                  <span>Account Password</span>
                   <span className="text-rose-500">*</span>
                 </label>
                 <button
@@ -269,7 +280,7 @@ export function UserModal({
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimal 6 karakter"
+                  placeholder="Minimum 6 characters"
                   className="w-full px-4 py-2.5 pr-10 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
@@ -298,7 +309,7 @@ export function UserModal({
               className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/20 transition-all cursor-pointer disabled:opacity-50"
             >
               {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>{isEditing ? 'Save Changes' : 'Buat Pengguna'}</span>
+              <span>{isEditing ? 'Save Changes' : 'Create User'}</span>
             </button>
           </div>
         </form>

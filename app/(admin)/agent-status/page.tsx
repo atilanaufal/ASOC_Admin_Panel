@@ -2,16 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  ShieldCheck,
-  Server,
-  RefreshCw,
   Search,
-  CheckCircle2,
-  AlertCircle,
-  Building2,
-  HardDrive,
-  Activity,
+  ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
+import CustomSelect from '@/components/ui/CustomSelect';
 import type { MappedAgentItem } from '@/app/api/wazuh/agents/route';
 
 export default function AgentStatusPage() {
@@ -23,8 +18,7 @@ export default function AgentStatusPage() {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disconnected'>('all');
-  const [selectedCampusFilter, setSelectedCampusFilter] = useState<string>('all');
+  const [selectedTenantFilter, setSelectedTenantFilter] = useState<string>('all');
 
   const fetchAgents = async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -50,324 +44,375 @@ export default function AgentStatusPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Filtered agents
+  // Compute real values from live data
+  const totalAgents = summary?.total ?? agents.length;
+  const onlineAgents = summary?.active ?? agents.filter((a) => a.status === 'active').length;
+  const offlineAgents = summary?.disconnected ?? agents.filter((a) => a.status !== 'active').length;
+  const registeredAgents = agents.filter((a) => a.isMapped).length;
+  const notRegisteredAgents = agents.filter((a) => !a.isMapped).length;
+
+  // OS Distribution computed dynamically from live agents
+  const OS_PALETTE = [
+    '#F97316', // Vibrant Orange (e.g. Ubuntu 24.04)
+    '#0066FF', // Vibrant Royal Blue (e.g. Ubuntu 20.04)
+    '#8B5CF6', // Vibrant Purple (e.g. Ubuntu 22.04)
+    '#10B981', // Vibrant Emerald Green (e.g. Rocky Linux)
+    '#EC4899', // Pink
+    '#06B6D4', // Cyan
+    '#F59E0B', // Amber
+    '#6366F1', // Indigo
+  ];
+
+  const osMap = new Map<string, number>();
+  agents.forEach((a) => {
+    let key = 'Other OS';
+    if (a.os) {
+      const rawName = a.os.name || 'Linux';
+      const rawVer = a.os.version || '';
+      if (rawName.toLowerCase().includes('ubuntu')) {
+        const mm = rawVer.match(/\d+\.\d+/)?.[0];
+        key = mm ? `Ubuntu ${mm}` : `Ubuntu ${rawVer.replace(' LTS', '').trim()}`;
+      } else if (rawName.toLowerCase().includes('rocky')) {
+        key = rawVer ? `Rocky Linux ${rawVer.trim()}` : 'Rocky Linux';
+      } else if (rawName.toLowerCase().includes('windows')) {
+        key = rawVer ? `Windows ${rawVer.trim()}` : 'Windows';
+      } else {
+        key = `${rawName} ${rawVer}`.trim() || 'Linux';
+      }
+    }
+    osMap.set(key, (osMap.get(key) || 0) + 1);
+  });
+
+  const osDistribution = Array.from(osMap.entries()).map(([name, count], index) => ({
+    name,
+    count,
+    color: OS_PALETTE[index % OS_PALETTE.length],
+  }));
+
+  const totalOsCount = osDistribution.reduce((acc, curr) => acc + curr.count, 0);
+
+  // Filtered agents (Live data only, no mock fallback)
   const filteredAgents = agents.filter((a) => {
-    const matchesSearch =
-      !searchQuery.trim() ||
-      a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.id.includes(searchQuery) ||
-      (a.ip && a.ip.includes(searchQuery)) ||
-      (a.os?.name && a.os.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const q = searchQuery.toLowerCase().trim();
+    const osString = typeof a.os === 'string' ? a.os : `${a.os?.name || ''} ${a.os?.version || ''}`;
+    const tenantCode = a.assignedTenant?.tenantCode?.toLowerCase() || '';
+    const campusName = a.assignedTenant?.campusName?.toLowerCase() || '';
 
-    const matchesStatus =
-      statusFilter === 'all' ||
-      (statusFilter === 'active' && a.status === 'active') ||
-      (statusFilter === 'disconnected' && a.status !== 'active');
+    const matchSearch =
+      !q ||
+      a.id.toLowerCase().includes(q) ||
+      a.name.toLowerCase().includes(q) ||
+      (a.ip && a.ip.toLowerCase().includes(q)) ||
+      osString.toLowerCase().includes(q) ||
+      tenantCode.includes(q) ||
+      campusName.includes(q);
 
-    const matchesCampus =
-      selectedCampusFilter === 'all' ||
-      (a.assignedTenant && a.assignedTenant.tenantCode === selectedCampusFilter);
+    const matchTenant =
+      selectedTenantFilter === 'all' ||
+      tenantCode === selectedTenantFilter.toLowerCase();
 
-    return matchesSearch && matchesStatus && matchesCampus;
+    return matchSearch && matchTenant;
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Header */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 pb-8 animate-in fade-in duration-200">
+      {/* Top Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/10 text-blue-600 flex items-center justify-center font-bold">
-              <ShieldCheck className="w-5 h-5" />
+          <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">
+            Agent Status
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Wazuh security agent inventory, connection health, and OS distributions.
+          </p>
+        </div>
+
+        <button
+          onClick={() => fetchAgents(true)}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200/80 text-slate-700 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
+          <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+        </button>
+      </div>
+
+      {/* ========================================================= */}
+      {/* ROW 1: Agent Breakdown (Left) & OS Distribution (Right)   */}
+      {/* ========================================================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Left: Agent Progress Bars (7 cols) */}
+        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex flex-col justify-between">
+          <div className="pb-3 border-b border-slate-100">
+            <h3 className="text-sm font-bold text-slate-800">Agent</h3>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 items-center my-auto py-4">
+            {/* 4 Stacked Progress Bars (8 cols) */}
+            <div className="sm:col-span-8 space-y-4">
+              {/* Online Bar */}
+              <div className="w-full bg-[#D1FAE5] h-5 rounded-full overflow-hidden p-0.5">
+                <div
+                  className="bg-[#10B981] h-full rounded-full transition-all duration-700"
+                  style={{ width: `${totalAgents > 0 ? (onlineAgents / totalAgents) * 100 : 0}%` }}
+                />
+              </div>
+
+              {/* Offline Bar */}
+              <div className="w-full bg-[#FEE2E2] h-5 rounded-full overflow-hidden p-0.5">
+                <div
+                  className="bg-[#EF4444] h-full rounded-full transition-all duration-700"
+                  style={{ width: `${totalAgents > 0 && offlineAgents > 0 ? Math.max(6, (offlineAgents / totalAgents) * 100) : 0}%` }}
+                />
+              </div>
+
+              {/* Registered Bar */}
+              <div className="w-full bg-[#DBEAFE] h-5 rounded-full overflow-hidden p-0.5">
+                <div
+                  className="bg-[#0066FF] h-full rounded-full transition-all duration-700"
+                  style={{ width: `${totalAgents > 0 ? (registeredAgents / totalAgents) * 100 : 0}%` }}
+                />
+              </div>
+
+              {/* Not Registered Bar */}
+              <div className="w-full bg-[#EDE9FE] h-5 rounded-full overflow-hidden p-0.5">
+                <div
+                  className="bg-[#8B5CF6] h-full rounded-full transition-all duration-700"
+                  style={{ width: `${totalAgents > 0 && notRegisteredAgents > 0 ? Math.max(6, (notRegisteredAgents / totalAgents) * 100) : 0}%` }}
+                />
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-black text-slate-900 tracking-tight">
-                Wazuh Agents & Telemetry Status
-              </h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Centralized monitoring of connection status, telemetry, and live endpoint health.
-              </p>
+
+            {/* Numbers on right (4 cols) */}
+            <div className="sm:col-span-4 space-y-2 text-xs md:text-sm">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-slate-800 text-sm">Total Agents</span>
+                <span className="font-extrabold text-slate-800 text-base font-mono">
+                  {totalAgents}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[#10B981]">Online</span>
+                <span className="font-bold text-[#10B981] font-mono">{onlineAgents}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[#EF4444]">Offline</span>
+                <span className="font-bold text-[#EF4444] font-mono">{offlineAgents}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[#0066FF]">Registered</span>
+                <span className="font-bold text-[#0066FF] font-mono">{registeredAgents}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[#8B5CF6]">Not Registered</span>
+                <span className="font-bold text-[#8B5CF6] font-mono">{notRegisteredAgents}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => fetchAgents(true)}
-            disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
-            <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
-          </button>
+        {/* Right: Operating System Distribution (5 cols) matching Gambar 1 with real data & dynamic colors */}
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs flex flex-col justify-between">
+          <div className="pb-3 border-b border-slate-100">
+            <h3 className="text-sm font-bold text-slate-800">Operating System Distribution</h3>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 py-4 my-auto">
+            {/* Donut Chart Ring with accurate dynamic colored segments */}
+            <div className="relative w-32 h-32 md:w-36 md:h-36 flex items-center justify-center flex-shrink-0">
+              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                {/* Background track */}
+                <circle cx="50" cy="50" r="38" stroke="#F1F5F9" strokeWidth="12" fill="none" />
+                {totalOsCount > 0 && (() => {
+                  let accumulated = 0;
+                  const C = 238.761;
+                  return osDistribution.map((os) => {
+                    const sliceLen = (os.count / totalOsCount) * C;
+                    const strokeDasharray = `${sliceLen} ${C - sliceLen}`;
+                    const strokeDashoffset = -accumulated;
+                    accumulated += sliceLen;
+                    return (
+                      <circle
+                        key={os.name}
+                        cx="50"
+                        cy="50"
+                        r="38"
+                        stroke={os.color}
+                        strokeWidth="12"
+                        fill="none"
+                        strokeDasharray={strokeDasharray}
+                        strokeDashoffset={strokeDashoffset}
+                        className="transition-all duration-700 ease-out"
+                      />
+                    );
+                  });
+                })()}
+              </svg>
+            </div>
+
+            {/* Legend list matching colors */}
+            <div className="space-y-1.5 text-xs max-h-36 overflow-y-auto pr-1">
+              {osDistribution.length === 0 ? (
+                <span className="text-slate-400 text-xs">{loading ? 'Memuat OS...' : 'Tidak ada data OS'}</span>
+              ) : (
+                osDistribution.map((os) => (
+                  <div key={os.name} className="flex items-center gap-2">
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: os.color }}
+                    />
+                    <span
+                      className="font-semibold"
+                      style={{ color: os.color }}
+                    >
+                      {os.name} ({os.count})
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* KPI Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Total Registered Endpoints
-            </span>
-            <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
-              <Server className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">
-              {loading ? '...' : summary?.total ?? agents.length}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">agents</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">Wazuh sensors deployed on VMs/Servers</p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">
-              Active Agents (Online)
-            </span>
-            <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-600">
-              {loading ? '...' : summary?.active ?? agents.filter((a) => a.status === 'active').length}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">connected</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">Actively sending heartbeats & security events</p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-rose-600">
-              Disconnected (Offline)
-            </span>
-            <div className="p-2 rounded-xl bg-rose-50 text-rose-600">
-              <AlertCircle className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-rose-600">
-              {loading ? '...' : summary?.disconnected ?? agents.filter((a) => a.status !== 'active').length}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">offline</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">Heartbeat disconnected or pending activation</p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
-              Wazuh Manager
-            </span>
-            <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
-              <Activity className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Connected (Live)
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-2">REST API :55000 Responsive</p>
-        </div>
-      </div>
-
-      {/* Filter Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+      {/* ========================================================= */}
+      {/* ROW 2: Filter & Search Bar in Container (Mentok & No Gap) */}
+      {/* ========================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-3.5 shadow-xs flex flex-col sm:flex-row items-center gap-3">
+        {/* Search Input stretched to fill all space */}
+        <div className="relative flex-1 w-full">
+          <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search agent ID, hostname, IP, operating system..."
+            placeholder="Search agent ID, name, IP, OS, or tenant..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-slate-800 placeholder-slate-400"
+            className="w-full pl-11 pr-8 py-2.5 bg-[#F0F4F8] hover:bg-[#E9EEF5] focus:bg-white rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none border border-transparent focus:border-slate-300 transition-all"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Status Filter Buttons */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl">
-            <button
-              onClick={() => setStatusFilter('all')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                statusFilter === 'all'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              All ({agents.length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('active')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                statusFilter === 'active'
-                  ? 'bg-white text-emerald-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Active ({agents.filter((a) => a.status === 'active').length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('disconnected')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                statusFilter === 'disconnected'
-                  ? 'bg-white text-rose-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Disconnected ({agents.filter((a) => a.status !== 'active').length})
-            </button>
-          </div>
-
-          {/* Campus Selector */}
-          <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-slate-400" />
-            <select
-              value={selectedCampusFilter}
-              onChange={(e) => setSelectedCampusFilter(e.target.value)}
-              className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-            >
-              <option value="all">All Campuses</option>
-              {tenants.map((t) => (
-                <option key={t.id} value={t.tenantCode}>
-                  {t.tenantCode} - {t.campusName}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Select Tenants Dropdown Pill */}
+        <div className="w-full sm:w-auto flex-shrink-0">
+          <CustomSelect
+            value={selectedTenantFilter}
+            onChange={(val) => setSelectedTenantFilter(String(val))}
+            options={[
+              { value: 'all', label: 'All Tenants', badge: 'ALL' },
+              ...tenants.map((t) => ({
+                value: t.tenantCode,
+                label: (t.tenantName || t.campusName) ? `${t.tenantName || t.campusName} (${t.tenantCode})` : t.tenantCode,
+                badge: t.tenantCode,
+              })),
+            ]}
+            placeholder="Select Tenants"
+            className="w-full sm:w-56"
+            buttonClassName="w-full sm:w-56"
+          />
         </div>
       </div>
 
-      {/* Agents Status Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="p-10 space-y-4">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-12 bg-slate-100 rounded-xl animate-pulse" />
-            ))}
+      {/* ========================================================= */}
+      {/* ROW 3: Agent Table Card matching Figma                    */}
+      {/* ========================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-800">Agent Table</h3>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold">
+              {filteredAgents.length}
+            </span>
           </div>
-        ) : filteredAgents.length === 0 ? (
-          <div className="p-12 text-center">
-            <Server className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-sm font-bold text-slate-700">No agents match current filters</h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Try adjusting your search query or status filter.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-600 font-bold uppercase border-b border-slate-200">
+        </div>
+
+        <div className="overflow-x-auto mt-3">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
+                <th className="py-3 px-4 rounded-l-xl">Agent ID</th>
+                <th className="py-3 px-4">Agent Name</th>
+                <th className="py-3 px-4">IP Address</th>
+                <th className="py-3 px-4">Operating System</th>
+                <th className="py-3 px-4">Tenant</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4 rounded-r-xl">Last Keep Alive</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
                 <tr>
-                  <th className="p-4 pl-6">Agent ID</th>
-                  <th className="p-4">Hostname / Endpoint</th>
-                  <th className="p-4">IP Address</th>
-                  <th className="p-4">Operating System</th>
-                  <th className="p-4">Wazuh Group</th>
-                  <th className="p-4">Mapped Campus</th>
-                  <th className="p-4">Last Keep Alive</th>
-                  <th className="p-4 pr-6 text-right">Connection Status</th>
+                  <td colSpan={7} className="py-8 text-center text-slate-500 font-medium">
+                    <RefreshCw className="w-4 h-4 animate-spin inline-block mr-2 text-blue-600" />
+                    Loading agents list...
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-800">
-                {filteredAgents.map((agent) => {
-                  const isActive = agent.status === 'active';
-                  const osName = agent.os?.name || agent.os?.platform || 'Linux';
-
-                  return (
-                    <tr key={agent.id} className="hover:bg-slate-50/80 transition-colors">
-                      {/* ID */}
-                      <td className="p-4 pl-6">
-                        <span className="font-mono font-bold text-blue-600 bg-blue-50 border border-blue-200/60 px-2.5 py-1 rounded-md text-[11px]">
-                          {agent.id}
-                        </span>
-                      </td>
-
-                      {/* Name */}
-                      <td className="p-4">
-                        <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
-                          <HardDrive className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{agent.name}</span>
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5">{agent.version}</div>
-                      </td>
-
-                      {/* IP */}
-                      <td className="p-4 font-mono text-slate-600">{agent.ip || '-'}</td>
-
-                      {/* OS */}
-                      <td className="p-4">
-                        <div className="text-slate-700 font-medium">{osName}</div>
-                        {agent.os?.version && (
-                          <div className="text-[10px] text-slate-400">{agent.os.version}</div>
-                        )}
-                      </td>
-
-                      {/* Wazuh Group */}
-                      <td className="p-4">
-                        <div className="flex flex-wrap gap-1">
-                          {agent.groups.map((grp) => (
-                            <span
-                              key={grp}
-                              className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/60"
-                            >
-                              {grp}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-
-                      {/* Assigned Tenant (Read-only status) */}
-                      <td className="p-4">
-                        {agent.assignedTenant ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/60">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            {agent.assignedTenant.tenantCode} ({agent.assignedTenant.campusName})
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-500">
-                            Unassigned
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Last Keep Alive */}
-                      <td className="p-4 text-slate-500 text-[11px]">
-                        {agent.lastKeepAlive || '-'}
-                      </td>
-
-                      {/* Status */}
-                      <td className="p-4 pr-6 text-right">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
-                            isActive
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
-                              : 'bg-rose-50 text-rose-700 border-rose-200/80'
-                          }`}
-                        >
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              isActive ? 'bg-emerald-500 animate-pulse' : 'bg-rose-400'
-                            }`}
-                          />
-                          {isActive ? 'Online' : 'Disconnected'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+              ) : filteredAgents.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-500 font-medium">
+                    No agents match search criteria.
+                  </td>
+                </tr>
+              ) : (
+                filteredAgents.map((agent, idx) => (
+                  <tr
+                    key={`${agent.id}-${idx}`}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900 text-xs">
+                      {agent.id}
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-slate-900 text-sm">
+                      {agent.name}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900 text-xs">
+                      {agent.ip || '-'}
+                    </td>
+                    <td className="py-3.5 px-4 font-medium text-slate-900 text-xs">
+                      {typeof agent.os === 'string'
+                        ? agent.os
+                        : `${agent.os?.name || ''} ${agent.os?.version || ''}`.trim() || 'Linux'}
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-slate-900 text-xs">
+                      {agent.assignedTenant?.tenantCode || '-'}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                          agent.status === 'active'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}
+                      >
+                        {agent.status === 'active' ? 'Online' : 'Offline'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-medium text-slate-900 text-xs">
+                      {agent.lastKeepAlive && agent.lastKeepAlive !== '-'
+                        ? (() => {
+                            try {
+                              const d = new Date(agent.lastKeepAlive);
+                              if (isNaN(d.getTime())) return agent.lastKeepAlive;
+                              const pad = (n: number) => String(n).padStart(2, '0');
+                              return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                            } catch {
+                              return agent.lastKeepAlive;
+                            }
+                          })()
+                        : '-'}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

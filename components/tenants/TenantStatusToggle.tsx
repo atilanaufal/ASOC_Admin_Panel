@@ -82,7 +82,7 @@ export function TenantStatusToggle({ tenant, onStatusChange }: TenantStatusToggl
               </div>
               <div>
                 <h3 className="font-extrabold text-base text-slate-900">
-                  Suspend Akses Kampus?
+                  Suspend Tenant Access?
                 </h3>
                 <p className="text-xs text-slate-500">
                   {tenant.campus_name} ({tenant.tenant_code})
@@ -91,7 +91,7 @@ export function TenantStatusToggle({ tenant, onStatusChange }: TenantStatusToggl
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Menonaktifkan kampus akan memblokir login seluruh user analis di kampus ini ke dashboard tenant. Data di MongoDB dan Redis tetap aman dan tidak akan dihapus.
+              Disabling this tenant will block login access for all analyst users of this tenant to their tenant dashboard. Data in MongoDB and Redis remains safe and will not be deleted.
             </p>
 
             <div className="pt-2 flex items-center justify-end gap-3">
@@ -109,7 +109,7 @@ export function TenantStatusToggle({ tenant, onStatusChange }: TenantStatusToggl
                 className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-rose-600/20 transition-all cursor-pointer disabled:opacity-50"
               >
                 {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Suspend Kampus</span>
+                <span>Suspend Tenant</span>
               </button>
             </div>
           </div>

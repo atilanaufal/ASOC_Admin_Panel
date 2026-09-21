@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
       tenantId: user.tenant_id || 0,
       tenantCode: user.tenant_code || 'MASTER',
       campusName: user.campus_name || 'ASOC Central Management',
-      databaseName: user.database_name || 'platform_master',
+      tenantName: user.campus_name || 'ASOC Central Management',
+      databaseName: user.database_name || '-',
       redisPrefix: user.redis_prefix || 'asoc_master',
     };
 

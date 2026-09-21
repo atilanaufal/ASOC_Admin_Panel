@@ -83,10 +83,10 @@ export function ResetPasswordModal({
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Gagal mereset password');
+        throw new Error(json.error || 'Failed to reset password');
       }
 
-      onSuccess(`Password untuk @${user.username} berhasil direset.`);
+      onSuccess(`Password for @${user.username} has been successfully reset.`);
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -106,7 +106,7 @@ export function ResetPasswordModal({
             </div>
             <div>
               <h3 className="font-extrabold text-base text-slate-900">
-                Reset Password Akun
+                Reset Account Password
               </h3>
               <p className="text-xs text-slate-500 font-mono">
                 User: @{user.username} ({user.campus_name || 'Global'})
@@ -134,7 +134,7 @@ export function ResetPasswordModal({
           <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 text-xs flex items-start gap-2.5">
             <ShieldAlert className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
             <div>
-              <span className="font-bold">Perhatian:</span> Seluruh sesi aktif user ini akan langsung dicabut (force logout) setelah password berhasil direset.
+              <span className="font-bold">Notice:</span> All active sessions for this user will be revoked immediately (forced logout) once the password is reset.
             </div>
           </div>
 
@@ -142,7 +142,7 @@ export function ResetPasswordModal({
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-slate-400" />
-                <span>Password Baru</span>
+                <span>New Password</span>
               </label>
               <button
                 type="button"
@@ -150,7 +150,7 @@ export function ResetPasswordModal({
                 className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <Sparkles className="w-3 h-3 text-amber-500" />
-                <span>Generate Acak</span>
+                <span>Generate Random</span>
               </button>
             </div>
 
@@ -166,7 +166,7 @@ export function ResetPasswordModal({
                 <button
                   type="button"
                   onClick={copyToClipboard}
-                  title="Salin Password ke Clipboard"
+                  title="Copy Password to Clipboard"
                   className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition"
                 >
                   {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
@@ -183,7 +183,7 @@ export function ResetPasswordModal({
             {copied && (
               <p className="text-[11px] font-semibold text-emerald-600 mt-1 flex items-center gap-1">
                 <Check className="w-3 h-3" />
-                <span>Password disalin ke clipboard!</span>
+                <span>Password copied to clipboard!</span>
               </p>
             )}
           </div>
@@ -203,7 +203,7 @@ export function ResetPasswordModal({
               className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-amber-600/20 transition-all cursor-pointer disabled:opacity-50"
             >
               {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>Reset Password Sekarang</span>
+              <span>Reset Password Now</span>
             </button>
           </div>
         </form>
