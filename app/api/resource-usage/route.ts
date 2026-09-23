@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getVmResourceMetrics } from '@/lib/resource-stats';
+import { getVmResourceMetrics, getDatabaseLatencyMetrics } from '@/lib/resource-stats';
 import { auditBackgroundServices, getRealRunningServices } from '@/lib/services';
 
 export const dynamic = 'force-dynamic';
@@ -8,10 +8,14 @@ export const revalidate = 0;
 
 export async function GET(_request: NextRequest) {
   try {
-    const [metrics, servicesAudit, realServices] = await Promise.all([
+    const [metrics, servicesAudit, realServices, databaseLatencies] = await Promise.all([
       getVmResourceMetrics(),
       auditBackgroundServices().catch(() => ({ services: [], systemHealth: 'HEALTHY' as const })),
       getRealRunningServices().catch(() => []),
+      getDatabaseLatencyMetrics().catch((err) => {
+        console.warn('Database latency metric error:', err);
+        return null;
+      }),
     ]);
 
     return NextResponse.json({
@@ -30,6 +34,7 @@ export async function GET(_request: NextRequest) {
       },
       components: metrics.services,
       runningServices: realServices.length > 0 ? realServices : servicesAudit.services,
+      databaseLatencies,
     });
   } catch (err: any) {
     console.error('API /api/resource-usage GET Error:', err);

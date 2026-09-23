@@ -30,6 +30,7 @@ interface TenantRetentionItem {
   vulnCount: number;
   redisKeysCount: number;
   mongoTtlDays: number;
+  redisTtlDays: number;
   redisTtlSeconds: number;
   policyStatus: string;
 }
@@ -44,7 +45,13 @@ export default function DataRetentionPage() {
   // Edit Modal State
   const [selectedTenant, setSelectedTenant] = useState<TenantRetentionItem | 'global' | null>(null);
   const [mongoDaysInput, setMongoDaysInput] = useState<number>(30);
-  const [redisHoursInput, setRedisHoursInput] = useState<number>(168); // Standard 7 Days = 168 Hours
+  const [isCustomMongo, setIsCustomMongo] = useState<boolean>(false);
+  const [customMongoDays, setCustomMongoDays] = useState<number>(30);
+
+  const [redisDaysInput, setRedisDaysInput] = useState<number>(7);
+  const [isCustomRedis, setIsCustomRedis] = useState<boolean>(false);
+  const [customRedisDays, setCustomRedisDays] = useState<number>(7);
+
   const [saving, setSaving] = useState(false);
 
   // Toast
@@ -82,13 +89,19 @@ export default function DataRetentionPage() {
 
   const openEditModal = (t: TenantRetentionItem | 'global') => {
     setSelectedTenant(t);
-    if (t === 'global') {
-      setMongoDaysInput(globalPolicy?.mongoTtlDays || 30);
-      setRedisHoursInput(Math.round((globalPolicy?.redisTtlSeconds || 604800) / 3600));
-    } else {
-      setMongoDaysInput(t.mongoTtlDays || 30);
-      setRedisHoursInput(Math.round((t.redisTtlSeconds || 604800) / 3600));
-    }
+    const mDays = t === 'global' ? (globalPolicy?.mongoTtlDays || 30) : (t.mongoTtlDays || 30);
+    const rDays = t === 'global' ? (globalPolicy?.redisTtlDays || 7) : (t.redisTtlDays || 7);
+
+    const isPresetMongo = [7, 14, 30, 60, 90, 180, 365].includes(mDays);
+    const isPresetRedis = [1, 3, 7, 14, 30].includes(rDays);
+
+    setMongoDaysInput(isPresetMongo ? mDays : -1);
+    setIsCustomMongo(!isPresetMongo);
+    setCustomMongoDays(mDays);
+
+    setRedisDaysInput(isPresetRedis ? rDays : -1);
+    setIsCustomRedis(!isPresetRedis);
+    setCustomRedisDays(rDays);
   };
 
   const handleSavePolicy = async () => {
@@ -97,7 +110,9 @@ export default function DataRetentionPage() {
 
     const isGlobal = selectedTenant === 'global';
     const tenantId = isGlobal ? 'all' : selectedTenant.id;
-    const redisTtlSeconds = Number(redisHoursInput) * 3600;
+
+    const finalMongoDays = isCustomMongo ? Math.max(1, Number(customMongoDays) || 30) : Number(mongoDaysInput);
+    const finalRedisDays = isCustomRedis ? Math.max(1, Number(customRedisDays) || 7) : Number(redisDaysInput);
 
     try {
       const res = await fetch('/api/data-retention', {
@@ -105,8 +120,9 @@ export default function DataRetentionPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId,
-          mongoTtlDays: Number(mongoDaysInput),
-          redisTtlSeconds,
+          mongoTtlDays: finalMongoDays,
+          redisDays: finalRedisDays,
+          redisTtlSeconds: finalRedisDays * 86400,
           targetCollections: ['incident', 'vulnerability', 'alerts'],
         }),
       });
@@ -127,7 +143,7 @@ export default function DataRetentionPage() {
   };
 
   const handleResetDefault = async () => {
-    if (!confirm('Reset all retention policies to remote scripts standard default (MongoDB: 30 Days, Redis: 7 Days)?')) return;
+    if (!confirm('Reset all retention policies to standard default (MongoDB: 30 Days, Redis: 7 Days)?')) return;
     setRefreshing(true);
     try {
       const res = await fetch('/api/data-retention', {
@@ -200,7 +216,7 @@ export default function DataRetentionPage() {
             onClick={handleResetDefault}
             disabled={refreshing}
             className="flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200/80 shadow-2xs rounded-xl transition-all cursor-pointer"
-            title="Reset remote scripts TTL to 30d Mongo / 7d Redis default"
+            title="Reset TTL to 30d Mongo / 7d Redis default"
           >
             <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
             <span>Reset Defaults</span>
@@ -267,7 +283,7 @@ export default function DataRetentionPage() {
           </span>
           <div className="my-2 flex items-center justify-between">
             <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              {loading ? '...' : `${Math.round((globalPolicy?.redisTtlSeconds ?? 604800) / 3600)}h / ${Math.round((globalPolicy?.redisTtlSeconds ?? 604800) / 86400)}d`}
+              {loading ? '...' : `${globalPolicy?.redisTtlDays ?? 7} Days`}
             </div>
             <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
               <Clock className="w-5 h-5" />
@@ -330,15 +346,12 @@ export default function DataRetentionPage() {
         </div>
 
         {loading ? (
-          <div className="p-10 space-y-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-14 bg-slate-100 rounded-xl animate-pulse" />
-            ))}
+          <div className="py-16 text-center text-xs font-semibold text-slate-400 animate-pulse">
+            Loading retention policy telemetry...
           </div>
         ) : filteredTenants.length === 0 ? (
-          <div className="p-12 text-center">
-            <Database className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-sm font-bold text-slate-700">No tenant databases found</h3>
+          <div className="py-16 text-center text-xs font-semibold text-slate-400">
+            No tenant retention policies found matching criteria.
           </div>
         ) : (
           <div className="overflow-x-auto mt-3">
@@ -356,8 +369,6 @@ export default function DataRetentionPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredTenants.map((t) => {
-                  const redisHours = Math.round(t.redisTtlSeconds / 3600);
-
                   return (
                     <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                       {/* Campus */}
@@ -405,7 +416,7 @@ export default function DataRetentionPage() {
                       <td className="py-3.5 px-4">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-100 font-mono">
                           <Zap className="w-3.5 h-3.5 text-indigo-600" />
-                          {redisHours}h ({Math.round(redisHours / 24)}d)
+                          {t.redisTtlDays || 7} Days
                         </span>
                       </td>
 
@@ -455,48 +466,102 @@ export default function DataRetentionPage() {
               {/* MongoDB TTL Days */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>MongoDB Document Retention Period (Days)</span>
-                  <span className="font-mono text-[#00BCD4] font-extrabold">{mongoDaysInput} Days</span>
+                  <span>MongoDB Document Retention Period</span>
+                  <span className="font-mono text-[#00BCD4] font-extrabold">
+                    {isCustomMongo ? `${customMongoDays} Days (Custom)` : `${mongoDaysInput} Days`}
+                  </span>
                 </label>
                 <CustomSelect
-                  value={mongoDaysInput}
-                  onChange={(val) => setMongoDaysInput(Number(val))}
+                  value={isCustomMongo ? -1 : mongoDaysInput}
+                  onChange={(val) => {
+                    const num = Number(val);
+                    if (num === -1) {
+                      setIsCustomMongo(true);
+                    } else {
+                      setIsCustomMongo(false);
+                      setMongoDaysInput(num);
+                    }
+                  }}
                   options={[
                     { value: 7, label: '7 Days (1 Week)', badge: '7d' },
                     { value: 14, label: '14 Days (2 Weeks)', badge: '14d' },
-                    { value: 30, label: '30 Days (1 Month - Standard Default)', badge: '30d' },
+                    { value: 30, label: '30 Days (Standard Default)', badge: '30d' },
                     { value: 60, label: '60 Days (2 Months)', badge: '60d' },
                     { value: 90, label: '90 Days (3 Months)', badge: '90d' },
                     { value: 180, label: '180 Days (6 Months)', badge: '180d' },
                     { value: 365, label: '365 Days (1 Year)', badge: '365d' },
+                    { value: -1, label: 'Custom Duration...', badge: 'custom' },
                   ]}
-                  className="w-full mb-2"
+                  className="w-full mb-1.5"
                 />
+
+                {isCustomMongo && (
+                  <div className="flex items-center gap-2 mb-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-xs text-slate-600 font-semibold">Custom Days:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="730"
+                      value={customMongoDays}
+                      onChange={(e) => setCustomMongoDays(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-24 px-2.5 py-1 text-xs font-mono font-bold text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#00BCD4]"
+                    />
+                    <span className="text-xs text-slate-500 font-medium">Days</span>
+                  </div>
+                )}
+
                 <p className="text-[10px] text-slate-400">
-                  Documents older than this threshold will automatically expire via MongoDB TTL indexes on <code className="font-mono text-[#00BCD4]">incident</code>, <code className="font-mono text-[#00BCD4]">vulnerability</code>, and <code className="font-mono text-[#00BCD4]">reports</code>.
+                  Documents older than this threshold will automatically expire via MongoDB TTL indexes.
                 </p>
               </div>
 
-              {/* Redis TTL Hours */}
+              {/* Redis TTL Days (NO HOURS) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
                   <span>Redis Cache Expiration Duration</span>
-                  <span className="font-mono text-indigo-600 font-extrabold">{redisHoursInput} Hours ({Math.round(redisHoursInput / 24)} Days)</span>
+                  <span className="font-mono text-indigo-600 font-extrabold">
+                    {isCustomRedis ? `${customRedisDays} Days (Custom)` : `${redisDaysInput} Days`}
+                  </span>
                 </label>
                 <CustomSelect
-                  value={redisHoursInput}
-                  onChange={(val) => setRedisHoursInput(Number(val))}
+                  value={isCustomRedis ? -1 : redisDaysInput}
+                  onChange={(val) => {
+                    const num = Number(val);
+                    if (num === -1) {
+                      setIsCustomRedis(true);
+                    } else {
+                      setIsCustomRedis(false);
+                      setRedisDaysInput(num);
+                    }
+                  }}
                   options={[
-                    { value: 24, label: '24 Hours (1 Day)', badge: '24h' },
-                    { value: 72, label: '72 Hours (3 Days)', badge: '72h' },
-                    { value: 168, label: '168 Hours (7 Days - Standard Default)', badge: '168h' },
-                    { value: 336, label: '336 Hours (14 Days)', badge: '336h' },
-                    { value: 720, label: '720 Hours (30 Days)', badge: '720h' },
+                    { value: 1, label: '1 Day', badge: '1d' },
+                    { value: 3, label: '3 Days', badge: '3d' },
+                    { value: 7, label: '7 Days (Standard Default)', badge: '7d' },
+                    { value: 14, label: '14 Days (2 Weeks)', badge: '14d' },
+                    { value: 30, label: '30 Days (1 Month)', badge: '30d' },
+                    { value: -1, label: 'Custom Duration...', badge: 'custom' },
                   ]}
-                  className="w-full mb-2"
+                  className="w-full mb-1.5"
                 />
+
+                {isCustomRedis && (
+                  <div className="flex items-center gap-2 mb-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-xs text-slate-600 font-semibold">Custom Days:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="90"
+                      value={customRedisDays}
+                      onChange={(e) => setCustomRedisDays(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-24 px-2.5 py-1 text-xs font-mono font-bold text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <span className="text-xs text-slate-500 font-medium">Days</span>
+                  </div>
+                )}
+
                 <p className="text-[10px] text-slate-400">
-                  Directly sets key expiration across tenant Redis namespaces via <code className="font-mono text-indigo-600">/opt/multi-tenant/scripts/set_ttl.py</code>.
+                  Directly sets key expiration across tenant Redis namespaces.
                 </p>
               </div>
             </div>

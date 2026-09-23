@@ -172,6 +172,12 @@ export default function DataSyncPage() {
   };
 
   useEffect(() => {
+    if (activeTab === 'redis' && selectedPeriod !== 'TODAY' && selectedPeriod !== 'THIS_WEEK') {
+      setSelectedPeriod('THIS_WEEK');
+    }
+  }, [activeTab, selectedPeriod]);
+
+  useEffect(() => {
     fetchAuditData(selectedPeriod, selectedTenant, customStartDate, customEndDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriod, selectedTenant]);
@@ -321,15 +327,21 @@ export default function DataSyncPage() {
           </span>
 
           <div className="flex flex-wrap items-center gap-1 bg-[#F0F4F8] p-1 rounded-xl">
-            {[
-              { id: 'TODAY', label: 'Today' },
-              { id: 'YESTERDAY', label: 'Yesterday' },
-              { id: 'THIS_WEEK', label: 'This Week' },
-              { id: 'LAST_7_DAYS', label: 'Last 7 Days' },
-              { id: 'THIS_MONTH', label: 'This Month' },
-              { id: 'LAST_30_DAYS', label: 'Last 30 Days' },
-              { id: 'CUSTOM', label: 'Custom Date' },
-            ].map((p) => (
+            {(activeTab === 'redis'
+              ? [
+                  { id: 'TODAY', label: 'Today' },
+                  { id: 'THIS_WEEK', label: 'This Week' },
+                ]
+              : [
+                  { id: 'TODAY', label: 'Today' },
+                  { id: 'YESTERDAY', label: 'Yesterday' },
+                  { id: 'THIS_WEEK', label: 'This Week' },
+                  { id: 'LAST_7_DAYS', label: 'Last 7 Days' },
+                  { id: 'THIS_MONTH', label: 'This Month' },
+                  { id: 'LAST_30_DAYS', label: 'Last 30 Days' },
+                  { id: 'CUSTOM', label: 'Custom Date' },
+                ]
+            ).map((p) => (
               <button
                 key={p.id}
                 onClick={() => setSelectedPeriod(p.id)}
@@ -345,7 +357,7 @@ export default function DataSyncPage() {
           </div>
 
           {/* Custom Date Inputs */}
-          {selectedPeriod === 'CUSTOM' && (
+          {activeTab !== 'redis' && selectedPeriod === 'CUSTOM' && (
             <div className="flex items-center gap-2 bg-[#F0F4F8] px-2.5 py-1 rounded-xl border border-slate-200/60">
               <input
                 type="date"

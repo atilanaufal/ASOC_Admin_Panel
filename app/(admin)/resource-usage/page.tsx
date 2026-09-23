@@ -5,6 +5,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { DonutGauge } from '@/components/ui/DonutGauge';
+import { DatabaseLatencyCard } from '@/components/resources/DatabaseLatencyCard';
 
 export default function ResourceUsagePage() {
   const [data, setData] = useState<any>(null);
@@ -202,7 +203,12 @@ export default function ResourceUsagePage() {
       </div>
 
       {/* ========================================================= */}
-      {/* ROW 2: Running Services Table Card matching Figma         */}
+      {/* ROW 2: Database Latency Metrics & Latency Graphs         */}
+      {/* ========================================================= */}
+      <DatabaseLatencyCard data={data?.databaseLatencies} loading={loading} />
+
+      {/* ========================================================= */}
+      {/* ROW 3: Running Services Table Card matching Figma         */}
       {/* ========================================================= */}
       <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs">
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">

@@ -232,7 +232,36 @@ export async function GET(request: NextRequest) {
                   { $group: { _id: '$date', count: { $sum: 1 } } },
                   { $sort: { _id: -1 } },
                 ]).toArray(),
-                db.collection('reports').countDocuments().catch(() => 0),
+                (async () => {
+                  try {
+                    const repStartDate = dateRange.start || new Date().toISOString().slice(0, 10);
+                    const repStartDt = new Date(repStartDate + 'T00:00:00.000Z');
+                    const repQuery: any = {
+                      $or: [
+                        { created_at: { $gte: repStartDt } },
+                        { date_generated: { $gte: repStartDt } },
+                        { date_generated: { $gte: repStartDate } },
+                        { date: { $gte: repStartDate } },
+                      ],
+                    };
+                    if (dateRange.end) {
+                      const repEndDt = new Date(dateRange.end + 'T23:59:59.999Z');
+                      repQuery.$and = [
+                        {
+                          $or: [
+                            { created_at: { $lte: repEndDt } },
+                            { date_generated: { $lte: repEndDt } },
+                            { date_generated: { $lte: dateRange.end } },
+                            { date: { $lte: dateRange.end } },
+                          ],
+                        },
+                      ];
+                    }
+                    return await db.collection('reports').countDocuments(repQuery);
+                  } catch {
+                    return 0;
+                  }
+                })(),
               ]);
 
               aggInc.forEach((row: any) => {

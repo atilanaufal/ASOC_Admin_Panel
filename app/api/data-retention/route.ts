@@ -76,9 +76,7 @@ export async function GET(_request: NextRequest) {
         if (typeof mongoIncidentTtl === 'number' && mongoIncidentTtl > 0) {
           mongoTtlDays = Math.round(mongoIncidentTtl / 86400);
         }
-        if (typeof statusFromScript.redis_avg_ttl_seconds === 'number' && statusFromScript.redis_avg_ttl_seconds > 0) {
-          redisTtlSeconds = statusFromScript.redis_avg_ttl_seconds;
-        }
+// Default policy is 7 days, do not use decaying average seconds
       }
 
       if (mongoClient && dbName) {
@@ -112,7 +110,8 @@ export async function GET(_request: NextRequest) {
         vulnCount,
         redisKeysCount,
         mongoTtlDays,
-        redisTtlSeconds,
+        redisTtlDays: 7,
+        redisTtlSeconds: 604800,
         policyStatus: 'ACTIVE',
       });
     }
@@ -120,7 +119,8 @@ export async function GET(_request: NextRequest) {
     // Default global retention policy matching /opt/multi-tenant/scripts/set_ttl.py
     const globalPolicy = {
       mongoTtlDays: 30, // 30 Days
-      redisTtlSeconds: 604800, // 7 Days (168 Hours)
+      redisTtlDays: 7, // 7 Days
+      redisTtlSeconds: 604800, // 7 Days
       targetCollections: ['incident', 'vulnerability', 'reports', 'historical_statistics'],
     };
 
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
     }
 
     const mongoDays = Number(mongoTtlDays);
-    const redisDays = Number((Number(redisTtlSeconds) / 86400).toFixed(2));
+    const redisDays = body.redisDays !== undefined ? Number(body.redisDays) : Number((Number(redisTtlSeconds) / 86400).toFixed(2));
 
     // Execute /opt/multi-tenant/scripts/set_ttl.py directly on 10.20.100.86
     const cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/set_ttl.py --tenant ${targetCode} --mongo-days ${mongoDays} --redis-days ${redisDays} --json`;
