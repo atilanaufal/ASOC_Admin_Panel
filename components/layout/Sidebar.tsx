@@ -43,6 +43,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: <ShieldCheck className="w-[18px] h-[18px]" />,
     category: 'System Monitoring',
   },
+  {
+    label: 'Resources Usage',
+    href: '/resource-usage',
+    icon: <Cpu className="w-[18px] h-[18px]" />,
+    category: 'System Monitoring',
+  },
 
   // System Maintenance
   {
