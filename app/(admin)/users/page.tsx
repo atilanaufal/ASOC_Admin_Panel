@@ -165,11 +165,9 @@ export default function UsersPage() {
 
   // KPI calculations
   const totalUsers = users.length;
-  const superadminCount = users.filter((u) => u.role === 'superadmin' || u.role === 'admin').length;
+  const superadminCount = users.filter((u) => u.role === 'superadmin').length;
+  const adminCount = users.filter((u) => u.role === 'admin').length;
   const tenantAnalystCount = users.filter((u) => u.role !== 'superadmin' && u.role !== 'admin').length;
-  const uniqueCampusesCount = new Set(
-    users.filter((u) => u.tenant_code && u.role !== 'superadmin').map((u) => u.tenant_code)
-  ).size;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -249,18 +247,35 @@ export default function UsersPage() {
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
           <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
-            Superadmins
+            Superadmin
           </span>
           <div className="my-2 flex items-center justify-between">
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            <div className="text-3xl font-extrabold text-amber-700 tracking-tight">
               {loading ? '...' : superadminCount}
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-[11px] font-semibold text-amber-600">
+            Full System Control
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Role Admin Biasa
+          </span>
+          <div className="my-2 flex items-center justify-between">
+            <div className="text-3xl font-extrabold text-indigo-600 tracking-tight">
+              {loading ? '...' : adminCount}
             </div>
             <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
               <Shield className="w-5 h-5" />
             </div>
           </div>
           <div className="text-[11px] font-semibold text-indigo-600">
-            Central Authority
+            Operational Admin
           </div>
         </div>
 
@@ -278,23 +293,6 @@ export default function UsersPage() {
           </div>
           <div className="text-[11px] font-semibold text-emerald-600">
             Tenant Access Level
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
-          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
-            Active Tenants
-          </span>
-          <div className="my-2 flex items-center justify-between">
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              {loading ? '...' : uniqueCampusesCount}
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-cyan-50 text-[#00BCD4] flex items-center justify-center font-bold">
-              <Building2 className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Assigned Tenancies
           </div>
         </div>
       </div>
@@ -328,11 +326,10 @@ export default function UsersPage() {
             value={selectedTenant}
             onChange={(val) => setSelectedTenant(String(val))}
             options={[
-              { value: 'all', label: 'All Tenants', badge: 'ALL' },
+              { value: 'all', label: 'All Tenants' },
               ...tenants.map((t) => ({
                 value: t.tenant_code,
                 label: `${t.campus_name} (${t.tenant_code})`,
-                badge: t.tenant_code,
               })),
             ]}
             icon={<Building2 className="w-3.5 h-3.5 text-[#00BCD4]" />}
@@ -345,9 +342,10 @@ export default function UsersPage() {
             value={selectedRole}
             onChange={(val) => setSelectedRole(String(val))}
             options={[
-              { value: 'all', label: 'All Roles', badge: 'ALL' },
-              { value: 'admin', label: 'Admin', badge: 'ADMIN' },
-              { value: 'tenant', label: 'Analyst', badge: 'ANALYST' },
+              { value: 'all', label: 'All Roles' },
+              { value: 'superadmin', label: 'Superadmin' },
+              { value: 'admin', label: 'Admin' },
+              { value: 'tenant', label: 'Analyst' },
             ]}
             icon={<Shield className="w-3.5 h-3.5 text-indigo-500" />}
             className="w-full sm:w-48"

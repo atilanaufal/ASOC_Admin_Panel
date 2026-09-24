@@ -54,6 +54,11 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
         WHERE 1=1
       `;
       const adminParams: any[] = [];
+      if (params.role === 'superadmin') {
+        adminQuery += ` AND role = 'superadmin'`;
+      } else if (params.role === 'admin') {
+        adminQuery += ` AND (role = 'admin' OR role IS NULL OR role = '')`;
+      }
       if (params.search && params.search.trim()) {
         const s = `%${params.search.trim()}%`;
         adminQuery += ` AND (username LIKE ? OR email LIKE ? OR name LIKE ?)`;
@@ -68,7 +73,7 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
   }
 
   // 2. Fetch Tenant Users from `users`
-  const shouldIncludeTenantUsers = !params.role || params.role === 'all' || params.role === 'tenant';
+  const shouldIncludeTenantUsers = !params.role || params.role === 'all' || params.role === 'tenant' || params.role === 'analyst';
 
   if (shouldIncludeTenantUsers) {
     let query = `
@@ -144,7 +149,8 @@ export async function createUser(data: {
   try {
     const username = data.username.trim();
     const email = data.email?.trim() || `${username}@asoc.internal`;
-    const role = data.role === 'admin' ? 'admin' : 'tenant';
+    const rawRole = (data.role || '').toLowerCase();
+    const role = (rawRole === 'superadmin' || rawRole === 'admin') ? rawRole : 'tenant';
     const passwordHash = hashPasswordSHA256(data.password);
     const newId = crypto.randomBytes(16).toString('hex');
 
@@ -169,11 +175,11 @@ export async function createUser(data: {
     }
 
     // 2. Branch by Role
-    if (role === 'admin') {
-      // Platform Admin: stored in `admin_users`, NO tenant binding
+    if (role === 'superadmin' || role === 'admin') {
+      // Platform Admin / Superadmin: stored in `admin_users`, NO tenant binding
       await pool.query(
-        'INSERT INTO admin_users (id, username, name, email, password, role) VALUES (?, ?, ?, ?, ?, "admin")',
-        [newId, username, username, email, passwordHash]
+        'INSERT INTO admin_users (id, username, name, email, password, role) VALUES (?, ?, ?, ?, ?, ?)',
+        [newId, username, username, email, passwordHash, role]
       );
 
       // Sync with Better-Auth
@@ -184,7 +190,7 @@ export async function createUser(data: {
             password: data.password,
             name: username,
             username,
-            role: 'admin',
+            role,
             tenantId: 0,
             tenantCode: 'MASTER',
             campusName: 'ASOC Central Management',
@@ -200,7 +206,7 @@ export async function createUser(data: {
           id: newId,
           username,
           email,
-          role: 'admin',
+          role,
           tenantId: null,
           campusName: '-',
           databaseName: '-',
@@ -369,6 +375,11 @@ export async function updateUser(
       if (data.name || data.username) {
         updates.push('name = ?');
         vals.push((data.name || data.username || '').trim());
+      }
+      if (data.role) {
+        const adminRole = data.role.toLowerCase() === 'superadmin' ? 'superadmin' : 'admin';
+        updates.push('role = ?');
+        vals.push(adminRole);
       }
       if (updates.length > 0) {
         vals.push(admin.id);

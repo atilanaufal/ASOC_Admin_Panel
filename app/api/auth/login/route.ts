@@ -25,13 +25,14 @@ export async function POST(request: NextRequest) {
     }
 
     const user = result.user;
+    const sessionRole = user.role === 'superadmin' ? 'superadmin' : 'admin';
 
     // 2. Prepare user session payload
     const sessionData = {
       id: user.id,
       username: user.username,
       email: user.email,
-      role: 'superadmin',
+      role: sessionRole,
       tenantId: user.tenant_id || 0,
       tenantCode: user.tenant_code || 'MASTER',
       campusName: user.campus_name || 'ASOC Central Management',
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     const response = NextResponse.json({
       success: true,
-      message: 'Login Superadmin berhasil.',
+      message: `Login ${sessionRole === 'superadmin' ? 'Superadmin' : 'Admin'} berhasil.`,
       user: sessionData,
     });
 
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
         actionType: 'AUTH_LOGIN',
         targetResource: 'portal:auth',
         status: 'SUCCESS',
-        details: { email: user.email, role: 'superadmin' },
+        details: { email: user.email, role: sessionRole },
       });
     } catch {}
 
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Also set a signed/dedicated token cookie
-    response.cookies.set('better-auth.session_token', `superadmin_${user.id}_${Date.now()}`, {
+    response.cookies.set('better-auth.session_token', `${sessionRole}_${user.id}_${Date.now()}`, {
       path: '/',
       httpOnly: false,
       secure: isSecure,

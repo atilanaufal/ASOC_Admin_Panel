@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       email,
       password,
       role: role || 'tenant',
-      tenantId: role === 'admin' ? null : (Number(tenantId) || 1),
+      tenantId: (role === 'admin' || role === 'superadmin') ? null : (Number(tenantId) || 1),
     });
 
     if (!result.success) {

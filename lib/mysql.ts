@@ -191,12 +191,12 @@ export async function verifySuperadminCredentials(
       return { success: false, error: 'Password yang Anda masukkan salah.' };
     }
 
-    const userRole = (user.role || (user.username.includes('admin') ? 'superadmin' : 'tenant')).toLowerCase();
+    const userRole = (user.role || (user.username === 'superadmin' ? 'superadmin' : user.username === 'admin' ? 'admin' : 'tenant')).toLowerCase();
 
     if (userRole !== 'superadmin' && userRole !== 'admin') {
       return {
         success: false,
-        error: 'Akses Ditolak. Halaman ini khusus untuk Superadmin. Akun Anda terdaftar sebagai user tenant.',
+        error: 'Akses Ditolak. Halaman ini khusus untuk Administrator. Akun Anda terdaftar sebagai user tenant.',
       };
     }
 
@@ -207,7 +207,7 @@ export async function verifySuperadminCredentials(
         tenant_id: user.tenant_id || 0,
         username: user.username,
         email: user.email,
-        role: 'superadmin',
+        role: userRole === 'superadmin' ? 'superadmin' : 'admin',
         tenant_code: user.tenant_code || 'MASTER',
         campus_name: user.campus_name || 'ASOC Central Management',
         database_name: user.database_name || '-',

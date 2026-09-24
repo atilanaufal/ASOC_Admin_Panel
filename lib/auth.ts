@@ -103,7 +103,7 @@ export async function syncSuperadminToBetterAuth(
         const baUser = existingRows[0];
         await authDbPool.query(
           `UPDATE user SET 
-            role = 'superadmin', 
+            role = ?, 
             tenantId = ?, 
             tenantCode = ?, 
             campusName = ?, 
@@ -111,6 +111,7 @@ export async function syncSuperadminToBetterAuth(
             redisPrefix = ?
            WHERE id = ?`,
           [
+            masterUser.role || 'admin',
             masterUser.tenant_id,
             masterUser.tenant_code || 'MASTER',
             masterUser.campus_name || 'ASOC Central Management',
@@ -140,7 +141,7 @@ export async function syncSuperadminToBetterAuth(
       console.warn('Better Auth sync skipped or table absent:', baErr.message);
     }
 
-    return { success: true, user: { ...masterUser, role: 'superadmin' } };
+    return { success: true, user: masterUser };
   } catch (err: any) {
     console.error('Error in syncSuperadminToBetterAuth:', err);
     return { success: false, error: err.message };

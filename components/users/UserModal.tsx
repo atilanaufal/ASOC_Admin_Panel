@@ -215,11 +215,12 @@ export function UserModal({
                 <span>Role / Access Level</span>
               </label>
               <CustomSelect
-                value={role === 'admin' ? 'admin' : 'tenant'}
+                value={role}
                 onChange={(val) => setRole(String(val))}
                 options={[
-                  { value: 'tenant', label: 'Analyst', badge: 'ANALYST', subLabel: 'Tenant Analyst' },
-                  { value: 'admin', label: 'Admin', badge: 'ADMIN', subLabel: 'Central Administrator' },
+                  { value: 'superadmin', label: 'Superadmin' },
+                  { value: 'admin', label: 'Admin' },
+                  { value: 'tenant', label: 'Analyst' },
                 ]}
                 className="w-full"
               />
@@ -231,11 +232,11 @@ export function UserModal({
                 <Building2 className="w-3.5 h-3.5 text-slate-400" />
                 <span>Assigned Tenant</span>
               </label>
-              {role === 'admin' ? (
+              {role === 'superadmin' || role === 'admin' ? (
                 <div className="w-full px-3.5 py-2.5 bg-slate-100 rounded-xl border border-slate-200 text-xs text-slate-600 font-medium flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Shield className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>Admin Platform (Semua Tenant)</span>
+                    <span>{role === 'superadmin' ? 'Superadmin Platform' : 'Admin Platform'} (Semua Tenant)</span>
                   </div>
                   <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
                     GLOBAL
@@ -248,7 +249,6 @@ export function UserModal({
                   options={tenants.map((t) => ({
                     value: t.id,
                     label: `${t.campus_name} (${t.tenant_code})`,
-                    badge: t.tenant_code,
                   }))}
                   className="w-full"
                 />
