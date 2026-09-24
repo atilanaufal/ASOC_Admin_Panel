@@ -166,7 +166,7 @@ export async function verifySuperadminCredentials(
     }
 
     if (!user) {
-      return { success: false, error: 'Username atau email tidak ditemukan di sistem ASOC.' };
+      return { success: false, error: 'Username or email not found in ASOC system.' };
     }
 
     const storedHash = user.password_hash;
@@ -188,7 +188,7 @@ export async function verifySuperadminCredentials(
     );
 
     if (!isMatch) {
-      return { success: false, error: 'Password yang Anda masukkan salah.' };
+      return { success: false, error: 'Incorrect password.' };
     }
 
     const userRole = (user.role || (user.username === 'superadmin' ? 'superadmin' : user.username === 'admin' ? 'admin' : 'tenant')).toLowerCase();
@@ -196,7 +196,7 @@ export async function verifySuperadminCredentials(
     if (userRole !== 'superadmin' && userRole !== 'admin') {
       return {
         success: false,
-        error: 'Akses Ditolak. Halaman ini khusus untuk Administrator. Akun Anda terdaftar sebagai user tenant.',
+        error: 'Access Denied. This portal is restricted to Administrators.',
       };
     }
 

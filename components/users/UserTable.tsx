@@ -83,9 +83,9 @@ export function UserTable({
     return (
       <div className="bg-white rounded-2xl border border-slate-200/60 p-12 text-center">
         <UserIcon className="w-12 h-12 text-slate-400 mx-auto mb-3 opacity-50" />
-        <h3 className="text-base font-bold text-slate-800">Tidak ada pengguna ditemukan</h3>
+        <h3 className="text-base font-bold text-slate-800">No users found</h3>
         <p className="text-xs text-slate-500 mt-1">
-          Coba ubah filter pencarian atau daftarkan akun pengguna baru.
+          Try adjusting search filters or register a new user account.
         </p>
       </div>
     );
@@ -307,7 +307,7 @@ export function UserTable({
                         <button
                           onClick={() => onDeleteUser(u)}
                           disabled={isSelf}
-                          title={isSelf ? 'Akun Anda sendiri (sedang aktif)' : 'Hapus Akun Pengguna'}
+                          title={isSelf ? 'Your active session account' : 'Delete User Account'}
                           className={`p-2 rounded-xl transition-all ${
                             isSelf
                               ? 'bg-slate-100 text-slate-300 cursor-not-allowed'

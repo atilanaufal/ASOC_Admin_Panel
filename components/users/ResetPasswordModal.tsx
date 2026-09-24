@@ -64,7 +64,7 @@ export function ResetPasswordModal({
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPassword || newPassword.length < 6) {
-      setError('Password baru minimal 6 karakter.');
+      setError('New password must be at least 6 characters.');
       return;
     }
 

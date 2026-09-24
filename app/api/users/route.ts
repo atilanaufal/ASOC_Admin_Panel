@@ -51,14 +51,14 @@ export async function POST(request: NextRequest) {
 
     if (!username || !password) {
       return NextResponse.json(
-        { success: false, error: 'Username dan Password wajib diisi.' },
+        { success: false, error: 'Username and Password are required.' },
         { status: 400 }
       );
     }
 
     if (password.length < 6) {
       return NextResponse.json(
-        { success: false, error: 'Password minimal 6 karakter.' },
+        { success: false, error: 'Password must be at least 6 characters.' },
         { status: 400 }
       );
     }
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        message: `User ${result.user?.username} berhasil dibuat dan disinkronkan ke Better-Auth.`,
+        message: `User ${result.user?.username} created successfully and synchronized with Better-Auth.`,
         user: result.user,
       },
       { status: 201 }

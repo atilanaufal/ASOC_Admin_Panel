@@ -23,7 +23,7 @@ export async function PUT(
     if (action === 'reset_password') {
       if (!newPassword || newPassword.length < 6) {
         return NextResponse.json(
-          { success: false, error: 'Password baru minimal 6 karakter.' },
+          { success: false, error: 'New password must be at least 6 characters.' },
           { status: 400 }
         );
       }
@@ -121,7 +121,7 @@ export async function DELETE(
       return NextResponse.json(
         {
           success: false,
-          error: 'Akses ditolak: Hanya Superadmin yang memiliki izin untuk menghapus akun pengguna.',
+          error: 'Access denied: Only Superadmin has permission to delete user accounts.',
         },
         { status: 403 }
       );

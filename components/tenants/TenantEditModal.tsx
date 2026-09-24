@@ -42,11 +42,11 @@ export function TenantEditModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenantName.trim()) {
-      setError('Nama tenant wajib diisi.');
+      setError('Tenant name is required.');
       return;
     }
     if (!databaseName.trim()) {
-      setError('Nama database wajib diisi.');
+      setError('Database name is required.');
       return;
     }
 
@@ -68,7 +68,7 @@ export function TenantEditModal({
         throw new Error(json.error || 'Gagal memperbarui profil tenant.');
       }
 
-      onSuccess(`Tenant ${tenantName} berhasil diperbarui.`);
+      onSuccess(`Tenant ${tenantName} updated successfully.`);
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -141,7 +141,7 @@ export function TenantEditModal({
               className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <p className="text-[11px] text-slate-400 mt-1">
-              Nama database target penyimpanan dokumen insiden dan kerentanan tenant di MongoDB.
+              Target MongoDB database storing tenant incident and vulnerability telemetry.
             </p>
           </div>
 
@@ -152,7 +152,7 @@ export function TenantEditModal({
               onClick={onClose}
               className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
-              Batal
+              Cancel
             </button>
             <button
               type="submit"
@@ -160,7 +160,7 @@ export function TenantEditModal({
               className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/20 transition-all cursor-pointer disabled:opacity-50"
             >
               {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>Simpan Perubahan</span>
+              <span>Save Changes</span>
             </button>
           </div>
         </form>

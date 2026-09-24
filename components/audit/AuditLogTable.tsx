@@ -207,7 +207,7 @@ export function AuditLogTable({
           </button>
 
           <span className="px-2 font-bold text-slate-800">
-            Halaman {pagination.currentPage} / {pagination.totalPages || 1}
+            Page {pagination.currentPage} of {pagination.totalPages || 1}
           </span>
 
           <button

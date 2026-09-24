@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
 
     if (!username || !password) {
       return NextResponse.json(
-        { success: false, error: 'Username/Email dan Password wajib diisi.' },
+        { success: false, error: 'Username/Email and Password are required.' },
         { status: 400 }
       );
     }
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     if (!result.success || !result.user) {
       return NextResponse.json(
-        { success: false, error: result.error || 'Autentikasi gagal.' },
+        { success: false, error: result.error || 'Authentication failed.' },
         { status: 401 }
       );
     }
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     const response = NextResponse.json({
       success: true,
-      message: `Login ${sessionRole === 'superadmin' ? 'Superadmin' : 'Admin'} berhasil.`,
+      message: `${sessionRole === 'superadmin' ? 'Superadmin' : 'Admin'} login successful.`,
       user: sessionData,
     });
 

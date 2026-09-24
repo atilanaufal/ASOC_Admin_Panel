@@ -83,7 +83,7 @@ export function AgentMappingTable({
           onClick={() => onOpenEnrollmentModal()}
           className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
         >
-          <span>Buka Panduan Pendaftaran Agen</span>
+          <span>Open Agent Enrollment Guide</span>
         </button>
       </div>
     );

@@ -88,7 +88,7 @@ export async function DELETE(
       return NextResponse.json(
         {
           success: false,
-          error: 'Akses ditolak: Hanya Superadmin yang memiliki izin untuk menghapus tenant dan basis data.',
+          error: 'Access denied: Only Superadmin has permission to delete tenants and databases.',
         },
         { status: 403 }
       );

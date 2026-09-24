@@ -264,7 +264,7 @@ export default function UsersPage() {
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
           <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
-            Role Admin Biasa
+            Platform Admins
           </span>
           <div className="my-2 flex items-center justify-between">
             <div className="text-3xl font-extrabold text-indigo-600 tracking-tight">

@@ -101,12 +101,12 @@ export function UserModal({
         });
         const json = await res.json();
         if (!res.ok || !json.success) {
-          throw new Error(json.error || 'Gagal memperbarui pengguna');
+          throw new Error(json.error || 'Failed to update user');
         }
       } else {
         // Create user
         if (!username.trim() || !password) {
-          throw new Error('Username dan Password wajib diisi.');
+          throw new Error('Username and Password are required.');
         }
 
         const res = await fetch('/api/users', {
@@ -122,7 +122,7 @@ export function UserModal({
         });
         const json = await res.json();
         if (!res.ok || !json.success) {
-          throw new Error(json.error || 'Gagal membuat pengguna');
+          throw new Error(json.error || 'Failed to create user');
         }
       }
 
@@ -146,7 +146,7 @@ export function UserModal({
             </div>
             <div>
               <h3 className="font-extrabold text-base text-slate-900">
-                {isEditing ? 'Edit Profil Pengguna' : 'Add New User Baru'}
+                {isEditing ? 'Edit User Profile' : 'Add New User'}
               </h3>
               <p className="text-xs text-slate-500">
                 {isEditing
@@ -236,7 +236,7 @@ export function UserModal({
                 <div className="w-full px-3.5 py-2.5 bg-slate-100 rounded-xl border border-slate-200 text-xs text-slate-600 font-medium flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Shield className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>{role === 'superadmin' ? 'Superadmin Platform' : 'Admin Platform'} (Semua Tenant)</span>
+                    <span>{role === 'superadmin' ? 'Superadmin Platform' : 'Admin Platform'} (All Tenants)</span>
                   </div>
                   <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
                     GLOBAL

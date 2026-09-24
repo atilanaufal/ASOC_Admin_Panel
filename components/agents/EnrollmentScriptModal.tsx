@@ -58,7 +58,7 @@ export function EnrollmentScriptModal({
       );
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Gagal memuat skrip pendaftaran');
+        throw new Error(json.error || 'Failed to load enrollment script');
       }
       setScriptData(json);
     } catch (err: any) {
@@ -86,7 +86,7 @@ export function EnrollmentScriptModal({
             </div>
             <div>
               <h3 className="font-extrabold text-base text-slate-900">
-                Generator Skrip Pendaftaran Agen Wazuh
+                Wazuh Agent Enrollment Script Generator
               </h3>
               <p className="text-xs text-slate-500">
                 Instalasi satu baris (one-liner) otomatis terikat ke grup database tenant target
