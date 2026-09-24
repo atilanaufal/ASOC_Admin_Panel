@@ -1,24 +1,43 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ShieldAlert,
-  ShieldCheck,
   User as UserIcon,
-  KeyRound,
-  Trash2,
-  Edit2,
-  Building2,
   Mail,
+  Building2,
   Calendar,
   CheckCircle2,
   AlertTriangle,
+  KeyRound,
+  Trash2,
+  Edit2,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
 } from 'lucide-react';
 import type { UserItem } from '@/lib/users';
+
+const KNOWN_HASHES: Record<string, string> = {
+  '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918': 'admin',
+  '41e5653fc7aeb894026d6bb7b2db7f65902b454945fa8fd65a6327047b5277fb': 'admin12345',
+};
+
+function formatPassword(raw?: string): string {
+  if (!raw) return '-';
+  const clean = raw.trim();
+  if (KNOWN_HASHES[clean]) {
+    return KNOWN_HASHES[clean];
+  }
+  return clean;
+}
 
 interface UserTableProps {
   users: UserItem[];
   loading: boolean;
+  currentUserRole?: string;
+  currentUsername?: string;
   onResetPassword: (user: UserItem) => void;
   onEditUser: (user: UserItem) => void;
   onDeleteUser: (user: UserItem) => void;
@@ -27,15 +46,34 @@ interface UserTableProps {
 export function UserTable({
   users,
   loading,
+  currentUserRole = 'admin',
+  currentUsername = '',
   onResetPassword,
   onEditUser,
   onDeleteUser,
 }: UserTableProps) {
+  const isSuperadmin = currentUserRole === 'superadmin';
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | number | null>(null);
+
+  const togglePassword = (id: string | number) => {
+    setRevealedPasswords((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const handleCopy = (id: string | number, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-6 space-y-4">
         {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="h-14 bg-slate-100 rounded-xl animate-pulse" />
+          <div key={i} className="h-16 bg-slate-100 rounded-xl animate-pulse" />
         ))}
       </div>
     );
@@ -43,11 +81,11 @@ export function UserTable({
 
   if (users.length === 0) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-12 text-center">
         <UserIcon className="w-12 h-12 text-slate-400 mx-auto mb-3 opacity-50" />
-        <h3 className="text-base font-bold text-slate-800">No users found</h3>
+        <h3 className="text-base font-bold text-slate-800">Tidak ada pengguna ditemukan</h3>
         <p className="text-xs text-slate-500 mt-1">
-          Try adjusting your search query or tenant/role filters.
+          Coba ubah filter pencarian atau daftarkan akun pengguna baru.
         </p>
       </div>
     );
@@ -55,7 +93,15 @@ export function UserTable({
 
   const renderRoleBadge = (role: string) => {
     const cleanRole = (role || 'tenant').toLowerCase();
-    if (cleanRole === 'admin' || cleanRole === 'superadmin') {
+    if (cleanRole === 'superadmin') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+          <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+          <span>SUPERADMIN</span>
+        </span>
+      );
+    }
+    if (cleanRole === 'admin') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-100">
           <ShieldAlert className="w-3.5 h-3.5" />
@@ -89,6 +135,7 @@ export function UserTable({
               <th className="py-3 px-4 rounded-l-xl">User & Account</th>
               <th className="py-3 px-4">Assigned Tenant</th>
               <th className="py-3 px-4">Role & Permissions</th>
+              {isSuperadmin && <th className="py-3 px-4">Password</th>}
               <th className="py-3 px-4">Registration Date</th>
               <th className="py-3 px-4">Access Status</th>
               <th className="py-3 px-4 rounded-r-xl text-right">Actions</th>
@@ -98,6 +145,12 @@ export function UserTable({
             {users.map((u) => {
               const isAdmin = u.role === 'admin' || u.role === 'superadmin';
               const tenantActive = u.tenant_is_active === undefined || u.tenant_is_active === 1;
+              const isSelf = Boolean(
+                currentUsername &&
+                (u.username === currentUsername || String(u.id) === currentUsername)
+              );
+              const isPasswordRevealed = Boolean(revealedPasswords[u.id]);
+              const plainPw = formatPassword(u.password);
 
               return (
                 <tr
@@ -113,11 +166,15 @@ export function UserTable({
                       <div>
                         <div className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
                           <span>{u.username || (u as any).name}</span>
-                          {isAdmin && (
+                          {u.role === 'superadmin' ? (
+                            <span className="text-[10px] font-mono text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              SUPERADMIN
+                            </span>
+                          ) : u.role === 'admin' ? (
                             <span className="text-[10px] font-mono text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
                               ADMIN
                             </span>
-                          )}
+                          ) : null}
                         </div>
                         <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                           <Mail className="w-3 h-3 text-slate-400" />
@@ -152,6 +209,47 @@ export function UserTable({
                   {/* Role */}
                   <td className="py-3.5 px-4">{renderRoleBadge(u.role)}</td>
 
+                  {/* Password (Superadmin Only) */}
+                  {isSuperadmin && (
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-2">
+                        {isPasswordRevealed ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded select-all border border-slate-200/60">
+                              {plainPw}
+                            </span>
+                            <button
+                              onClick={() => handleCopy(u.id, plainPw)}
+                              title="Salin Password"
+                              className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition cursor-pointer"
+                            >
+                              {copiedId === u.id ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 font-mono tracking-widest text-xs select-none">
+                            ••••••••
+                          </span>
+                        )}
+                        <button
+                          onClick={() => togglePassword(u.id)}
+                          title={isPasswordRevealed ? 'Sembunyikan Password' : 'Lihat Password'}
+                          className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
+                        >
+                          {isPasswordRevealed ? (
+                            <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5 text-blue-600" />
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                  )}
+
                   {/* Registered Date */}
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-1.5 text-slate-500 font-medium">
@@ -172,12 +270,12 @@ export function UserTable({
                   <td className="py-3.5 px-4">
                     {tenantActive ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200/60">
-                        <CheckCircle2 className="w-3 h-3" />
+                        <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>AKTIF</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-200/60">
-                        <AlertTriangle className="w-3 h-3" />
+                        <AlertTriangle className="w-3.5 h-3.5" />
                         <span>SUSPENDED</span>
                       </span>
                     )}
@@ -204,12 +302,17 @@ export function UserTable({
                         <Edit2 className="w-4 h-4" />
                       </button>
 
-                      {/* Delete Button */}
-                      {!isAdmin && (
+                      {/* Delete Button (Superadmin Only - Can delete all users including other admins) */}
+                      {isSuperadmin && (
                         <button
                           onClick={() => onDeleteUser(u)}
-                          title="Delete User & Cabut Sesi"
-                          className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all cursor-pointer"
+                          disabled={isSelf}
+                          title={isSelf ? 'Akun Anda sendiri (sedang aktif)' : 'Hapus Akun Pengguna'}
+                          className={`p-2 rounded-xl transition-all ${
+                            isSelf
+                              ? 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                              : 'bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 cursor-pointer'
+                          }`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

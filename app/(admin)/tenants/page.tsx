@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   X,
   Loader2,
-  ShieldCheck,
 } from 'lucide-react';
 import { TenantTable } from '@/components/tenants/TenantTable';
 import { TenantProvisioningModal } from '@/components/tenants/TenantProvisioningModal';
@@ -24,6 +23,7 @@ export default function TenantsPage() {
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<string>('admin');
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,6 +45,29 @@ export default function TenantsPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  useEffect(() => {
+    try {
+      const cookies = document.cookie.split(';');
+      for (const c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'auth_session' && v) {
+          const parsed = JSON.parse(decodeURIComponent(v));
+          if (parsed?.role) {
+            setCurrentUserRole(parsed.role);
+            return;
+          }
+        }
+      }
+    } catch {}
+
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.user?.role) setCurrentUserRole(d.user.role);
+      })
+      .catch(() => {});
+  }, []);
+
   const fetchTenants = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
@@ -59,7 +82,7 @@ export default function TenantsPage() {
       }
     } catch (err: any) {
       console.error('Error fetching tenants:', err);
-      showToast('Failed to load tenant data.', 'error');
+      showToast(err.message, 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -70,6 +93,7 @@ export default function TenantsPage() {
     fetchTenants();
   }, []);
 
+  // Update Status
   const handleStatusChange = async (tenantId: number, newStatus: 'ACTIVE' | 'SUSPENDED') => {
     try {
       const res = await fetch(`/api/tenants/${tenantId}`, {
@@ -78,33 +102,29 @@ export default function TenantsPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       const json = await res.json();
-
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to change tenant status');
+        throw new Error(json.error || 'Failed to update tenant status');
       }
-
-      showToast(`Tenant status changed successfully to ${newStatus}.`);
+      showToast(`Tenant status updated to ${newStatus}.`);
       fetchTenants();
     } catch (err: any) {
       showToast(err.message, 'error');
     }
   };
 
+  // Delete Tenant
   const handleDeleteTenant = async () => {
     if (!tenantToDelete) return;
     setDeleteLoading(true);
-
     try {
       const res = await fetch(`/api/tenants/${tenantToDelete.id}`, {
         method: 'DELETE',
       });
       const json = await res.json();
-
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Failed to delete tenant');
       }
-
-      showToast(json.message || `Tenant ${tenantToDelete.campus_name} successfully deleted.`);
+      showToast(`Tenant ${tenantToDelete.campus_name} deleted successfully.`);
       setTenantToDelete(null);
       fetchTenants();
     } catch (err: any) {
@@ -114,30 +134,36 @@ export default function TenantsPage() {
     }
   };
 
-  // Filtered tenants list
+  // Filtered tenants
   const filteredTenants = tenants.filter((t) => {
-    return (
-      !searchQuery.trim() ||
-      t.campus_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.tenant_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.database_name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const q = searchQuery.toLowerCase().trim();
+    const matchQuery =
+      !q ||
+      t.campus_name.toLowerCase().includes(q) ||
+      t.tenant_code.toLowerCase().includes(q) ||
+      t.database_name.toLowerCase().includes(q);
+
+    const matchStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'active' && t.is_active === 1) ||
+      (statusFilter === 'suspended' && t.is_active === 0);
+
+    return matchQuery && matchStatus;
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Morphism Top Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-6">
+      {/* Top Bar matching Figma */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800">
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight font-sans">
             Tenant Management
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Multi-tenant database provisioning, Redis namespace allocation, and tenant directory.
+            Manage multi-tenant campuses, MongoDB database mapping, and access isolation.
           </p>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => fetchTenants(true)}
@@ -181,8 +207,8 @@ export default function TenantsPage() {
         </div>
       )}
 
-      {/* 2 Clean KPI Cards (Total Tenants & Total Agents) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* Clean KPI Card (Total Tenants Only - Removed Total Agents Widget) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
           <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
             Total Tenants
@@ -197,23 +223,6 @@ export default function TenantsPage() {
           </div>
           <div className="text-[11px] font-semibold text-slate-500">
             Active Multi-Tenant Organizations
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
-          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
-            Total Agents
-          </span>
-          <div className="my-2 flex items-center justify-between">
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              {loading ? '...' : (summary?.totalAgents || 0)}
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="text-[11px] font-semibold text-emerald-600">
-            {summary?.onlineAgents || 0} Online
           </div>
         </div>
       </div>
@@ -245,6 +254,7 @@ export default function TenantsPage() {
       <TenantTable
         tenants={filteredTenants}
         loading={loading}
+        currentUserRole={currentUserRole}
         onStatusChange={handleStatusChange}
         onEditTenant={(tenant) => {
           setTenantToEdit(tenant);

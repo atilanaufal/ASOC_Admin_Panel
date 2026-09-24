@@ -44,8 +44,34 @@ export default function UsersPage() {
   const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  const [currentUserRole, setCurrentUserRole] = useState<string>('admin');
+  const [currentUsername, setCurrentUsername] = useState<string>('');
+
   // Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    try {
+      const cookies = document.cookie.split(';');
+      for (const c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'auth_session' && v) {
+          const parsed = JSON.parse(decodeURIComponent(v));
+          if (parsed?.role) setCurrentUserRole(parsed.role);
+          if (parsed?.username) setCurrentUsername(parsed.username);
+          return;
+        }
+      }
+    } catch {}
+
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.user?.role) setCurrentUserRole(d.user.role);
+        if (d?.user?.username) setCurrentUsername(d.user.username);
+      })
+      .catch(() => {});
+  }, []);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ type, message });
@@ -334,6 +360,8 @@ export default function UsersPage() {
       <UserTable
         users={users}
         loading={loading}
+        currentUserRole={currentUserRole}
+        currentUsername={currentUsername}
         onResetPassword={handleOpenResetModal}
         onEditUser={handleOpenEditModal}
         onDeleteUser={(user) => setUserToDelete(user)}

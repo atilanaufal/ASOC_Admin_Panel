@@ -5,7 +5,6 @@ import {
   Building2,
   Database,
   Users,
-  Mail,
   Trash2,
   Edit2,
   Radio,
@@ -15,6 +14,7 @@ import type { TenantItem } from '@/lib/tenants';
 interface TenantTableProps {
   tenants: TenantItem[];
   loading: boolean;
+  currentUserRole?: string;
   onStatusChange?: (tenantId: number, newStatus: 'ACTIVE' | 'SUSPENDED') => Promise<void>;
   onEditTenant: (tenant: TenantItem) => void;
   onDeleteTenant: (tenant: TenantItem) => void;
@@ -23,9 +23,12 @@ interface TenantTableProps {
 export function TenantTable({
   tenants,
   loading,
+  currentUserRole = 'admin',
   onEditTenant,
   onDeleteTenant,
 }: TenantTableProps) {
+  const isSuperadmin = currentUserRole === 'superadmin';
+
   if (loading) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
@@ -66,7 +69,6 @@ export function TenantTable({
               <th className="py-3 px-4 rounded-l-xl">Tenant Profile</th>
               <th className="py-3 px-4">MongoDB Database</th>
               <th className="py-3 px-4">Redis Namespace</th>
-              <th className="py-3 px-4">PIC Contact</th>
               <th className="py-3 px-4 rounded-r-xl text-right">Actions</th>
             </tr>
           </thead>
@@ -115,19 +117,6 @@ export function TenantTable({
                     </div>
                   </td>
 
-                  {/* PIC Contact */}
-                  <td className="py-3.5 px-4">
-                    <div>
-                      <div className="font-semibold text-slate-900 text-xs">
-                        {t.pic_name && t.pic_name !== '-' ? t.pic_name : `Admin SOC ${t.tenant_code}`}
-                      </div>
-                      <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5 font-mono">
-                        <Mail className="w-3 h-3 text-slate-400" />
-                        <span>{t.pic_email && t.pic_email !== '-' ? t.pic_email : `soc@${t.database_name}.ac.id`}</span>
-                      </div>
-                    </div>
-                  </td>
-
                   {/* Actions */}
                   <td className="py-3.5 px-4 text-right">
                     <div className="flex items-center justify-end gap-1.5">
@@ -139,13 +128,15 @@ export function TenantTable({
                         <Edit2 className="w-4 h-4" />
                       </button>
 
-                      <button
-                        onClick={() => onDeleteTenant(t)}
-                        title="Delete Tenant Registry"
-                        className="p-2 rounded-xl bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-all cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {isSuperadmin && (
+                        <button
+                          onClick={() => onDeleteTenant(t)}
+                          title="Delete Tenant Registry"
+                          className="p-2 rounded-xl bg-slate-50 text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -496,14 +496,6 @@ export default function DataSyncPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={() => handleRunCheck('check_alerts_indexer_mongo')}
-                disabled={Boolean(runningAction)}
-                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
-              >
-                {runningAction === 'check_alerts_indexer_mongo' ? 'Checking...' : 'Check Alerts'}
-              </button>
-
-              <button
                 onClick={() => handleRunSync('indexer-mongo-alerts')}
                 disabled={Boolean(runningAction)}
                 className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
@@ -638,14 +630,6 @@ export default function DataSyncPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={() => handleRunCheck('check_vulnerability_indexer_mongo')}
-                disabled={Boolean(runningAction)}
-                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
-              >
-                {runningAction === 'check_vulnerability_indexer_mongo' ? 'Checking...' : 'Check Vulnerabilities'}
-              </button>
-
-              <button
                 onClick={() => handleRunSync('vulnerabilities')}
                 disabled={Boolean(runningAction)}
                 className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
@@ -779,14 +763,6 @@ export default function DataSyncPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => handleRunCheck('check_mongo_redis_multitenant')}
-                disabled={Boolean(runningAction)}
-                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
-              >
-                {runningAction === 'check_mongo_redis_multitenant' ? 'Checking...' : 'Check Redis Cache'}
-              </button>
-
               <button
                 onClick={() => handleRunSync('mongo-redis')}
                 disabled={Boolean(runningAction)}
@@ -1007,14 +983,6 @@ export default function DataSyncPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => handleRunCheck('check_iris_reports')}
-                disabled={Boolean(runningAction)}
-                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer disabled:opacity-50"
-              >
-                {runningAction === 'check_iris_reports' ? 'Checking...' : 'Check IRIS Reports'}
-              </button>
-
               <button
                 onClick={() => handleRunSync('iris-mongo')}
                 disabled={Boolean(runningAction)}

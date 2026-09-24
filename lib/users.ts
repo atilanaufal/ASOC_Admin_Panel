@@ -14,6 +14,7 @@ export interface UserItem {
   database_name?: string;
   redis_prefix?: string;
   tenant_is_active?: number | boolean;
+  password?: string;
 }
 
 export interface ListUsersParams {
@@ -31,7 +32,7 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
   const allUsers: UserItem[] = [];
 
   // 1. Fetch Platform Admins from `admin_users` (unless filtered by a specific tenant)
-  const shouldIncludeAdmins = (!params.tenant || params.tenant === 'all') && (!params.role || params.role === 'all' || params.role === 'admin');
+  const shouldIncludeAdmins = (!params.tenant || params.tenant === 'all') && (!params.role || params.role === 'all' || params.role === 'admin' || params.role === 'superadmin');
 
   if (shouldIncludeAdmins) {
     try {
@@ -41,13 +42,14 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
           0 AS tenant_id,
           COALESCE(username, name, '') AS username,
           email,
-          'admin' AS role,
+          COALESCE(role, 'admin') AS role,
           created_at,
           '-' AS tenant_code,
           '-' AS campus_name,
           '-' AS database_name,
           '-' AS redis_prefix,
-          1 AS tenant_is_active
+          1 AS tenant_is_active,
+          COALESCE(password, '') AS password
         FROM admin_users
         WHERE 1=1
       `;
@@ -81,7 +83,8 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
         t.campus_name,
         t.database_name,
         t.redis_prefix,
-        t.is_active AS tenant_is_active
+        t.is_active AS tenant_is_active,
+        COALESCE(u.password, '') AS password
       FROM users u
       LEFT JOIN tenants t ON u.tenant_id = t.id
       WHERE 1=1
@@ -439,7 +442,8 @@ export async function updateUser(
  * Accepts numeric and string/hex IDs.
  */
 export async function deleteUser(
-  userId: number | string
+  userId: number | string,
+  currentSessionUsername?: string
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   const pool = getMysqlPool();
 
@@ -482,9 +486,9 @@ export async function deleteUser(
 
     const user = users[0];
 
-    // Prevent deleting the primary admin
-    if (user.username === 'admin' || user.username === 'superadmin') {
-      return { success: false, error: 'Akun admin utama tidak dapat dihapus.' };
+    // Prevent deleting own session account to avoid self-lockout
+    if (currentSessionUsername && (user.username === currentSessionUsername || String(user.id) === currentSessionUsername)) {
+      return { success: false, error: 'Tidak dapat menghapus akun Anda sendiri yang sedang aktif digunakan.' };
     }
 
     // 3. Delete from MySQL

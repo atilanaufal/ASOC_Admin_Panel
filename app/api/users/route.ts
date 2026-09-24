@@ -8,11 +8,31 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get('role') || 'all';
     const search = searchParams.get('search') || '';
 
-    const users = await listUsers({ tenant, role, search });
+    // Check caller role
+    const authSession = request.cookies.get('auth_session')?.value;
+    let currentUser: any = null;
+    if (authSession) {
+      try {
+        currentUser = JSON.parse(decodeURIComponent(authSession));
+      } catch {}
+    }
+    const isSuperadmin = currentUser?.role === 'superadmin';
+
+    const rawUsers = await listUsers({ tenant, role, search });
+
+    // Map users: only superadmin receives password
+    const users = rawUsers.map((u) => {
+      if (!isSuperadmin) {
+        const { password, ...rest } = u;
+        return rest;
+      }
+      return u;
+    });
 
     return NextResponse.json({
       success: true,
       count: users.length,
+      isSuperadmin,
       users,
     });
   } catch (err: any) {

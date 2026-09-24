@@ -303,6 +303,7 @@ export async function updateTenant(
   tenantId: number,
   data: {
     campusName?: string;
+    databaseName?: string;
     status?: 'ACTIVE' | 'SUSPENDED';
     picName?: string;
     picEmail?: string;
@@ -337,9 +338,18 @@ export async function updateTenant(
       ]);
     }
 
+    // Handle Database Name Updates
+    if (data.databaseName) {
+      const cleanDb = data.databaseName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      await mysqlPool.query('UPDATE tenants SET database_name = ? WHERE id = ?', [
+        cleanDb,
+        tenantId,
+      ]);
+    }
+
     return {
       success: true,
-      message: `Tenant ${tenant.campus_name} berhasil diperbarui.`,
+      message: `Tenant ${data.campusName?.trim() || tenant.campus_name} berhasil diperbarui.`,
     };
   } catch (err: any) {
     console.error('Error updating tenant:', err);

@@ -108,7 +108,26 @@ export async function DELETE(
     const cleanId = id.trim();
     const userId = /^\d+$/.test(cleanId) ? parseInt(cleanId, 10) : cleanId;
 
-    const result = await deleteUser(userId);
+    // Role Enforcement: Only Superadmin can delete accounts (including admin accounts)
+    const authSession = request.cookies.get('auth_session')?.value;
+    let currentUser: any = null;
+    if (authSession) {
+      try {
+        currentUser = JSON.parse(decodeURIComponent(authSession));
+      } catch {}
+    }
+
+    if (currentUser?.role !== 'superadmin') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Akses ditolak: Hanya Superadmin yang memiliki izin untuk menghapus akun pengguna.',
+        },
+        { status: 403 }
+      );
+    }
+
+    const result = await deleteUser(userId, currentUser?.username);
 
     if (!result.success) {
       return NextResponse.json(
@@ -122,6 +141,7 @@ export async function DELETE(
       const { logAdminActivity } = await import('@/lib/audit-logger');
       await logAdminActivity({
         req: request,
+        adminUsername: currentUser?.username || 'superadmin',
         actionType: 'USER_DELETE',
         targetResource: `user:id:${userId}`,
         status: 'SUCCESS',

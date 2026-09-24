@@ -17,10 +17,11 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { campusName, status, picName, picEmail, picPhone } = body;
+    const { campusName, databaseName, status, picName, picEmail, picPhone } = body;
 
     const result = await updateTenant(tenantId, {
       campusName,
+      databaseName,
       status,
       picName,
       picEmail,
@@ -42,7 +43,7 @@ export async function PUT(
         actionType: status ? 'TENANT_STATUS_TOGGLE' : 'TENANT_UPDATE',
         targetResource: `tenant:id:${tenantId}`,
         status: 'SUCCESS',
-        details: { tenantId, campusName, status, picName, picEmail },
+        details: { tenantId, campusName, databaseName, status },
       });
     } catch {}
 
@@ -74,6 +75,25 @@ export async function DELETE(
       );
     }
 
+    // Role Enforcement: Only Superadmin can delete tenants and databases
+    const authSession = request.cookies.get('auth_session')?.value;
+    let currentUser: any = null;
+    if (authSession) {
+      try {
+        currentUser = JSON.parse(decodeURIComponent(authSession));
+      } catch {}
+    }
+
+    if (currentUser?.role !== 'superadmin') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Akses ditolak: Hanya Superadmin yang memiliki izin untuk menghapus tenant dan basis data.',
+        },
+        { status: 403 }
+      );
+    }
+
     const result = await deleteTenant(tenantId);
 
     if (!result.success) {
@@ -88,6 +108,7 @@ export async function DELETE(
       const { logAdminActivity } = await import('@/lib/audit-logger');
       await logAdminActivity({
         req: request,
+        adminUsername: currentUser?.username || 'superadmin',
         actionType: 'TENANT_DELETE',
         targetResource: `tenant:id:${tenantId}`,
         status: 'SUCCESS',
