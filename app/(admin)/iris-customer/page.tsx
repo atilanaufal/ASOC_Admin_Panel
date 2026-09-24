@@ -347,48 +347,48 @@ export default function IrisCustomerPage() {
                             {t.tenantCode}
                           </div>
                           <div>
-                            <div className="font-bold text-slate-800 text-xs">{t.campusName}</div>
-                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">ID #{t.id}</div>
+                            <div className="font-semibold text-slate-800 text-sm">{t.campusName}</div>
+                            <div className="text-xs text-slate-400 font-mono mt-0.5">ID #{t.id}</div>
                           </div>
                         </div>
                       </td>
 
                       {/* DB */}
-                      <td className="py-3.5 px-4 font-mono text-slate-600 text-[11px]">
+                      <td className="py-3.5 px-4 font-mono text-slate-700 text-sm font-medium">
                         {t.databaseName}
                       </td>
 
                       {/* Customer ID */}
                       <td className="py-3.5 px-4">
                         {t.irisCustomerId ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-50 text-[#00BCD4] border border-cyan-100 font-mono">
+                          <span className="font-mono text-sm font-semibold text-slate-700">
                             #{t.irisCustomerId}
                           </span>
                         ) : (
-                          <span className="text-slate-400 italic">Not set</span>
+                          <span className="text-slate-400 italic text-sm">Not set</span>
                         )}
                       </td>
 
                       {/* Customer Name */}
                       <td className="py-3.5 px-4">
                         {t.irisCustomerName ? (
-                          <span className="font-bold text-slate-800 text-xs">
+                          <span className="font-semibold text-slate-800 text-sm">
                             {t.irisCustomerName}
                           </span>
                         ) : (
-                          <span className="text-slate-400 italic">-</span>
+                          <span className="text-slate-400 italic text-sm">-</span>
                         )}
                       </td>
 
                       {/* Status */}
                       <td className="py-3.5 px-4">
                         {t.isMapped ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200/60">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             Mapped
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-200/60">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                             Unmapped
                           </span>

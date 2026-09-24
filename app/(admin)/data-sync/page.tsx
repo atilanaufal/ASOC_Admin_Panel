@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Play, CheckCircle2, AlertCircle } from 'lucide-react';
+import { RefreshCw, Play, CheckCircle2, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import CustomSelect from '@/components/ui/CustomSelect';
 
 interface DateRow {
@@ -117,6 +117,8 @@ export default function DataSyncPage() {
   const [savingCron, setSavingCron] = useState(false);
 
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({});
+  const toggleCard = (id: string) => setCollapsedCards((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ type, message });
@@ -534,63 +536,82 @@ export default function DataSyncPage() {
                     key={t.id}
                     className="bg-white rounded-2xl border border-slate-200/70 shadow-xs overflow-hidden"
                   >
-                    {/* Header */}
-                    <div className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-bold text-slate-800 tracking-tight">
-                        [{t.tenantCode}] {t.tenantName || t.campusName} — Database: <span className="font-mono font-semibold">{t.databaseName}</span>
+                    {/* Header (Clickable Accordion) */}
+                    <div
+                      onClick={() => toggleCard(`alerts-${t.id || t.tenantCode}`)}
+                      className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-slate-100/70 transition-colors select-none"
+                    >
+                      <div className="font-bold text-slate-800 text-sm tracking-tight flex items-center gap-2">
+                        <span className="text-slate-400">
+                          {collapsedCards[`alerts-${t.id || t.tenantCode}`] ? (
+                            <ChevronDown className="w-4 h-4 text-slate-600" />
+                          ) : (
+                            <ChevronUp className="w-4 h-4 text-slate-600" />
+                          )}
+                        </span>
+                        <span>[{t.tenantCode}] {t.tenantName || t.campusName}</span>
+                        <span className="text-slate-300 font-normal">|</span>
+                        <span className="font-mono text-slate-600 font-normal text-xs">Database: {t.databaseName}</span>
                       </div>
-                      <span className="text-[11px] font-mono text-slate-500">
-                        Wazuh Group: {JSON.stringify(t.wazuhGroups)}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-mono text-slate-500">
+                          Wazuh Group: {JSON.stringify(t.wazuhGroups)}
+                        </span>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
+                          {collapsedCards[`alerts-${t.id || t.tenantCode}`] ? 'Buka' : 'Tutup'}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Table */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left font-mono text-xs">
-                        <thead className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
-                          <tr>
-                            <th className="py-3 px-4 rounded-l-xl">DATE</th>
-                            <th className="py-3 px-4">INDEXER MASTER</th>
-                            <th className="py-3 px-4">TOTAL MONGO</th>
-                            <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-800">
-                          {breakdown.length === 0 ? (
+                    {!collapsedCards[`alerts-${t.id || t.tenantCode}`] && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-mono text-sm">
+                          <thead className="bg-slate-100 text-slate-800 font-bold text-xs uppercase tracking-wider">
                             <tr>
-                              <td colSpan={4} className="p-3 text-center text-slate-400 font-sans italic">
-                                No security alerts found for this period.
-                              </td>
+                              <th className="py-3 px-4 rounded-l-xl">DATE</th>
+                              <th className="py-3 px-4">INDEXER MASTER</th>
+                              <th className="py-3 px-4">TOTAL MONGO</th>
+                              <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
                             </tr>
-                          ) : (
-                            breakdown.map((row, idx) => (
-                              <tr key={idx} className="hover:bg-slate-50">
-                                <td className="p-2.5 pl-4 font-semibold text-slate-900">{row.date}</td>
-                                <td className="p-2.5 font-semibold text-slate-800">{row.indexerMaster}</td>
-                                <td className="p-2.5 font-semibold text-slate-800">{row.totalMongo}</td>
-                                <td className="p-2.5 pr-4 text-right">
-                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                    row.status === 'SYNC'
-                                      ? 'text-emerald-700 bg-emerald-50'
-                                      : 'text-rose-700 bg-rose-50'
-                                  }`}>
-                                    {row.status}
-                                  </span>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-800">
+                            {breakdown.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="py-4 text-center text-slate-400 font-sans italic text-sm">
+                                  No security alerts found for this period.
                                 </td>
                               </tr>
-                            ))
-                          )}
-                          <tr className="bg-slate-50 font-bold border-t border-slate-200">
-                            <td className="p-2.5 pl-4 font-black text-slate-900">TOTAL</td>
-                            <td className="p-2.5 text-blue-700 font-black">{totalIndexer}</td>
-                            <td className="p-2.5 text-blue-700 font-black">{totalMongo}</td>
-                            <td className="p-2.5 pr-4 text-right text-emerald-700 font-black">
-                              {totalIndexer === totalMongo ? '100% SYNC' : 'MISMATCH'}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
+                            ) : (
+                              breakdown.map((row, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50">
+                                  <td className="py-3 px-4 font-semibold text-slate-900">{row.date}</td>
+                                  <td className="py-3 px-4 font-semibold text-slate-800">{row.indexerMaster}</td>
+                                  <td className="py-3 px-4 font-semibold text-slate-800">{row.totalMongo}</td>
+                                  <td className="py-3 px-4 text-right">
+                                    <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                      row.status === 'SYNC'
+                                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                        : 'text-rose-700 bg-rose-50 border border-rose-200/60'
+                                    }`}>
+                                      {row.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                            <tr className="bg-slate-50 font-bold border-t border-slate-200 text-sm">
+                              <td className="py-3 px-4 font-black text-slate-900">TOTAL</td>
+                              <td className="py-3 px-4 text-blue-700 font-black">{totalIndexer}</td>
+                              <td className="py-3 px-4 text-blue-700 font-black">{totalMongo}</td>
+                              <td className="py-3 px-4 text-right text-emerald-700 font-black">
+                                {totalIndexer === totalMongo ? '100% SYNC' : 'MISMATCH'}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -657,63 +678,82 @@ export default function DataSyncPage() {
                     key={t.id}
                     className="bg-white rounded-2xl border border-slate-200/70 shadow-xs overflow-hidden"
                   >
-                    {/* Header */}
-                    <div className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-bold text-slate-800 tracking-tight">
-                        [{t.tenantCode}] {t.tenantName || t.campusName} — Database: <span className="font-mono font-semibold">{t.databaseName}</span>
+                    {/* Header (Clickable Accordion) */}
+                    <div
+                      onClick={() => toggleCard(`vulns-${t.id || t.tenantCode}`)}
+                      className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-slate-100/70 transition-colors select-none"
+                    >
+                      <div className="font-bold text-slate-800 text-sm tracking-tight flex items-center gap-2">
+                        <span className="text-slate-400">
+                          {collapsedCards[`vulns-${t.id || t.tenantCode}`] ? (
+                            <ChevronDown className="w-4 h-4 text-slate-600" />
+                          ) : (
+                            <ChevronUp className="w-4 h-4 text-slate-600" />
+                          )}
+                        </span>
+                        <span>[{t.tenantCode}] {t.tenantName || t.campusName}</span>
+                        <span className="text-slate-300 font-normal">|</span>
+                        <span className="font-mono text-slate-600 font-normal text-xs">Database: {t.databaseName}</span>
                       </div>
-                      <span className="text-[11px] font-mono text-slate-500">
-                        Wazuh Group: {JSON.stringify(t.wazuhGroups)}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-mono text-slate-500">
+                          Wazuh Group: {JSON.stringify(t.wazuhGroups)}
+                        </span>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
+                          {collapsedCards[`vulns-${t.id || t.tenantCode}`] ? 'Buka' : 'Tutup'}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Table */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left font-mono text-xs">
-                        <thead className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
-                          <tr>
-                            <th className="py-3 px-4 rounded-l-xl">DATE</th>
-                            <th className="py-3 px-4">INDEXER MASTER</th>
-                            <th className="py-3 px-4">TOTAL MONGO</th>
-                            <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-800">
-                          {breakdown.length === 0 ? (
+                    {!collapsedCards[`vulns-${t.id || t.tenantCode}`] && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-mono text-sm">
+                          <thead className="bg-slate-100 text-slate-800 font-bold text-xs uppercase tracking-wider">
                             <tr>
-                              <td colSpan={4} className="p-3 text-center text-slate-400 font-sans italic">
-                                No vulnerabilities found for this period.
-                              </td>
+                              <th className="py-3 px-4 rounded-l-xl">DATE</th>
+                              <th className="py-3 px-4">INDEXER MASTER</th>
+                              <th className="py-3 px-4">TOTAL MONGO</th>
+                              <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
                             </tr>
-                          ) : (
-                            breakdown.map((row, idx) => (
-                              <tr key={idx} className="hover:bg-slate-50">
-                                <td className="p-2.5 pl-4 font-semibold text-slate-900">{row.date}</td>
-                                <td className="p-2.5 font-semibold text-slate-800">{row.indexerMaster}</td>
-                                <td className="p-2.5 font-semibold text-slate-800">{row.totalMongo}</td>
-                                <td className="p-2.5 pr-4 text-right">
-                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                    row.status === 'SYNC'
-                                      ? 'text-emerald-700 bg-emerald-50'
-                                      : 'text-rose-700 bg-rose-50'
-                                  }`}>
-                                    {row.status}
-                                  </span>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-800">
+                            {breakdown.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="py-4 text-center text-slate-400 font-sans italic text-sm">
+                                  No vulnerabilities found for this period.
                                 </td>
                               </tr>
-                            ))
-                          )}
-                          <tr className="bg-slate-50 font-bold border-t border-slate-200">
-                            <td className="p-2.5 pl-4 font-black text-slate-900">TOTAL</td>
-                            <td className="p-2.5 text-blue-700 font-black">{totalIndexer}</td>
-                            <td className="p-2.5 text-blue-700 font-black">{totalMongo}</td>
-                            <td className="p-2.5 pr-4 text-right text-emerald-700 font-black">
-                              {totalIndexer === totalMongo ? '100% SYNC' : 'MISMATCH'}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
+                            ) : (
+                              breakdown.map((row, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50">
+                                  <td className="py-3 px-4 font-semibold text-slate-900">{row.date}</td>
+                                  <td className="py-3 px-4 font-semibold text-slate-800">{row.indexerMaster}</td>
+                                  <td className="py-3 px-4 font-semibold text-slate-800">{row.totalMongo}</td>
+                                  <td className="py-3 px-4 text-right">
+                                    <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                      row.status === 'SYNC'
+                                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                        : 'text-rose-700 bg-rose-50 border border-rose-200/60'
+                                    }`}>
+                                      {row.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                            <tr className="bg-slate-50 font-bold border-t border-slate-200 text-sm">
+                              <td className="py-3 px-4 font-black text-slate-900">TOTAL</td>
+                              <td className="py-3 px-4 text-blue-700 font-black">{totalIndexer}</td>
+                              <td className="py-3 px-4 text-blue-700 font-black">{totalMongo}</td>
+                              <td className="py-3 px-4 text-right text-emerald-700 font-black">
+                                {totalIndexer === totalMongo ? '100% SYNC' : 'MISMATCH'}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -810,110 +850,127 @@ export default function DataSyncPage() {
                     key={t.id}
                     className="bg-white rounded-2xl border border-slate-200/70 shadow-xs overflow-hidden"
                   >
-                    {/* Header */}
-                    <div className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                    {/* Header (Clickable Accordion) */}
+                    <div
+                      onClick={() => toggleCard(`redis-${t.id || t.tenantCode}`)}
+                      className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-slate-100/70 transition-colors select-none"
+                    >
+                      <div className="font-bold text-slate-800 text-sm tracking-tight flex items-center gap-2">
+                        <span className="text-slate-400">
+                          {collapsedCards[`redis-${t.id || t.tenantCode}`] ? (
+                            <ChevronDown className="w-4 h-4 text-slate-600" />
+                          ) : (
+                            <ChevronUp className="w-4 h-4 text-slate-600" />
+                          )}
+                        </span>
                         <span>[{t.tenantCode}] {(t.tenantName || t.campusName || '').toUpperCase()}</span>
-                        <span className="text-slate-400 font-normal">|</span>
-                        <span className="font-mono text-slate-600 font-normal">Database: {t.databaseName}</span>
-                        <span className="text-slate-400 font-normal">|</span>
-                        <span className="font-mono text-indigo-600 font-semibold">Redis: {t.redisPrefix}*</span>
+                        <span className="text-slate-300 font-normal">|</span>
+                        <span className="font-mono text-slate-600 font-normal text-xs">Database: {t.databaseName}</span>
+                        <span className="text-slate-300 font-normal">|</span>
+                        <span className="font-mono text-indigo-600 font-semibold text-xs">Redis: {t.redisPrefix}*</span>
                       </div>
-                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md ${
-                        isAllSynced
-                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
-                          : 'text-rose-700 bg-rose-50 border border-rose-200'
-                      }`}>
-                        {isAllSynced ? '100% IN SYNC' : 'DISCREPANCY DETECTED'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md ${
+                          isAllSynced
+                            ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                            : 'text-rose-700 bg-rose-50 border border-rose-200'
+                        }`}>
+                          {isAllSynced ? '100% IN SYNC' : 'DISCREPANCY DETECTED'}
+                        </span>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
+                          {collapsedCards[`redis-${t.id || t.tenantCode}`] ? 'Buka' : 'Tutup'}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Parity Table */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left font-mono text-xs">
-                        <thead className="bg-slate-100 text-slate-900 font-bold border-b border-slate-200">
-                          <tr>
-                            <th className="py-3 px-4 rounded-l-xl">COLLECTION / TELEMETRY METRIC</th>
-                            <th className="py-3 px-4">MONGO MASTER</th>
-                            <th className="py-3 px-4">REDIS CACHE</th>
-                            <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-800">
-                          {collections.map((item, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50">
+                    {!collapsedCards[`redis-${t.id || t.tenantCode}`] && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-mono text-sm">
+                          <thead className="bg-slate-100 text-slate-800 font-bold text-xs uppercase tracking-wider">
+                            <tr>
+                              <th className="py-3 px-4 rounded-l-xl">COLLECTION / TELEMETRY METRIC</th>
+                              <th className="py-3 px-4">MONGO MASTER</th>
+                              <th className="py-3 px-4">REDIS CACHE</th>
+                              <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-800">
+                            {collections.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50">
+                                <td className="py-3.5 px-4 font-sans">
+                                  <div className="font-semibold text-slate-900 text-sm">{item.name}</div>
+                                  <div className="text-xs text-slate-400 font-mono">{item.detail}</div>
+                                </td>
+                                <td className="py-3.5 px-4 font-bold text-slate-900 text-sm">{item.mongo}</td>
+                                <td className="py-3.5 px-4 font-bold text-indigo-600 text-sm">{item.redis}</td>
+                                <td className="py-3.5 px-4 pr-4 text-right font-sans">
+                                  <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                    item.isSynced
+                                      ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                      : 'text-rose-700 bg-rose-50 border border-rose-200/60'
+                                  }`}>
+                                    {item.isSynced ? (item.mongo === 0 ? 'SYNCED (0)' : '100% IN SYNC') : 'MISMATCH'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+
+                            {/* Historical Stats KPI Row */}
+                            <tr className="hover:bg-slate-50">
                               <td className="py-3.5 px-4 font-sans">
-                                <div className="font-bold text-slate-900 text-xs">{item.name}</div>
-                                <div className="text-[11px] text-slate-400 font-mono">{item.detail}</div>
+                                <div className="font-semibold text-slate-900 text-sm">Historical Stats (Weekly KPI)</div>
+                                <div className="text-xs text-slate-400 font-mono">14-day aggregated telemetry KPIs</div>
                               </td>
-                              <td className="py-3.5 px-4 font-bold text-slate-900 text-sm">{item.mongo}</td>
-                              <td className="py-3.5 px-4 font-bold text-indigo-600 text-sm">{item.redis}</td>
+                              <td className="py-3.5 px-4 font-medium text-slate-700 text-sm font-sans">Available</td>
+                              <td className="py-3.5 px-4 font-medium text-indigo-600 text-sm font-sans">
+                                {ra?.historicalStats?.cached ? 'Cached (Weekly)' : 'No Cache'}
+                              </td>
                               <td className="py-3.5 px-4 pr-4 text-right font-sans">
-                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                  item.isSynced
-                                    ? 'text-emerald-700 bg-emerald-50'
-                                    : 'text-rose-700 bg-rose-50'
+                                <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                  ra?.historicalStats?.cached
+                                    ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                    : 'text-amber-700 bg-amber-50 border border-amber-200/60'
                                 }`}>
-                                  {item.isSynced ? (item.mongo === 0 ? 'SYNCED (0)' : '100% IN SYNC') : 'MISMATCH'}
+                                  {ra?.historicalStats?.cached ? 'SYNCED (Weekly KPI)' : 'NO CACHE'}
                                 </span>
                               </td>
                             </tr>
-                          ))}
-
-                          {/* Historical Stats KPI Row */}
-                          <tr className="hover:bg-slate-50">
-                            <td className="py-3.5 px-4 font-sans">
-                              <div className="font-bold text-slate-900 text-xs">Historical Stats (Weekly KPI)</div>
-                              <div className="text-[11px] text-slate-400 font-mono">14-day aggregated telemetry KPIs</div>
-                            </td>
-                            <td className="py-3.5 px-4 font-medium text-slate-700 text-xs font-sans">Available</td>
-                            <td className="py-3.5 px-4 font-medium text-indigo-600 text-xs font-sans">
-                              {ra?.historicalStats?.cached ? 'Cached (Weekly)' : 'No Cache'}
-                            </td>
-                            <td className="py-3.5 px-4 pr-4 text-right font-sans">
-                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                ra?.historicalStats?.cached
-                                  ? 'text-emerald-700 bg-emerald-50'
-                                  : 'text-amber-700 bg-amber-50'
-                              }`}>
-                                {ra?.historicalStats?.cached ? 'SYNCED (Weekly KPI)' : 'NO CACHE'}
-                              </span>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
 
                     {/* Incidents Date Breakdown if present */}
-                    {ra?.incidents?.dateBreakdown && ra.incidents.dateBreakdown.length > 0 && (
+                    {!collapsedCards[`redis-${t.id || t.tenantCode}`] && ra?.incidents?.dateBreakdown && ra.incidents.dateBreakdown.length > 0 && (
                       <div className="p-4 bg-slate-50/70 border-t border-slate-200/70">
-                        <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center justify-between">
+                        <div className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center justify-between">
                           <span>Incidents Daily Breakdown (Date Hash Keys)</span>
-                          <span className="text-[10px] text-slate-500 font-mono">
+                          <span className="text-xs text-slate-500 font-mono">
                             Total: Mongo {ra.incidents.mongo} / Redis {ra.incidents.redis}
                           </span>
                         </div>
                         <div className="overflow-x-auto rounded-xl border border-slate-200/80 bg-white">
-                          <table className="w-full text-left font-mono text-xs">
-                            <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                          <table className="w-full text-left font-mono text-sm">
+                            <thead className="bg-slate-100/80 text-slate-800 font-bold border-b border-slate-200 text-xs">
                               <tr>
-                                <th className="p-2.5 pl-4">DATE</th>
-                                <th className="p-2.5">MONGO MASTER</th>
-                                <th className="p-2.5">REDIS CACHE (7D)</th>
-                                <th className="p-2.5 pr-4 text-right">STATUS</th>
+                                <th className="py-2.5 px-4">DATE</th>
+                                <th className="py-2.5 px-4">MONGO MASTER</th>
+                                <th className="py-2.5 px-4">REDIS CACHE (7D)</th>
+                                <th className="py-2.5 px-4 pr-4 text-right">STATUS</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                               {ra.incidents.dateBreakdown.map((row, rIdx) => (
                                 <tr key={rIdx} className="hover:bg-slate-50/60">
-                                  <td className="p-2.5 pl-4 font-semibold text-slate-900">{row.date}</td>
-                                  <td className="p-2.5 font-semibold text-slate-800">{row.mongo}</td>
-                                  <td className="p-2.5 font-semibold text-indigo-700">{row.redis}</td>
-                                  <td className="p-2.5 pr-4 text-right font-sans">
-                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                  <td className="py-2.5 px-4 font-semibold text-slate-900">{row.date}</td>
+                                  <td className="py-2.5 px-4 font-semibold text-slate-800">{row.mongo}</td>
+                                  <td className="py-2.5 px-4 font-semibold text-indigo-700">{row.redis}</td>
+                                  <td className="py-2.5 px-4 pr-4 text-right font-sans">
+                                    <span className={`px-2.5 py-1 rounded text-xs font-bold ${
                                       row.status === 'SYNC'
-                                        ? 'text-emerald-700 bg-emerald-50'
-                                        : 'text-rose-700 bg-rose-50'
+                                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                        : 'text-rose-700 bg-rose-50 border border-rose-200/60'
                                     }`}>
                                       {row.status === 'SYNC' ? (row.mongo === 0 ? 'SYNCED (0)' : '100% IN SYNC') : 'MISMATCH'}
                                     </span>
@@ -986,77 +1043,92 @@ export default function DataSyncPage() {
                   key={t.tenant_code}
                   className="bg-white rounded-2xl border border-slate-200/70 shadow-xs overflow-hidden"
                 >
-                  {/* Tenant Card Header */}
-                  <div className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 text-xs flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                  {/* Tenant Card Header (Clickable Accordion) */}
+                  <div
+                    onClick={() => toggleCard(`iris-${t.tenant_code}`)}
+                    className="p-3.5 bg-[#F8FAFC] border-b border-slate-200/70 flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-slate-100/70 transition-colors select-none"
+                  >
+                    <div className="font-bold text-slate-800 text-sm tracking-tight flex items-center gap-2">
+                      <span className="text-slate-400">
+                        {collapsedCards[`iris-${t.tenant_code}`] ? (
+                          <ChevronDown className="w-4 h-4 text-slate-600" />
+                        ) : (
+                          <ChevronUp className="w-4 h-4 text-slate-600" />
+                        )}
+                      </span>
                       <span>[{t.tenant_code}] {(t.tenant_name || t.campus_name || '').toUpperCase()}</span>
-                      <span className="text-slate-400 font-normal">|</span>
-                      <span className="font-mono text-slate-600 font-normal">Database: {t.database_name}.reports</span>
+                      <span className="text-slate-300 font-normal">|</span>
+                      <span className="font-mono text-slate-600 font-normal text-xs">Database: {t.database_name}.reports</span>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono text-slate-700 bg-white border border-slate-200 px-2.5 py-0.5 rounded-md font-semibold">
+                      <span className="text-xs font-mono text-slate-700 bg-white border border-slate-200 px-2.5 py-0.5 rounded-md font-semibold">
                         IRIS: {t.iris_cases_count} | MongoDB: {t.mongo_reports_count}
                       </span>
-                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md ${
+                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md ${
                         t.is_in_sync
                           ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
                           : 'text-rose-700 bg-rose-50 border border-rose-200'
                       }`}>
                         {t.is_in_sync ? '100% SYNC' : 'MISMATCH'}
                       </span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
+                        {collapsedCards[`iris-${t.tenant_code}`] ? 'Buka' : 'Tutup'}
+                      </span>
                     </div>
                   </div>
 
                   {/* Cases Table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left font-mono text-xs">
-                      <thead className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
-                        <tr>
-                          <th className="py-3 px-4 rounded-l-xl w-24">ID</th>
-                          <th className="py-3 px-4">CASE TITLE</th>
-                          <th className="py-3 px-4 w-28">DATE</th>
-                          <th className="py-3 px-4 w-44">CUSTOMER NAME</th>
-                          <th className="py-3 px-4 rounded-r-xl text-right w-28">STATUS</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-800">
-                        {t.cases.length === 0 ? (
+                  {!collapsedCards[`iris-${t.tenant_code}`] && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-sm">
+                        <thead className="bg-slate-100 text-slate-800 font-bold text-xs uppercase tracking-wider">
                           <tr>
-                            <td colSpan={5} className="p-3 pl-4 text-slate-400 font-sans italic">
-                              (No cases recorded for this period)
-                            </td>
+                            <th className="py-3 px-4 rounded-l-xl w-24">ID</th>
+                            <th className="py-3 px-4">CASE TITLE</th>
+                            <th className="py-3 px-4 w-32">DATE</th>
+                            <th className="py-3 px-4 w-48">CUSTOMER NAME</th>
+                            <th className="py-3 px-4 rounded-r-xl text-right w-28">STATUS</th>
                           </tr>
-                        ) : (
-                          t.cases.map((c, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50">
-                              <td className="p-2.5 pl-4 font-bold text-[#00BCD4]">
-                                #{c.case_id}
-                              </td>
-                              <td className="p-2.5 font-sans font-semibold text-slate-900 truncate max-w-md">
-                                {c.title}
-                              </td>
-                              <td className="p-2.5 text-slate-700 font-mono font-semibold">
-                                {c.date}
-                              </td>
-                              <td className="p-2.5 font-sans text-slate-800 font-medium">
-                                {c.customer_name}
-                              </td>
-                              <td className="p-2.5 pr-4 text-right font-sans">
-                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                  c.is_in_sync
-                                    ? 'text-emerald-700 bg-emerald-50'
-                                    : 'text-rose-700 bg-rose-50'
-                                }`}>
-                                  {c.is_in_sync ? 'SYNCED' : 'UNSYNC'}
-                                </span>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-800">
+                          {t.cases.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-4 pl-4 text-center text-slate-400 font-sans italic text-sm">
+                                (No cases recorded for this period)
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                          ) : (
+                            t.cases.map((c, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50">
+                                <td className="py-3 px-4 font-bold text-[#00BCD4]">
+                                  #{c.case_id}
+                                </td>
+                                <td className="py-3 px-4 font-sans font-semibold text-slate-900 truncate max-w-md text-sm">
+                                  {c.title}
+                                </td>
+                                <td className="py-3 px-4 text-slate-700 font-mono font-semibold text-sm">
+                                  {c.date}
+                                </td>
+                                <td className="py-3 px-4 font-sans text-slate-800 font-medium text-sm">
+                                  {c.customer_name}
+                                </td>
+                                <td className="py-3 px-4 pr-4 text-right font-sans">
+                                  <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                    c.is_in_sync
+                                      ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                      : 'text-rose-700 bg-rose-50 border border-rose-200/60'
+                                  }`}>
+                                    {c.is_in_sync ? 'SYNCED' : 'UNSYNC'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

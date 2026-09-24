@@ -12,6 +12,14 @@ interface AdminHeaderProps {
   isSidebarCollapsed?: boolean;
 }
 
+interface UserProfile {
+  id?: string;
+  username?: string;
+  name?: string;
+  email?: string;
+  role?: string;
+}
+
 export function AdminHeader({
   onToggleSidebar,
   isSidebarCollapsed = false,
@@ -20,6 +28,33 @@ export function AdminHeader({
   const [timeString, setTimeString] = useState<string>('13:22:23');
   const [dateString, setDateString] = useState<string>('31 Dec 2026');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [user, setUser] = useState<UserProfile | null>(null);
+
+  // Fetch logged in user profile dynamically
+  useEffect(() => {
+    try {
+      const cookies = document.cookie.split(';');
+      for (const c of cookies) {
+        const [k, v] = c.trim().split('=');
+        if (k === 'auth_session' && v) {
+          const parsed = JSON.parse(decodeURIComponent(v));
+          if (parsed) {
+            setUser(parsed);
+            return;
+          }
+        }
+      }
+    } catch {}
+
+    fetch('/api/auth/me')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.authenticated && data?.user) {
+          setUser(data.user);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Real-time digital clock and date matching Figma format: 13:22:23 - 31 Dec 2026
   useEffect(() => {
@@ -57,6 +92,16 @@ export function AdminHeader({
     router.push('/login');
     router.refresh();
   };
+
+  const displayName = user?.username || user?.name || 'Administrator';
+  const displayInitial = (displayName.charAt(0) || 'A').toUpperCase();
+  const roleLabel =
+    user?.role === 'superadmin'
+      ? 'Superadmin'
+      : user?.role === 'admin'
+      ? 'Administrator'
+      : user?.role || 'Administrator';
+  const displayEmail = user?.email || (user?.username ? `${user.username}@asoc.id` : 'superadmin@asoc.id');
 
   return (
     <header className="h-16 bg-white border-b border-slate-200/80 flex items-center justify-between sticky top-0 z-30 select-none shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
@@ -98,7 +143,7 @@ export function AdminHeader({
           </button>
         </div>
 
-        {/* Right side: Clock, Date, and User Profile matching Figma */}
+        {/* Right side: Clock, Date, and User Profile */}
         <div className="flex items-center gap-5 md:gap-8 ml-auto">
           {/* Digital Clock & Date */}
           <div className="text-xs md:text-sm font-medium text-slate-600 tracking-wide font-mono hidden sm:flex items-center gap-2">
@@ -107,17 +152,17 @@ export function AdminHeader({
             <span className="text-slate-500">{dateString}</span>
           </div>
 
-          {/* User Profile avatar + SOC_LAB name */}
+          {/* User Profile avatar + dynamic account name */}
           <div className="relative">
             <button
               onClick={() => setShowDropdown(!showDropdown)}
               className="flex items-center gap-2.5 p-1 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer group"
             >
               <div className="w-8 h-8 rounded-full bg-[#0066FF] text-white flex items-center justify-center font-bold text-xs shadow-sm shadow-blue-500/20">
-                S
+                {displayInitial}
               </div>
               <span className="font-bold text-xs md:text-sm text-slate-800 tracking-tight group-hover:text-blue-600 transition-colors">
-                SOC_LAB
+                {displayName}
               </span>
             </button>
 
@@ -125,8 +170,8 @@ export function AdminHeader({
             {showDropdown && (
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200/80 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-3.5 py-2 border-b border-slate-100">
-                  <p className="text-xs font-bold text-slate-900">Administrator</p>
-                  <p className="text-[11px] text-slate-400 truncate">superadmin@asoc.id</p>
+                  <p className="text-xs font-bold text-slate-900">{roleLabel}</p>
+                  <p className="text-[11px] text-slate-400 truncate">{displayEmail}</p>
                 </div>
                 <button
                   onClick={handleLogout}

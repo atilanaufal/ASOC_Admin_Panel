@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const MAX_SESSION_IDLE_MS = 10 * 60 * 1000; // 10 menit batas waktu inaktivitas
+const MAX_SESSION_IDLE_MS = 30 * 60 * 1000; // 30 menit batas waktu inaktivitas
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -67,14 +67,29 @@ export function middleware(request: NextRequest) {
           {
             success: false,
             error: sessionExpired
-              ? 'Session expired. Sesi Anda telah berakhir (10 menit).'
+              ? 'Session expired. Sesi Anda telah berakhir (30 menit inaktivitas).'
               : 'Unauthorized. Akses ditolak.',
             sessionExpired,
           },
           { status: 401 }
         );
       }
-      return NextResponse.next();
+
+      const apiRes = NextResponse.next();
+      if (parsedUser) {
+        try {
+          parsedUser.lastActive = Date.now();
+          const isSecure = process.env.COOKIE_SECURE === 'true' || (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false' && (request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https'));
+          apiRes.cookies.set('auth_session', encodeURIComponent(JSON.stringify(parsedUser)), {
+            path: '/',
+            httpOnly: false,
+            secure: isSecure,
+            sameSite: 'lax',
+            maxAge: 1800,
+          });
+        } catch {}
+      }
+      return apiRes;
     }
 
     if (!hasValidSession || !isAdmin) {
@@ -103,7 +118,7 @@ export function middleware(request: NextRequest) {
           httpOnly: false,
           secure: isSecure,
           sameSite: 'lax',
-          maxAge: 600,
+          maxAge: 1800,
         });
         if (betterAuthToken) {
           nextRes.cookies.set('better-auth.session_token', betterAuthToken, {
@@ -111,7 +126,7 @@ export function middleware(request: NextRequest) {
             httpOnly: false,
             secure: isSecure,
             sameSite: 'lax',
-            maxAge: 600,
+            maxAge: 1800,
           });
         }
         return nextRes;

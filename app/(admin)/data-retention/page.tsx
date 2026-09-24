@@ -357,13 +357,13 @@ export default function DataRetentionPage() {
           <div className="overflow-x-auto mt-3">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
+                <tr className="bg-slate-100 text-slate-800 font-bold text-xs uppercase tracking-wider">
                   <th className="py-3 px-4 rounded-l-xl">Tenant Profile</th>
-                  <th className="py-3 px-4">MongoDB Database</th>
+                  <th className="py-3 px-4">MongoDB</th>
                   <th className="py-3 px-4">Stored Documents</th>
                   <th className="py-3 px-4">Disk Capacity</th>
-                  <th className="py-3 px-4">MongoDB TTL Policy</th>
-                  <th className="py-3 px-4">Default Redis TTL</th>
+                  <th className="py-3 px-4">MongoDB TTL</th>
+                  <th className="py-3 px-4">Redis TTL</th>
                   <th className="py-3 px-4 rounded-r-xl text-right">Action</th>
                 </tr>
               </thead>
@@ -378,44 +378,38 @@ export default function DataRetentionPage() {
                             {t.tenantCode}
                           </div>
                           <div>
-                            <div className="font-bold text-slate-800 text-xs">{t.campusName}</div>
-                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">Namespace: {t.redisPrefix}</div>
+                            <div className="font-semibold text-slate-800 text-sm">{t.campusName}</div>
                           </div>
                         </div>
                       </td>
 
                       {/* DB Name */}
-                      <td className="py-3.5 px-4 font-mono text-slate-600 text-[11px]">
+                      <td className="py-3.5 px-4 font-mono text-slate-700 text-sm font-medium">
                         {t.databaseName}
                       </td>
 
                       {/* Document Counts */}
                       <td className="py-3.5 px-4">
-                        <div className="font-bold text-slate-800 text-xs">
-                          {t.incidentCount + t.vulnCount} docs
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5">
-                          {t.incidentCount} inc • {t.vulnCount} vuln
+                        <div className="font-semibold text-slate-800 text-sm">
+                          {(t.incidentCount + t.vulnCount).toLocaleString()} docs
                         </div>
                       </td>
 
                       {/* Disk Size */}
-                      <td className="py-3.5 px-4 font-mono text-slate-600 text-xs font-bold">
+                      <td className="py-3.5 px-4 font-mono text-slate-700 text-sm font-semibold">
                         {t.diskFormatted}
                       </td>
 
                       {/* Mongo TTL */}
                       <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-50 text-[#00BCD4] border border-cyan-100 font-mono">
-                          <Clock className="w-3.5 h-3.5 text-[#00BCD4]" />
+                        <span className="font-mono text-sm font-semibold text-slate-700">
                           {t.mongoTtlDays} Days
                         </span>
                       </td>
 
                       {/* Redis TTL */}
                       <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-100 font-mono">
-                          <Zap className="w-3.5 h-3.5 text-indigo-600" />
+                        <span className="font-mono text-sm font-semibold text-slate-700">
                           {t.redisTtlDays || 7} Days
                         </span>
                       </td>

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 
 export interface DatabaseLatencyItem {
-  id: 'indexer' | 'mongo' | 'redis';
+  id: 'mongo' | 'redis';
   name: string;
   role: string;
   target: string;
@@ -15,8 +15,6 @@ export interface DatabaseLatencyItem {
 
 export interface LatencyHistoryPoint {
   time: string;
-  indexerRead: number;
-  indexerWrite: number;
   mongoRead: number;
   mongoWrite: number;
   redisRead: number;
@@ -26,7 +24,6 @@ export interface LatencyHistoryPoint {
 export interface DatabaseLatencyReport {
   timestamp: string;
   engines: {
-    indexer: DatabaseLatencyItem;
     mongo: DatabaseLatencyItem;
     redis: DatabaseLatencyItem;
   };
@@ -70,27 +67,17 @@ function getSmoothAreaPath(points: { x: number; y: number }[], bottomY: number):
 
 export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCardProps) {
   const [metricFilter, setMetricFilter] = useState<'all' | 'read' | 'write'>('all');
-  const [selectedEngine, setSelectedEngine] = useState<'all' | 'indexer' | 'mongo' | 'redis'>('all');
+  const [selectedEngine, setSelectedEngine] = useState<'all' | 'mongo' | 'redis'>('all');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const engines = data?.engines || {
-    indexer: {
-      id: 'indexer',
-      name: 'Indexer',
-      role: '',
-      target: '',
-      readLatencyMs: 701,
-      writeLatencyMs: 37,
-      unit: 'ms',
-      status: 'Normal',
-    },
     mongo: {
       id: 'mongo',
       name: 'MongoDB',
       role: '',
       target: '',
       readLatencyMs: 4.8,
-      writeLatencyMs: 161,
+      writeLatencyMs: 16.2,
       unit: 'ms',
       status: 'Normal',
     },
@@ -107,26 +94,26 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
   };
 
   const history = data?.history && data.history.length > 0 ? data.history : [
-    { time: '11:20', indexerRead: 720, indexerWrite: 38, mongoRead: 4.5, mongoWrite: 155, redisRead: 0.41, redisWrite: 0.65 },
-    { time: '11:25', indexerRead: 750, indexerWrite: 41, mongoRead: 5.2, mongoWrite: 178, redisRead: 0.45, redisWrite: 0.72 },
-    { time: '11:30', indexerRead: 660, indexerWrite: 35, mongoRead: 4.3, mongoWrite: 142, redisRead: 0.38, redisWrite: 0.61 },
-    { time: '11:35', indexerRead: 630, indexerWrite: 32, mongoRead: 4.1, mongoWrite: 130, redisRead: 0.35, redisWrite: 0.58 },
-    { time: '11:40', indexerRead: 740, indexerWrite: 40, mongoRead: 5.1, mongoWrite: 170, redisRead: 0.44, redisWrite: 0.70 },
-    { time: '11:45', indexerRead: 780, indexerWrite: 42, mongoRead: 5.6, mongoWrite: 190, redisRead: 0.47, redisWrite: 0.76 },
-    { time: '11:50', indexerRead: 680, indexerWrite: 36, mongoRead: 4.6, mongoWrite: 150, redisRead: 0.40, redisWrite: 0.64 },
-    { time: '11:55', indexerRead: 620, indexerWrite: 31, mongoRead: 4.0, mongoWrite: 128, redisRead: 0.35, redisWrite: 0.57 },
-    { time: '12:00', indexerRead: 710, indexerWrite: 38, mongoRead: 4.9, mongoWrite: 165, redisRead: 0.42, redisWrite: 0.68 },
-    { time: '12:05', indexerRead: 785, indexerWrite: 43, mongoRead: 5.7, mongoWrite: 194, redisRead: 0.48, redisWrite: 0.78 },
-    { time: '12:10', indexerRead: 701, indexerWrite: 37, mongoRead: 4.8, mongoWrite: 161, redisRead: 0.42, redisWrite: 0.68 },
+    { time: '11:20', mongoRead: 4.5, mongoWrite: 15.5, redisRead: 0.41, redisWrite: 0.65 },
+    { time: '11:25', mongoRead: 5.2, mongoWrite: 17.8, redisRead: 0.45, redisWrite: 0.72 },
+    { time: '11:30', mongoRead: 4.3, mongoWrite: 14.2, redisRead: 0.38, redisWrite: 0.61 },
+    { time: '11:35', mongoRead: 4.1, mongoWrite: 13.0, redisRead: 0.35, redisWrite: 0.58 },
+    { time: '11:40', mongoRead: 5.1, mongoWrite: 17.0, redisRead: 0.44, redisWrite: 0.70 },
+    { time: '11:45', mongoRead: 5.6, mongoWrite: 19.0, redisRead: 0.47, redisWrite: 0.76 },
+    { time: '11:50', mongoRead: 4.6, mongoWrite: 15.0, redisRead: 0.40, redisWrite: 0.64 },
+    { time: '11:55', mongoRead: 4.0, mongoWrite: 12.8, redisRead: 0.35, redisWrite: 0.57 },
+    { time: '12:00', mongoRead: 4.9, mongoWrite: 16.5, redisRead: 0.42, redisWrite: 0.68 },
+    { time: '12:05', mongoRead: 5.7, mongoWrite: 19.4, redisRead: 0.48, redisWrite: 0.78 },
+    { time: '12:10', mongoRead: 4.8, mongoWrite: 16.1, redisRead: 0.42, redisWrite: 0.68 },
   ];
 
   // Chart coordinate space
   const chartWidth = 720;
-  const chartHeight = 230;
+  const chartHeight = 250;
   const paddingLeft = 52;
   const paddingRight = 24;
   const paddingTop = 20;
-  const paddingBottom = 32;
+  const paddingBottom = 48; // extra space for timestamp ticks and axis title
 
   const innerWidth = chartWidth - paddingLeft - paddingRight;
   const innerHeight = chartHeight - paddingTop - paddingBottom;
@@ -135,10 +122,7 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
   // Calculate dynamic max value depending on view mode
   let relevantValues: number[] = [];
   history.forEach((pt) => {
-    if (selectedEngine === 'indexer') {
-      if (metricFilter !== 'write') relevantValues.push(pt.indexerRead);
-      if (metricFilter !== 'read') relevantValues.push(pt.indexerWrite);
-    } else if (selectedEngine === 'mongo') {
+    if (selectedEngine === 'mongo') {
       if (metricFilter !== 'write') relevantValues.push(pt.mongoRead);
       if (metricFilter !== 'read') relevantValues.push(pt.mongoWrite);
     } else if (selectedEngine === 'redis') {
@@ -146,17 +130,15 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
       if (metricFilter !== 'read') relevantValues.push(pt.redisWrite);
     } else {
       // all engines
-      if (metricFilter !== 'write') relevantValues.push(pt.indexerRead, pt.mongoRead, pt.redisRead);
-      if (metricFilter !== 'read') relevantValues.push(pt.indexerWrite, pt.mongoWrite, pt.redisWrite);
+      if (metricFilter !== 'write') relevantValues.push(pt.mongoRead, pt.redisRead);
+      if (metricFilter !== 'read') relevantValues.push(pt.mongoWrite, pt.redisWrite);
     }
   });
 
   const rawMax = Math.max(...relevantValues, 1);
   const niceMax = selectedEngine === 'redis'
     ? Math.ceil(rawMax * 1.3 * 10) / 10
-    : selectedEngine === 'mongo'
-    ? Math.ceil(rawMax * 1.25 / 10) * 10
-    : Math.ceil(rawMax * 1.2 / 50) * 50;
+    : Math.ceil((rawMax * 1.25) / 5) * 5;
 
   const yTicks = [
     niceMax,
@@ -177,17 +159,20 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
   };
 
   // Series points
-  const indexerReadPoints = history.map((pt, i) => ({ x: mapX(i), y: mapY(pt.indexerRead) }));
-  const indexerWritePoints = history.map((pt, i) => ({ x: mapX(i), y: mapY(pt.indexerWrite) }));
   const mongoReadPoints = history.map((pt, i) => ({ x: mapX(i), y: mapY(pt.mongoRead) }));
   const mongoWritePoints = history.map((pt, i) => ({ x: mapX(i), y: mapY(pt.mongoWrite) }));
   const redisReadPoints = history.map((pt, i) => ({ x: mapX(i), y: mapY(pt.redisRead) }));
   const redisWritePoints = history.map((pt, i) => ({ x: mapX(i), y: mapY(pt.redisWrite) }));
 
-  // Color theme inspired by modern clean spline graphs (Images 2 & 3)
-  // Single engine: Read is Cyan (#00C4B4), Write is Slate Grey (#94A3B8)
-  // All engines: Indexer (#3B82F6 Blue), MongoDB (#10B981 Emerald), Redis (#F59E0B Amber)
   const isSingleEngine = selectedEngine !== 'all';
+
+  // Evenly spaced X-axis ticks (at most 6 ticks so it never overlaps)
+  const tickStep = Math.max(1, Math.floor((history.length - 1) / 5));
+  const tickIndices = new Set<number>();
+  for (let i = 0; i < history.length; i += tickStep) {
+    tickIndices.add(i);
+  }
+  tickIndices.add(history.length - 1);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs">
@@ -198,7 +183,7 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
             Database Latency
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Read and write response time in milliseconds
+            Read and write response time in milliseconds (VM Internal)
           </p>
         </div>
 
@@ -206,7 +191,7 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
         <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
           <button
             onClick={() => setMetricFilter('all')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
               metricFilter === 'all'
                 ? 'bg-white text-slate-800 shadow-xs'
                 : 'text-slate-500 hover:text-slate-800'
@@ -216,63 +201,59 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
           </button>
           <button
             onClick={() => setMetricFilter('read')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
               metricFilter === 'read'
                 ? 'bg-white text-slate-800 shadow-xs'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            Read
+            Read Only
           </button>
           <button
             onClick={() => setMetricFilter('write')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
               metricFilter === 'write'
                 ? 'bg-white text-slate-800 shadow-xs'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            Write
+            Write Only
           </button>
         </div>
       </div>
 
-      {/* Main Grid: Chart on Left, Compact Sidebar on Right */}
+      {/* Main Grid: Chart on Left (3 cols), Sidebar on Right (1 col) */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 pt-5">
-        {/* Left Column: Smooth Spline Chart */}
+        {/* Left Column: Spline Chart */}
         <div className="lg:col-span-3 flex flex-col justify-between">
-          {/* Chart Sub-header & Clean Text Legend */}
+          {/* Top Indicators / Legend */}
           <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-4 text-xs font-medium text-slate-600">
+            <div className="flex items-center gap-4 text-xs font-semibold">
               {isSingleEngine ? (
                 <>
                   {metricFilter !== 'write' && (
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-0.5 bg-[#00C4B4] rounded-full inline-block" />
+                    <div className="flex items-center gap-2 text-slate-700">
+                      <span className="w-4 h-0.5 bg-[#00C4B4] rounded-full inline-block" />
                       <span>Read Latency</span>
-                    </span>
+                    </div>
                   )}
                   {metricFilter !== 'read' && (
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-0.5 bg-[#94A3B8] rounded-full inline-block" />
+                    <div className="flex items-center gap-2 text-slate-700">
+                      <span className="w-4 h-0.5 bg-slate-400 rounded-full inline-block" />
                       <span>Write Latency</span>
-                    </span>
+                    </div>
                   )}
                 </>
               ) : (
                 <>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-0.5 bg-[#3B82F6] rounded-full inline-block" />
-                    <span>Indexer</span>
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-0.5 bg-[#10B981] rounded-full inline-block" />
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <span className="w-4 h-0.5 bg-[#10B981] rounded-full inline-block" />
                     <span>MongoDB</span>
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-0.5 bg-[#F59E0B] rounded-full inline-block" />
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <span className="w-4 h-0.5 bg-[#F59E0B] rounded-full inline-block" />
                     <span>Redis</span>
-                  </span>
+                  </div>
                 </>
               )}
             </div>
@@ -280,38 +261,36 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
             {selectedEngine !== 'all' && (
               <button
                 onClick={() => setSelectedEngine('all')}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+                className="text-xs font-semibold text-blue-600 hover:underline cursor-pointer"
               >
-                Show All Databases
+                Reset Engine View
               </button>
             )}
           </div>
 
-          {/* SVG Chart Area */}
-          <div className="relative w-full overflow-hidden select-none">
+          {/* SVG Spline Graph Container */}
+          <div
+            className="relative w-full overflow-hidden"
+            onMouseLeave={() => setHoverIndex(null)}
+          >
             <svg
               viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-              className="w-full h-auto max-h-[260px]"
-              onMouseLeave={() => setHoverIndex(null)}
+              className="w-full h-auto overflow-visible select-none"
             >
               <defs>
-                {/* Single Engine Gradients (Image 2 style) */}
+                {/* Single engine gradients */}
                 <linearGradient id="grad-cyan" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#00C4B4" stopOpacity="0.25" />
                   <stop offset="100%" stopColor="#00C4B4" stopOpacity="0.0" />
                 </linearGradient>
                 <linearGradient id="grad-slate" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#94A3B8" stopOpacity="0.18" />
+                  <stop offset="0%" stopColor="#94A3B8" stopOpacity="0.15" />
                   <stop offset="100%" stopColor="#94A3B8" stopOpacity="0.0" />
                 </linearGradient>
 
-                {/* Multi-Engine Gradients */}
-                <linearGradient id="grad-indexer" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.20" />
-                  <stop offset="100%" stopColor="#3B82F6" stopOpacity="0.0" />
-                </linearGradient>
+                {/* All engines gradients */}
                 <linearGradient id="grad-mongo" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10B981" stopOpacity="0.20" />
+                  <stop offset="0%" stopColor="#10B981" stopOpacity="0.22" />
                   <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
                 </linearGradient>
                 <linearGradient id="grad-redis" x1="0" y1="0" x2="0" y2="1">
@@ -320,31 +299,17 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
                 </linearGradient>
               </defs>
 
-              {/* Vertical Dashed Gridlines (Image 2 style) */}
-              {history.map((_, i) => (
-                <line
-                  key={`vline-${i}`}
-                  x1={mapX(i)}
-                  y1={paddingTop}
-                  x2={mapX(i)}
-                  y2={bottomY}
-                  stroke="#F1F5F9"
-                  strokeWidth="1"
-                  strokeDasharray="4 4"
-                />
-              ))}
-
-              {/* Horizontal Reference Lines & Y Labels */}
-              {yTicks.map((val, i) => {
+              {/* Horizontal Gridlines & Y-axis Labels */}
+              {yTicks.map((val, idx) => {
                 const y = mapY(val);
                 return (
-                  <g key={`ytick-${i}`}>
+                  <g key={`ytick-${idx}`}>
                     <line
                       x1={paddingLeft}
                       y1={y}
-                      x2={paddingLeft + innerWidth}
+                      x2={chartWidth - paddingRight}
                       y2={y}
-                      stroke={val === 0 ? '#E2E8F0' : '#F8FAFC'}
+                      stroke="#F1F5F9"
                       strokeWidth="1"
                     />
                     <text
@@ -368,22 +333,14 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
                     <>
                       <path
                         d={getSmoothAreaPath(
-                          selectedEngine === 'indexer'
-                            ? indexerReadPoints
-                            : selectedEngine === 'mongo'
-                            ? mongoReadPoints
-                            : redisReadPoints,
+                          selectedEngine === 'mongo' ? mongoReadPoints : redisReadPoints,
                           bottomY
                         )}
                         fill="url(#grad-cyan)"
                       />
                       <path
                         d={getSmoothPath(
-                          selectedEngine === 'indexer'
-                            ? indexerReadPoints
-                            : selectedEngine === 'mongo'
-                            ? mongoReadPoints
-                            : redisReadPoints
+                          selectedEngine === 'mongo' ? mongoReadPoints : redisReadPoints
                         )}
                         fill="none"
                         stroke="#00C4B4"
@@ -399,22 +356,14 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
                     <>
                       <path
                         d={getSmoothAreaPath(
-                          selectedEngine === 'indexer'
-                            ? indexerWritePoints
-                            : selectedEngine === 'mongo'
-                            ? mongoWritePoints
-                            : redisWritePoints,
+                          selectedEngine === 'mongo' ? mongoWritePoints : redisWritePoints,
                           bottomY
                         )}
                         fill="url(#grad-slate)"
                       />
                       <path
                         d={getSmoothPath(
-                          selectedEngine === 'indexer'
-                            ? indexerWritePoints
-                            : selectedEngine === 'mongo'
-                            ? mongoWritePoints
-                            : redisWritePoints
+                          selectedEngine === 'mongo' ? mongoWritePoints : redisWritePoints
                         )}
                         fill="none"
                         stroke="#94A3B8"
@@ -427,34 +376,6 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
                 </>
               ) : (
                 <>
-                  {/* All Engines: Indexer */}
-                  {metricFilter !== 'write' && (
-                    <>
-                      <path d={getSmoothAreaPath(indexerReadPoints, bottomY)} fill="url(#grad-indexer)" />
-                      <path
-                        d={getSmoothPath(indexerReadPoints)}
-                        fill="none"
-                        stroke="#3B82F6"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </>
-                  )}
-                  {metricFilter === 'write' && (
-                    <>
-                      <path d={getSmoothAreaPath(indexerWritePoints, bottomY)} fill="url(#grad-indexer)" />
-                      <path
-                        d={getSmoothPath(indexerWritePoints)}
-                        fill="none"
-                        stroke="#3B82F6"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </>
-                  )}
-
                   {/* All Engines: MongoDB */}
                   {metricFilter !== 'write' && (
                     <>
@@ -485,24 +406,30 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
 
                   {/* All Engines: Redis */}
                   {metricFilter !== 'write' && (
-                    <path
-                      d={getSmoothPath(redisReadPoints)}
-                      fill="none"
-                      stroke="#F59E0B"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
+                    <>
+                      <path d={getSmoothAreaPath(redisReadPoints, bottomY)} fill="url(#grad-redis)" />
+                      <path
+                        d={getSmoothPath(redisReadPoints)}
+                        fill="none"
+                        stroke="#F59E0B"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </>
                   )}
                   {metricFilter === 'write' && (
-                    <path
-                      d={getSmoothPath(redisWritePoints)}
-                      fill="none"
-                      stroke="#F59E0B"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
+                    <>
+                      <path d={getSmoothAreaPath(redisWritePoints, bottomY)} fill="url(#grad-redis)" />
+                      <path
+                        d={getSmoothPath(redisWritePoints)}
+                        fill="none"
+                        stroke="#F59E0B"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </>
                   )}
                 </>
               )}
@@ -538,73 +465,100 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
                 );
               })}
 
-              {/* X-axis Ticks (Timestamps) */}
-              {history.map((pt, i) => (
-                <text
-                  key={`xtick-${i}`}
-                  x={mapX(i)}
-                  y={bottomY + 18}
-                  textAnchor="middle"
-                  className="fill-slate-400 text-[10px] font-mono"
-                >
-                  {pt.time}
-                </text>
-              ))}
+              {/* X-axis Ticks (Evenly spaced timestamps) */}
+              {history.map((pt, i) => {
+                if (!tickIndices.has(i)) return null;
+                return (
+                  <text
+                    key={`xtick-${i}`}
+                    x={mapX(i)}
+                    y={bottomY + 18}
+                    textAnchor="middle"
+                    className="fill-slate-500 text-[11px] font-mono font-medium"
+                  >
+                    {pt.time}
+                  </text>
+                );
+              })}
+
+              {/* X-axis Label / Context */}
+              <text
+                x={paddingLeft + innerWidth / 2}
+                y={bottomY + 36}
+                textAnchor="middle"
+                className="fill-slate-400 text-[10px] font-semibold tracking-wider uppercase"
+              >
+                Waktu Pemeriksaan (WIB)
+              </text>
             </svg>
 
-            {/* Hover Tooltip Popup */}
+            {/* Hover Tooltip Popup - Light Theme */}
             {hoverIndex !== null && history[hoverIndex] && (
               <div
-                className="absolute z-20 top-2 pointer-events-none bg-slate-900/90 backdrop-blur-xs text-white p-2.5 rounded-xl text-xs shadow-lg space-y-1 transition-all"
+                className="absolute z-20 top-2 pointer-events-none bg-white/95 backdrop-blur-sm border border-slate-200/80 shadow-xl rounded-xl p-3 text-xs space-y-2 transition-all min-w-[190px]"
                 style={{
                   left: `${Math.min(
-                    chartWidth - 140,
-                    Math.max(20, (mapX(hoverIndex) / chartWidth) * 100)
+                    70,
+                    Math.max(5, (mapX(hoverIndex) / chartWidth) * 100 - 15)
                   )}%`,
                 }}
               >
-                <p className="text-[10px] text-slate-400 font-mono pb-1 border-b border-slate-700">
-                  Time: {history[hoverIndex].time}
-                </p>
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 text-slate-500 font-mono text-[11px]">
+                  <span className="font-semibold">Waktu</span>
+                  <span className="font-bold text-slate-700">{history[hoverIndex].time} WIB</span>
+                </div>
+
                 {selectedEngine === 'all' ? (
-                  <div className="space-y-0.5 text-[11px]">
-                    <p className="flex justify-between gap-3">
-                      <span className="text-blue-400 font-semibold">Indexer:</span>
-                      <span className="font-mono">{history[hoverIndex].indexerRead} ms</span>
-                    </p>
-                    <p className="flex justify-between gap-3">
-                      <span className="text-emerald-400 font-semibold">MongoDB:</span>
-                      <span className="font-mono">{history[hoverIndex].mongoRead} ms</span>
-                    </p>
-                    <p className="flex justify-between gap-3">
-                      <span className="text-amber-400 font-semibold">Redis:</span>
-                      <span className="font-mono">{history[hoverIndex].redisRead} ms</span>
-                    </p>
+                  <div className="space-y-2">
+                    {/* MongoDB breakdown */}
+                    <div>
+                      <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-xs mb-0.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                        <span>MongoDB</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5 pl-3.5 text-[11px] font-mono text-slate-600">
+                        <span>Read: <strong className="text-slate-800">{history[hoverIndex].mongoRead}</strong> ms</span>
+                        <span>Write: <strong className="text-slate-800">{history[hoverIndex].mongoWrite}</strong> ms</span>
+                      </div>
+                    </div>
+
+                    {/* Redis breakdown */}
+                    <div>
+                      <div className="flex items-center gap-1.5 text-amber-700 font-bold text-xs mb-0.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-500" />
+                        <span>Redis</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5 pl-3.5 text-[11px] font-mono text-slate-600">
+                        <span>Read: <strong className="text-slate-800">{history[hoverIndex].redisRead}</strong> ms</span>
+                        <span>Write: <strong className="text-slate-800">{history[hoverIndex].redisWrite}</strong> ms</span>
+                      </div>
+                    </div>
                   </div>
                 ) : (
-                  <div className="space-y-0.5 text-[11px]">
-                    <p className="flex justify-between gap-3">
-                      <span className="text-[#00C4B4] font-semibold">Read:</span>
-                      <span className="font-mono">
-                        {selectedEngine === 'indexer'
-                          ? history[hoverIndex].indexerRead
-                          : selectedEngine === 'mongo'
-                          ? history[hoverIndex].mongoRead
-                          : history[hoverIndex].redisRead}{' '}
-                        ms
-                      </span>
-                    </p>
-                    <p className="flex justify-between gap-3">
-                      <span className="text-slate-300 font-semibold">Write:</span>
-                      <span className="font-mono">
-                        {selectedEngine === 'indexer'
-                          ? history[hoverIndex].indexerWrite
-                          : selectedEngine === 'mongo'
-                          ? history[hoverIndex].mongoWrite
-                          : history[hoverIndex].redisWrite}{' '}
-                        ms
-                      </span>
-                    </p>
+                  <div className="space-y-1.5">
+                    <div className="font-bold text-xs text-slate-800 pb-0.5">
+                      {selectedEngine === 'mongo' ? 'MongoDB' : 'Redis'} Latency
+                    </div>
+                    <div className="space-y-1 text-[11px] font-mono">
+                      <div className="flex justify-between items-center text-slate-600">
+                        <span className="text-[#00C4B4] font-semibold">Read Latency:</span>
+                        <span className="font-bold text-slate-800">
+                          {selectedEngine === 'mongo'
+                            ? history[hoverIndex].mongoRead
+                            : history[hoverIndex].redisRead}{' '}
+                          ms
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-600">
+                        <span className="text-slate-500 font-semibold">Write Latency:</span>
+                        <span className="font-bold text-slate-800">
+                          {selectedEngine === 'mongo'
+                            ? history[hoverIndex].mongoWrite
+                            : history[hoverIndex].redisWrite}{' '}
+                          ms
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -613,57 +567,24 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
         </div>
 
         {/* Right Column: Clean, Compact Sidebar (No dots, plain names, no IP/port) */}
-        <div className="lg:col-span-1 border-t lg:border-t-0 lg:border-l border-slate-100 pt-4 lg:pt-0 lg:pl-6 flex flex-col justify-center space-y-2.5">
+        <div className="lg:col-span-1 border-t lg:border-t-0 lg:border-l border-slate-100 pt-4 lg:pt-0 lg:pl-6 flex flex-col justify-center space-y-3">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">
             Databases
           </p>
 
-          {/* 1. Indexer */}
-          <div
-            onClick={() => setSelectedEngine(selectedEngine === 'indexer' ? 'all' : 'indexer')}
-            className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
-              selectedEngine === 'indexer'
-                ? 'border-blue-500/60 bg-blue-50/40 shadow-xs'
-                : 'border-slate-200/60 hover:border-slate-300 hover:bg-slate-50/50'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold text-slate-800">Indexer</span>
-              {selectedEngine === 'indexer' && (
-                <span className="text-[10px] font-semibold text-blue-600 bg-blue-100/60 px-1.5 py-0.5 rounded">
-                  Selected
-                </span>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <span className="text-[10px] text-slate-400 block font-medium">Read</span>
-                <span className="text-xs font-bold text-slate-700">
-                  {engines.indexer.readLatencyMs} ms
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block font-medium">Write</span>
-                <span className="text-xs font-bold text-slate-700">
-                  {engines.indexer.writeLatencyMs} ms
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* 2. MongoDB */}
+          {/* 1. MongoDB */}
           <div
             onClick={() => setSelectedEngine(selectedEngine === 'mongo' ? 'all' : 'mongo')}
             className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
               selectedEngine === 'mongo'
-                ? 'border-blue-500/60 bg-blue-50/40 shadow-xs'
+                ? 'border-emerald-500/60 bg-emerald-50/40 shadow-xs'
                 : 'border-slate-200/60 hover:border-slate-300 hover:bg-slate-50/50'
             }`}
           >
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-bold text-slate-800">MongoDB</span>
               {selectedEngine === 'mongo' && (
-                <span className="text-[10px] font-semibold text-blue-600 bg-blue-100/60 px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-100/60 px-1.5 py-0.5 rounded">
                   Selected
                 </span>
               )}
@@ -684,19 +605,19 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
             </div>
           </div>
 
-          {/* 3. Redis */}
+          {/* 2. Redis */}
           <div
             onClick={() => setSelectedEngine(selectedEngine === 'redis' ? 'all' : 'redis')}
             className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
               selectedEngine === 'redis'
-                ? 'border-blue-500/60 bg-blue-50/40 shadow-xs'
+                ? 'border-amber-500/60 bg-amber-50/40 shadow-xs'
                 : 'border-slate-200/60 hover:border-slate-300 hover:bg-slate-50/50'
             }`}
           >
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-bold text-slate-800">Redis</span>
               {selectedEngine === 'redis' && (
-                <span className="text-[10px] font-semibold text-blue-600 bg-blue-100/60 px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-semibold text-amber-600 bg-amber-100/60 px-1.5 py-0.5 rounded">
                   Selected
                 </span>
               )}
