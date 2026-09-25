@@ -50,7 +50,7 @@ export default function TenantsPage() {
       const cookies = document.cookie.split(';');
       for (const c of cookies) {
         const [k, v] = c.trim().split('=');
-        if (k === 'auth_session' && v) {
+        if ((k === 'asoc_admin_session' || k === 'auth_session') && v) {
           const parsed = JSON.parse(decodeURIComponent(v));
           if (parsed?.role) {
             setCurrentUserRole(parsed.role);

@@ -63,9 +63,10 @@ export async function POST(request: NextRequest) {
       });
     } catch {}
 
-    // 3. Set auth_session cookie for edge middleware & client state
+    // 3. Set dedicated asoc_admin_session cookie (isolated from tenant portal auth_session)
     const isSecure = process.env.COOKIE_SECURE === 'true' || (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false' && (request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https'));
-    response.cookies.set('auth_session', encodeURIComponent(JSON.stringify(sessionData)), {
+    
+    response.cookies.set('asoc_admin_session', encodeURIComponent(JSON.stringify(sessionData)), {
       path: '/',
       httpOnly: false,
       secure: isSecure,
@@ -73,8 +74,8 @@ export async function POST(request: NextRequest) {
       maxAge: 1800,
     });
 
-    // Also set a signed/dedicated token cookie
-    response.cookies.set('better-auth.session_token', `${sessionRole}_${user.id}_${Date.now()}`, {
+    // Also set dedicated asoc_admin_token
+    response.cookies.set('asoc_admin_token', `${sessionRole}_${user.id}_${Date.now()}`, {
       path: '/',
       httpOnly: false,
       secure: isSecure,

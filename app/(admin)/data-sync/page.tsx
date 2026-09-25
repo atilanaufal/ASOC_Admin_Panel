@@ -800,10 +800,10 @@ export default function DataSyncPage() {
                   },
                   {
                     name: 'Package Vulnerabilities (vulnerability)',
-                    detail: 'Period Scoped (Wazuh Vulnerabilities)',
-                    mongo: ra?.vulnerabilities?.mongo ?? t.totalMongoVulns,
+                    detail: 'This Week Cache (Wazuh Vulnerabilities)',
+                    mongo: ra?.vulnerabilities?.mongo ?? 0,
                     redis: ra?.vulnerabilities?.redis ?? 0,
-                    isSynced: ra?.vulnerabilities?.isSynced ?? (t.totalMongoVulns === 0),
+                    isSynced: ra?.vulnerabilities?.isSynced ?? ((ra?.vulnerabilities?.mongo ?? 0) === (ra?.vulnerabilities?.redis ?? 0)),
                   },
                   {
                     name: 'Investigation Reports (reports)',

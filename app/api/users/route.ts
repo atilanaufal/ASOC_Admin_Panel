@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || '';
 
     // Check caller role
-    const authSession = request.cookies.get('auth_session')?.value;
+    const authSession = (request.cookies.get('asoc_admin_session')?.value || request.cookies.get('auth_session')?.value);
     let currentUser: any = null;
     if (authSession) {
       try {
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const authSession = request.cookies.get('auth_session')?.value;
+    const authSession = (request.cookies.get('asoc_admin_session')?.value || request.cookies.get('auth_session')?.value);
     let currentUser: any = null;
     if (authSession) {
       try {

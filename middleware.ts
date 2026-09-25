@@ -1,18 +1,22 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const MAX_SESSION_IDLE_MS = 30 * 60 * 1000; // 30 menit batas waktu inaktivitas
+const MAX_SESSION_IDLE_MS = 30 * 60 * 1000; // 30 minutes inactivity timeout
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Ambil origin asli dari header reverse proxy
+  // Retrieve origin from reverse proxy headers
   const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || '10.20.100.86:3001';
   const proto = request.headers.get('x-forwarded-proto') || 'https';
   const baseUrl = `${proto}://${host}`;
 
-  const authSessionCookie = request.cookies.get('auth_session')?.value;
-  const betterAuthToken =
+  // Dedicated Admin Panel cookies to prevent collision with Tenant Portal (port 3000)
+  const adminSessionCookie =
+    request.cookies.get('asoc_admin_session')?.value ||
+    request.cookies.get('auth_session')?.value;
+  const adminToken =
+    request.cookies.get('asoc_admin_token')?.value ||
     request.cookies.get('better-auth.session_token')?.value ||
     request.cookies.get('__Secure-better-auth.session_token')?.value;
 
@@ -21,9 +25,9 @@ export function middleware(request: NextRequest) {
   let sessionExpired = false;
   let parsedUser: any = null;
 
-  if (authSessionCookie) {
+  if (adminSessionCookie) {
     try {
-      const decoded = decodeURIComponent(authSessionCookie);
+      const decoded = decodeURIComponent(adminSessionCookie);
       parsedUser = JSON.parse(decoded);
       const uRole = String(parsedUser?.role || '').trim().toLowerCase();
       if (parsedUser && (uRole === 'admin' || uRole === 'superadmin')) {
@@ -37,29 +41,33 @@ export function middleware(request: NextRequest) {
           isAdmin = true;
           hasValidSession = true;
         }
+      } else {
+        // Not an admin/superadmin (e.g. tenant session from port 3000)
+        hasValidSession = false;
+        isAdmin = false;
+        parsedUser = null;
       }
     } catch {
       hasValidSession = false;
     }
-  } else if (betterAuthToken) {
+  } else if (adminToken) {
     hasValidSession = true;
     isAdmin = true;
   }
 
-  // 1. Jika rute login
+  // 1. If accessing login route
   if (pathname === '/login') {
     if (hasValidSession && isAdmin) {
       return NextResponse.redirect(new URL('/database-status', baseUrl));
     }
     const res = NextResponse.next();
-    if (authSessionCookie && !isAdmin) {
-      res.cookies.delete('auth_session');
-      res.cookies.delete('better-auth.session_token');
+    if (adminSessionCookie && !isAdmin) {
+      res.cookies.delete('asoc_admin_session');
     }
     return res;
   }
 
-  // 2. Proteksi rute admin & api
+  // 2. Protect admin routes & API
   const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/api/auth');
   const isPublicAsset =
     pathname.startsWith('/_next') ||
@@ -86,7 +94,7 @@ export function middleware(request: NextRequest) {
         try {
           parsedUser.lastActive = Date.now();
           const isSecure = process.env.COOKIE_SECURE === 'true' || (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false' && (request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https'));
-          apiRes.cookies.set('auth_session', encodeURIComponent(JSON.stringify(parsedUser)), {
+          apiRes.cookies.set('asoc_admin_session', encodeURIComponent(JSON.stringify(parsedUser)), {
             path: '/',
             httpOnly: false,
             secure: isSecure,
@@ -102,15 +110,13 @@ export function middleware(request: NextRequest) {
       const loginUrl = new URL('/login', baseUrl);
       if (sessionExpired) {
         loginUrl.searchParams.set('error', 'session_expired');
-      } else if (authSessionCookie && !isAdmin) {
-        loginUrl.searchParams.set('error', 'tenant_forbidden');
       } else {
         loginUrl.searchParams.set('from', pathname);
       }
 
       const res = NextResponse.redirect(loginUrl);
-      res.cookies.delete('auth_session');
-      res.cookies.delete('better-auth.session_token');
+      res.cookies.delete('asoc_admin_session');
+      res.cookies.delete('asoc_admin_token');
       return res;
     }
 
@@ -119,15 +125,15 @@ export function middleware(request: NextRequest) {
         parsedUser.lastActive = Date.now();
         const isSecure = process.env.COOKIE_SECURE === 'true' || (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false' && (request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https'));
         const nextRes = NextResponse.next();
-        nextRes.cookies.set('auth_session', encodeURIComponent(JSON.stringify(parsedUser)), {
+        nextRes.cookies.set('asoc_admin_session', encodeURIComponent(JSON.stringify(parsedUser)), {
           path: '/',
           httpOnly: false,
           secure: isSecure,
           sameSite: 'lax',
           maxAge: 1800,
         });
-        if (betterAuthToken) {
-          nextRes.cookies.set('better-auth.session_token', betterAuthToken, {
+        if (adminToken) {
+          nextRes.cookies.set('asoc_admin_token', adminToken, {
             path: '/',
             httpOnly: false,
             secure: isSecure,

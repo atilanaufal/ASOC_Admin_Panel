@@ -369,20 +369,37 @@ export async function GET(request: NextRequest) {
           try {
             const cleanPrefix = (t.redis_prefix || `${t.database_name}:`).replace(/:+$/, '') + ':';
             const incKey = `${cleanPrefix}incident:${todayStr}`;
-            const vulnKey = `${cleanPrefix}vulnerability:${todayStr}`;
             const repKey = `${cleanPrefix}reports`;
 
-            const [incExists, vulnExists, rawRep] = await Promise.all([
+            const [incExists, rawRep] = await Promise.all([
               redisClient.exists(incKey),
-              redisClient.exists(vulnKey),
               redisClient.get(repKey),
             ]);
 
             if (incExists) {
               rInc = await redisClient.hlen(incKey);
             }
-            if (vulnExists) {
-              rVuln = await redisClient.hlen(vulnKey);
+
+            try {
+              const countLuaScript = `
+                local prefix = ARGV[1]
+                local today = ARGV[2]
+                local keys = redis.call('keys', prefix .. 'vulnerability:*')
+                local count = 0
+                for i, k in ipairs(keys) do
+                    local vals = redis.call('hvals', k)
+                    for j, v in ipairs(vals) do
+                        if string.find(v, today, 1, true) then
+                            count = count + 1
+                        end
+                    end
+                end
+                return count
+              `;
+              const luaRes = await redisClient.eval(countLuaScript, 0, cleanPrefix, todayStr);
+              rVuln = Number(luaRes) || 0;
+            } catch {
+              rVuln = 0;
             }
             if (rawRep) {
               try {

@@ -76,7 +76,7 @@ export async function DELETE(
     }
 
     // Role Enforcement: Only Superadmin can delete tenants and databases
-    const authSession = request.cookies.get('auth_session')?.value;
+    const authSession = (request.cookies.get('asoc_admin_session')?.value || request.cookies.get('auth_session')?.value);
     let currentUser: any = null;
     if (authSession) {
       try {

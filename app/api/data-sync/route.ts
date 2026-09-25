@@ -376,14 +376,37 @@ export async function GET(request: NextRequest) {
               } catch {}
 
               let mgDevCount = 0;
+              let mgVulnsThisWeek = 0;
               if (mongoClient && dbName) {
                 try {
-                  mgDevCount = await mongoClient.db(dbName).collection('devices').countDocuments({}).catch(() => 0);
+                  const dbInst = mongoClient.db(dbName);
+                  const nowWib = new Date();
+                  const dayOfWeek = nowWib.getDay() || 7;
+                  const mondayDate = new Date(nowWib);
+                  mondayDate.setDate(mondayDate.getDate() - (dayOfWeek - 1));
+                  const mondayStr = mondayDate.toISOString().slice(0, 10);
+                  const mondayDt = new Date(mondayStr + 'T00:00:00.000Z');
+
+                  const weeklyVulnQuery = {
+                    $or: [
+                      { date: { $gte: mondayStr } },
+                      { detected_at: { $gte: mondayDt } },
+                      { detected_at: { $gte: mondayStr } },
+                      { last_seen: { $gte: mondayStr } },
+                    ],
+                  };
+
+                  const [devC, vulnC] = await Promise.all([
+                    dbInst.collection('devices').countDocuments({}).catch(() => 0),
+                    dbInst.collection('vulnerability').countDocuments(weeklyVulnQuery).catch(() => 0),
+                  ]);
+                  mgDevCount = devC;
+                  mgVulnsThisWeek = vulnC;
                 } catch {}
               }
 
               const incSynced = totalMongoIncidents === totalRedisIncidents;
-              const vulnSynced = totalMongoVulns === rdVulnCount;
+              const vulnSynced = mgVulnsThisWeek === rdVulnCount;
               const repSynced = totalMongoReports === rdRepCount;
               const devSynced = mgDevCount === rdDevCount;
 
@@ -395,7 +418,7 @@ export async function GET(request: NextRequest) {
                   dateBreakdown: dateBreakdownRedisIncidents,
                 },
                 vulnerabilities: {
-                  mongo: totalMongoVulns,
+                  mongo: mgVulnsThisWeek,
                   redis: rdVulnCount,
                   isSynced: vulnSynced,
                 },

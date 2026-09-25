@@ -20,7 +20,7 @@ export async function PUT(
     const { action, newPassword, email, role, tenantId } = body;
 
     // Caller authorization check
-    const authSession = request.cookies.get('auth_session')?.value;
+    const authSession = (request.cookies.get('asoc_admin_session')?.value || request.cookies.get('auth_session')?.value);
     let currentUser: any = null;
     if (authSession) {
       try {
@@ -148,7 +148,7 @@ export async function DELETE(
     const userId = /^\d+$/.test(cleanId) ? parseInt(cleanId, 10) : cleanId;
 
     // Role Enforcement: Only Superadmin can delete accounts (including admin accounts)
-    const authSession = request.cookies.get('auth_session')?.value;
+    const authSession = (request.cookies.get('asoc_admin_session')?.value || request.cookies.get('auth_session')?.value);
     let currentUser: any = null;
     if (authSession) {
       try {
