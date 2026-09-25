@@ -57,6 +57,15 @@ export function middleware(request: NextRequest) {
 
   // 1. If accessing login route
   if (pathname === '/login') {
+    const errorParam = request.nextUrl.searchParams.get('error');
+    if (errorParam) {
+      const res = NextResponse.next();
+      res.cookies.delete('asoc_admin_session');
+      res.cookies.delete('asoc_admin_token');
+      res.cookies.delete('auth_session');
+      return res;
+    }
+
     if (hasValidSession && isAdmin) {
       return NextResponse.redirect(new URL('/database-status', baseUrl));
     }

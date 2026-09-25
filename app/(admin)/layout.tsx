@@ -15,11 +15,10 @@ export default function AdminLayout({
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const activeSession = sessionStorage.getItem('asoc_browser_session');
+      let activeSession = sessionStorage.getItem('asoc_browser_session');
       if (!activeSession) {
-        // Tab closed or new session without login -> redirect
-        window.location.href = '/login?error=browser_closed';
-        return;
+        // Tab refreshed or newly opened tab with valid server session: seed active browser session
+        sessionStorage.setItem('asoc_browser_session', Date.now().toString());
       }
       setSessionReady(true);
     }

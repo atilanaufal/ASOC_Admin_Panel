@@ -29,10 +29,9 @@ export function AutoLogout() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const activeSession = sessionStorage.getItem("asoc_browser_session");
+      let activeSession = sessionStorage.getItem("asoc_browser_session");
       if (!activeSession) {
-        performLogout("browser_closed");
-        return;
+        sessionStorage.setItem("asoc_browser_session", Date.now().toString());
       }
     }
 
