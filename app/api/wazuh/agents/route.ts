@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
+import { runRemoteScript } from '@/lib/remote';
 
 export interface MappedAgentItem {
   id: string;
@@ -24,6 +25,42 @@ export interface MappedAgentItem {
 }
 
 export async function GET(_request: NextRequest) {
+  const shouldSync = _request.nextUrl.searchParams.get('sync') === 'true';
+  let syncResult: any = null;
+
+  if (shouldSync) {
+    const syncStartTime = Date.now();
+    const tenant = _request.nextUrl.searchParams.get('tenant') || 'all';
+    const mode = _request.nextUrl.searchParams.get('mode') || 'full';
+    const cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/sync_wazuh_agents.py --tenant ${tenant} --mode ${mode} --json`;
+
+    try {
+      const res = await runRemoteScript(cmd, 45000);
+      const durationMs = Date.now() - syncStartTime;
+      let parsedOutput: any = null;
+      if (res.stdout) {
+        try {
+          parsedOutput = JSON.parse(res.stdout);
+        } catch {
+          parsedOutput = { raw: res.stdout };
+        }
+      }
+      syncResult = {
+        success: res.success,
+        durationMs,
+        script: 'sync_wazuh_agents.py',
+        message: res.success ? 'Sinkronisasi Wazuh agent berhasil dieksekusi' : 'Sinkronisasi Wazuh agent gagal',
+        output: parsedOutput,
+        error: res.success ? undefined : res.stderr,
+      };
+    } catch (sErr: any) {
+      syncResult = {
+        success: false,
+        script: 'sync_wazuh_agents.py',
+        message: sErr.message || 'Eksekusi script sinkronisasi gagal',
+      };
+    }
+  }
   try {
     const pool = getMysqlPool();
     const [tenantsRows]: any = await pool.query(
@@ -121,6 +158,7 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
+      syncResult,
       summary: {
         total: mappedAgents.length,
         active: activeCount,
@@ -139,6 +177,45 @@ export async function GET(_request: NextRequest) {
     console.error('API /api/wazuh/agents GET Error:', err);
     return NextResponse.json(
       { success: false, error: err.message || 'Failed to load agent inventory from MongoDB' },
+      { status: 500 }
+    );
+  }
+}
+
+
+export async function POST(request: NextRequest) {
+  const syncStartTime = Date.now();
+  try {
+    const body = await request.json().catch(() => ({}));
+    const tenant = body.tenant || 'all';
+    const mode = body.mode || 'full';
+    const cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/sync_wazuh_agents.py --tenant ${tenant} --mode ${mode} --json`;
+
+    const res = await runRemoteScript(cmd, 45000);
+    const durationMs = Date.now() - syncStartTime;
+    let parsedOutput: any = null;
+    if (res.stdout) {
+      try {
+        parsedOutput = JSON.parse(res.stdout);
+      } catch {
+        parsedOutput = { raw: res.stdout };
+      }
+    }
+
+    return NextResponse.json({
+      success: res.success,
+      durationMs,
+      script: 'sync_wazuh_agents.py',
+      message: res.success
+        ? 'Script sync_wazuh_agents berhasil dieksekusi'
+        : 'Eksekusi sync_wazuh_agents gagal',
+      output: parsedOutput,
+      error: res.success ? undefined : res.stderr,
+    });
+  } catch (err: any) {
+    console.error('API /api/wazuh/agents POST Error:', err);
+    return NextResponse.json(
+      { success: false, error: err.message || 'Failed to execute sync_wazuh_agents' },
       { status: 500 }
     );
   }

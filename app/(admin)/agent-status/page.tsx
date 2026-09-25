@@ -5,6 +5,9 @@ import {
   Search,
   ChevronDown,
   RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  X,
 } from 'lucide-react';
 import CustomSelect from '@/components/ui/CustomSelect';
 import { formatOsDisplay } from '@/lib/tenant-utils';
@@ -16,6 +19,7 @@ export default function AgentStatusPage() {
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -24,15 +28,49 @@ export default function AgentStatusPage() {
   const fetchAgents = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
-      const res = await fetch('/api/wazuh/agents');
+      const url = isManual ? '/api/wazuh/agents?sync=true' : '/api/wazuh/agents';
+      const res = await fetch(url);
       if (res.ok) {
         const json = await res.json();
         setAgents(json.agents || []);
         setTenants(json.tenants || []);
         setSummary(json.summary || null);
+
+        if (isManual) {
+          if (json.syncResult?.success) {
+            const timeSec = ((json.syncResult.durationMs || 0) / 1000).toFixed(1);
+            setToast({
+              type: 'success',
+              message: `Sinkronisasi berhasil! Script sync_wazuh_agents selesai dieksekusi dalam ${timeSec} detik.`,
+            });
+          } else if (json.syncResult && !json.syncResult.success) {
+            setToast({
+              type: 'error',
+              message: `Sinkronisasi gagal: ${json.syncResult.error || json.syncResult.message || 'Eksekusi script error'}`,
+            });
+          } else {
+            setToast({
+              type: 'success',
+              message: 'Data agent status berhasil diperbarui dari MongoDB & Wazuh.',
+            });
+          }
+        }
+      } else {
+        if (isManual) {
+          setToast({
+            type: 'error',
+            message: 'Gagal menghubungi server untuk memperbarui agent status.',
+          });
+        }
       }
     } catch (err: any) {
       console.error('Error fetching agents:', err);
+      if (isManual) {
+        setToast({
+          type: 'error',
+          message: `Terjadi kesalahan: ${err.message || 'Gagal sinkronisasi'}`,
+        });
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -44,6 +82,13 @@ export default function AgentStatusPage() {
     const interval = setInterval(() => fetchAgents(false), 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
 
   // Compute real values from live data
   const totalAgents = summary?.total ?? agents.length;
@@ -132,12 +177,36 @@ export default function AgentStatusPage() {
         <button
           onClick={() => fetchAgents(true)}
           disabled={refreshing}
+          title="Jalankan script sync_wazuh_agents dan perbarui status"
           className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200/80 text-slate-700 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
-          <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+          <span>{refreshing ? 'Syncing...' : 'Refresh'}</span>
         </button>
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          className={`p-3.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in duration-200 ${
+            toast.type === 'success'
+              ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-700'
+              : 'bg-rose-500/10 border border-rose-500/20 text-rose-700'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+          <button onClick={() => setToast(null)} className="opacity-60 hover:opacity-100 cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* ROW 1: Agent Breakdown (Left) & OS Distribution (Right)   */}
