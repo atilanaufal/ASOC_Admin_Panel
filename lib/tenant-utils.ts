@@ -15,3 +15,17 @@ export function slugifyCampusName(name: string): string {
     .replace(/[\s_-]+/g, '_')
     .replace(/^-+|-+$/g, '');
 }
+
+export function formatOsDisplay(os: any): string {
+  if (!os) return 'Linux';
+  if (typeof os === 'string') return os.trim();
+  const name = String(os.name || os.platform || '').trim();
+  const version = String(os.version || '').trim();
+  if (!name && !version) return 'Linux';
+  if (!version) return name;
+  if (!name) return version;
+  if (name.toLowerCase() === version.toLowerCase()) return name;
+  if (name.toLowerCase().includes(version.toLowerCase())) return name;
+  if (version.toLowerCase().includes(name.toLowerCase())) return version;
+  return `${name} ${version}`.trim();
+}

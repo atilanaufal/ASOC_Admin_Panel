@@ -7,6 +7,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import CustomSelect from '@/components/ui/CustomSelect';
+import { formatOsDisplay } from '@/lib/tenant-utils';
 import type { MappedAgentItem } from '@/app/api/wazuh/agents/route';
 
 export default function AgentStatusPage() {
@@ -67,17 +68,18 @@ export default function AgentStatusPage() {
   agents.forEach((a) => {
     let key = 'Other OS';
     if (a.os) {
-      const rawName = a.os.name || 'Linux';
-      const rawVer = a.os.version || '';
-      if (rawName.toLowerCase().includes('ubuntu')) {
-        const mm = rawVer.match(/\d+\.\d+/)?.[0];
-        key = mm ? `Ubuntu ${mm}` : `Ubuntu ${rawVer.replace(' LTS', '').trim()}`;
-      } else if (rawName.toLowerCase().includes('rocky')) {
-        key = rawVer ? `Rocky Linux ${rawVer.trim()}` : 'Rocky Linux';
-      } else if (rawName.toLowerCase().includes('windows')) {
-        key = rawVer ? `Windows ${rawVer.trim()}` : 'Windows';
+      const formatted = formatOsDisplay(a.os);
+      const lower = formatted.toLowerCase();
+      if (lower.includes('ubuntu')) {
+        const mm = formatted.match(/\d+\.\d+/)?.[0];
+        key = mm ? `Ubuntu ${mm}` : 'Ubuntu';
+      } else if (lower.includes('rocky')) {
+        const mm = formatted.match(/\d+(\.\d+)?/)?.[0];
+        key = mm ? `Rocky Linux ${mm}` : 'Rocky Linux';
+      } else if (lower.includes('windows')) {
+        key = 'Windows';
       } else {
-        key = `${rawName} ${rawVer}`.trim() || 'Linux';
+        key = formatted || 'Linux';
       }
     }
     osMap.set(key, (osMap.get(key) || 0) + 1);
@@ -94,7 +96,7 @@ export default function AgentStatusPage() {
   // Filtered agents (Live data only, no mock fallback)
   const filteredAgents = agents.filter((a) => {
     const q = searchQuery.toLowerCase().trim();
-    const osString = typeof a.os === 'string' ? a.os : `${a.os?.name || ''} ${a.os?.version || ''}`;
+    const osString = formatOsDisplay(a.os);
     const tenantCode = a.assignedTenant?.tenantCode?.toLowerCase() || '';
     const campusName = a.assignedTenant?.campusName?.toLowerCase() || '';
 
@@ -375,9 +377,7 @@ export default function AgentStatusPage() {
                       {agent.ip || '-'}
                     </td>
                     <td className="py-3.5 px-4 font-medium text-slate-900 text-xs">
-                      {typeof agent.os === 'string'
-                        ? agent.os
-                        : `${agent.os?.name || ''} ${agent.os?.version || ''}`.trim() || 'Linux'}
+                      {formatOsDisplay(agent.os)}
                     </td>
                     <td className="py-3.5 px-4 font-bold text-slate-900 text-xs">
                       {agent.assignedTenant?.tenantCode || '-'}

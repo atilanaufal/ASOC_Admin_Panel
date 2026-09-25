@@ -51,17 +51,42 @@ export async function GET(_request: NextRequest) {
           if (isActive) activeCount++;
           else disconnectedCount++;
 
-          const osStr = typeof doc.os === 'string' ? doc.os : (doc.os?.name || 'Linux');
           let osObj: { name?: string; platform?: string; version?: string } = {
-            name: osStr,
+            name: 'Linux',
             platform: 'linux',
-            version: osStr,
+            version: '',
           };
-          if (typeof doc.os === 'object' && doc.os !== null) {
+
+          if (typeof doc.os === 'string') {
+            const raw = doc.os.trim();
+            const uMatch = raw.match(/^Ubuntu\s*(.*)$/i);
+            const rMatch = raw.match(/^Rocky(?:\s+Linux)?\s*(.*)$/i);
+            const dMatch = raw.match(/^Debian\s*(.*)$/i);
+            const wMatch = raw.match(/^Windows(?:\s+Server)?\s*(.*)$/i);
+
+            if (uMatch) {
+              osObj = { name: 'Ubuntu', platform: 'ubuntu', version: uMatch[1] || '' };
+            } else if (rMatch) {
+              osObj = { name: 'Rocky Linux', platform: 'centos', version: rMatch[1] || '' };
+            } else if (dMatch) {
+              osObj = { name: 'Debian', platform: 'debian', version: dMatch[1] || '' };
+            } else if (wMatch) {
+              osObj = { name: 'Windows', platform: 'windows', version: wMatch[1] || '' };
+            } else {
+              osObj = { name: raw || 'Linux', platform: 'linux', version: '' };
+            }
+          } else if (typeof doc.os === 'object' && doc.os !== null) {
+            let n = String(doc.os.name || 'Linux').trim();
+            let v = String(doc.os.version || '').trim();
+            if (v && n.toLowerCase().includes(v.toLowerCase())) {
+              n = n.split(v).join('').trim() || n;
+            } else if (n.toLowerCase() === v.toLowerCase()) {
+              v = '';
+            }
             osObj = {
-              name: doc.os.name || osStr,
+              name: n || 'Linux',
               platform: doc.os.platform || 'linux',
-              version: doc.os.version || osStr,
+              version: v,
             };
           }
 
