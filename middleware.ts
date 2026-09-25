@@ -25,7 +25,8 @@ export function middleware(request: NextRequest) {
     try {
       const decoded = decodeURIComponent(authSessionCookie);
       parsedUser = JSON.parse(decoded);
-      if (parsedUser && (parsedUser.role === 'admin' || parsedUser.role === 'superadmin')) {
+      const uRole = String(parsedUser?.role || '').trim().toLowerCase();
+      if (parsedUser && (uRole === 'admin' || uRole === 'superadmin')) {
         const now = Date.now();
         const lastActive = parsedUser.lastActive || parsedUser.loginTime || 0;
         if (now - lastActive > MAX_SESSION_IDLE_MS) {
@@ -50,7 +51,12 @@ export function middleware(request: NextRequest) {
     if (hasValidSession && isAdmin) {
       return NextResponse.redirect(new URL('/database-status', baseUrl));
     }
-    return NextResponse.next();
+    const res = NextResponse.next();
+    if (authSessionCookie && !isAdmin) {
+      res.cookies.delete('auth_session');
+      res.cookies.delete('better-auth.session_token');
+    }
+    return res;
   }
 
   // 2. Proteksi rute admin & api
@@ -67,8 +73,8 @@ export function middleware(request: NextRequest) {
           {
             success: false,
             error: sessionExpired
-              ? 'Session expired. Sesi Anda telah berakhir (30 menit inaktivitas).'
-              : 'Unauthorized. Akses ditolak.',
+              ? 'Session expired. Your session has ended due to inactivity.'
+              : 'Unauthorized. Access denied.',
             sessionExpired,
           },
           { status: 401 }

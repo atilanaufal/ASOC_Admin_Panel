@@ -255,9 +255,7 @@ export default function DataRetentionPage() {
               <Database className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Isolated Per-Tenant
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -272,9 +270,7 @@ export default function DataRetentionPage() {
               <Calendar className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Historical Data Horizon
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -289,9 +285,7 @@ export default function DataRetentionPage() {
               <Clock className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Standard Default (7 Days)
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -306,9 +300,7 @@ export default function DataRetentionPage() {
               <Zap className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Across Collections
-          </div>
+
         </div>
       </div>
 

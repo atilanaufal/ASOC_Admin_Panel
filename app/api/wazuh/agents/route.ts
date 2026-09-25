@@ -204,7 +204,7 @@ export async function GET(_request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/wazuh/agents GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat inventaris agen Wazuh' },
+      { success: false, error: err.message || 'Failed to load Wazuh agent inventory' },
       { status: 500 }
     );
   }

@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Benchmark API Error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Gagal menjalankan benchmark database.' },
+      { success: false, error: error.message || 'Failed to execute database benchmark.' },
       { status: 500 }
     );
   }

@@ -41,7 +41,7 @@ export function TenantStatusToggle({ tenant, onStatusChange }: TenantStatusToggl
           type="button"
           onClick={handleToggleClick}
           disabled={loading}
-          title={isActive ? 'Klik untuk nonaktifkan (Suspend)' : 'Klik untuk mengaktifkan kembali'}
+          title={isActive ? 'Click to suspend' : 'Click to reactivate'}
           className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
             isActive ? 'bg-emerald-500' : 'bg-slate-300'
           } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}

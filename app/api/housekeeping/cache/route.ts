@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
 
     if (!tenantCode) {
       return NextResponse.json(
-        { success: false, error: 'Kode Kampus (tenantCode) wajib diisi.' },
+        { success: false, error: 'Tenant code (tenantCode) is required.' },
         { status: 400 }
       );
     }
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal membersihkan cache Redis' },
+      { success: false, error: err.message || 'Failed to clear Redis cache' },
       { status: 500 }
     );
   }

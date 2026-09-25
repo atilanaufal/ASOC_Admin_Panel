@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
 
     if (!tenantCode) {
       return NextResponse.json(
-        { success: false, error: 'Kode Kampus (tenantCode) wajib diisi.' },
+        { success: false, error: 'Tenant code (tenantCode) is required.' },
         { status: 400 }
       );
     }
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memproses pembersihan data MongoDB' },
+      { success: false, error: err.message || 'Failed to process MongoDB data cleanup' },
       { status: 500 }
     );
   }

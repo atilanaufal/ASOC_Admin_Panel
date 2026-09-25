@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/audit-logs GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat log riwayat audit' },
+      { success: false, error: err.message || 'Failed to load audit history logs' },
       { status: 500 }
     );
   }

@@ -253,7 +253,7 @@ export default function AgentStatusPage() {
             {/* Legend list matching colors */}
             <div className="space-y-1.5 text-xs max-h-36 overflow-y-auto pr-1">
               {osDistribution.length === 0 ? (
-                <span className="text-slate-400 text-xs">{loading ? 'Memuat OS...' : 'Tidak ada data OS'}</span>
+                <span className="text-slate-400 text-xs">{loading ? 'Loading OS...' : 'No OS data available'}</span>
               ) : (
                 osDistribution.map((os) => (
                   <div key={os.name} className="flex items-center gap-2">

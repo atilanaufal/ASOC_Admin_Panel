@@ -218,7 +218,7 @@ export async function verifySuperadminCredentials(
     console.error('MySQL Database Connection Error:', err.message);
     return {
       success: false,
-      error: `Gagal terhubung ke Database MySQL (${getMysqlHost()}:${MYSQL_PORT}): ${err.message}`,
+      error: `Failed to connect to MySQL Database (${getMysqlHost()}:${MYSQL_PORT}): ${err.message}`,
     };
   } finally {
     if (conn) {

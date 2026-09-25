@@ -222,9 +222,7 @@ export default function IrisCustomerPage() {
               <Building2 className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Registered Systems
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -239,9 +237,7 @@ export default function IrisCustomerPage() {
               <CheckCircle2 className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-emerald-600">
-            Bound to DFIR-IRIS
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -256,9 +252,7 @@ export default function IrisCustomerPage() {
               <AlertCircle className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-rose-600">
-            Requires Configuration
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -273,9 +267,7 @@ export default function IrisCustomerPage() {
               <Layers className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Customer Association
-          </div>
+
         </div>
       </div>
 

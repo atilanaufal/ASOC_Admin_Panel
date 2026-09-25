@@ -9,7 +9,7 @@ export async function PUT(
     const { id } = await params;
     if (!id || !id.trim()) {
       return NextResponse.json(
-        { success: false, error: 'ID Pengguna tidak valid.' },
+        { success: false, error: 'Invalid user ID.' },
         { status: 400 }
       );
     }
@@ -18,6 +18,45 @@ export async function PUT(
 
     const body = await request.json();
     const { action, newPassword, email, role, tenantId } = body;
+
+    // Caller authorization check
+    const authSession = request.cookies.get('auth_session')?.value;
+    let currentUser: any = null;
+    if (authSession) {
+      try {
+        currentUser = JSON.parse(decodeURIComponent(authSession));
+      } catch {}
+    }
+    const isSuperadmin = currentUser?.role === 'superadmin';
+
+    // Verify if target user is superadmin in admin_users table
+    const pool = (await import('@/lib/mysql')).getMysqlPool();
+    const [targetAdmin]: any = await pool.query(
+      'SELECT id, username, role FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
+      [userId, userId]
+    );
+
+    if (targetAdmin && targetAdmin.length > 0 && targetAdmin[0].role === 'superadmin') {
+      if (!isSuperadmin) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Access denied: Administrators cannot edit or reset passwords for Superadmin accounts.',
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    if (role === 'superadmin' && !isSuperadmin) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Access denied: Only Superadmin can grant the Superadmin role.',
+        },
+        { status: 403 }
+      );
+    }
 
     // 1. Action: Reset Password
     if (action === 'reset_password') {
@@ -87,7 +126,7 @@ export async function PUT(
   } catch (err: any) {
     console.error('API /api/users/[id] PUT Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memperbarui pengguna' },
+      { success: false, error: err.message || 'Failed to update user' },
       { status: 500 }
     );
   }
@@ -101,7 +140,7 @@ export async function DELETE(
     const { id } = await params;
     if (!id || !id.trim()) {
       return NextResponse.json(
-        { success: false, error: 'ID Pengguna tidak valid.' },
+        { success: false, error: 'Invalid user ID.' },
         { status: 400 }
       );
     }
@@ -156,7 +195,7 @@ export async function DELETE(
   } catch (err: any) {
     console.error('API /api/users/[id] DELETE Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal menghapus pengguna' },
+      { success: false, error: err.message || 'Failed to delete user' },
       { status: 500 }
     );
   }

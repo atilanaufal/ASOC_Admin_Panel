@@ -195,7 +195,7 @@ export async function provisionTenant(
   try {
     // Validation
     if (!tenantCode || !campusName) {
-      return { success: false, error: 'Kode Kampus dan Nama Kampus wajib diisi.' };
+      return { success: false, error: 'Tenant code and campus name are required.' };
     }
 
     // Check MySQL uniqueness
@@ -207,7 +207,7 @@ export async function provisionTenant(
     if (existing && existing.length > 0) {
       return {
         success: false,
-        error: `Tenant dengan kode '${tenantCode}' atau database '${databaseName}' sudah terdaftar.`,
+        error: `Tenant with code '${tenantCode}' or database '${databaseName}' already exists.`,
       };
     }
 
@@ -291,7 +291,7 @@ export async function provisionTenant(
     console.error('Error during automated provisioning:', err);
     return {
       success: false,
-      error: `Gagal memprovisi tenant: ${err.message}`,
+      error: `Failed to provision tenant: ${err.message}`,
     };
   }
 }
@@ -319,7 +319,7 @@ export async function updateTenant(
     );
 
     if (!rows || rows.length === 0) {
-      return { success: false, error: 'Tenant tidak ditemukan.' };
+      return { success: false, error: 'Tenant not found.' };
     }
 
     const tenant = rows[0];
@@ -349,11 +349,11 @@ export async function updateTenant(
 
     return {
       success: true,
-      message: `Tenant ${data.campusName?.trim() || tenant.campus_name} berhasil diperbarui.`,
+      message: `Tenant ${data.campusName?.trim() || tenant.campus_name} successfully updated.`,
     };
   } catch (err: any) {
     console.error('Error updating tenant:', err);
-    return { success: false, error: `Gagal memperbarui tenant: ${err.message}` };
+    return { success: false, error: `Failed to update tenant: ${err.message}` };
   }
 }
 
@@ -372,7 +372,7 @@ export async function deleteTenant(
     );
 
     if (!rows || rows.length === 0) {
-      return { success: false, error: 'Tenant tidak ditemukan.' };
+      return { success: false, error: 'Tenant not found.' };
     }
 
     const tenant = rows[0];
@@ -390,10 +390,10 @@ export async function deleteTenant(
 
     return {
       success: true,
-      message: `Tenant ${tenant.campus_name} (${tenant.tenant_code}) berhasil dihapus.`,
+      message: `Tenant ${tenant.campus_name} (${tenant.tenant_code}) successfully deleted.`,
     };
   } catch (err: any) {
     console.error('Error deleting tenant:', err);
-    return { success: false, error: `Gagal menghapus tenant: ${err.message}` };
+    return { success: false, error: `Failed to delete tenant: ${err.message}` };
   }
 }

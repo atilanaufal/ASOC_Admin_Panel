@@ -11,7 +11,7 @@ export async function PUT(
 
     if (isNaN(tenantId) || tenantId <= 0) {
       return NextResponse.json(
-        { success: false, error: 'ID Tenant tidak valid.' },
+        { success: false, error: 'Invalid Tenant ID.' },
         { status: 400 }
       );
     }
@@ -54,7 +54,7 @@ export async function PUT(
   } catch (err: any) {
     console.error('API /api/tenants/[id] PUT Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memperbarui data tenant' },
+      { success: false, error: err.message || 'Failed to update tenant data' },
       { status: 500 }
     );
   }
@@ -70,7 +70,7 @@ export async function DELETE(
 
     if (isNaN(tenantId) || tenantId <= 0) {
       return NextResponse.json(
-        { success: false, error: 'ID Tenant tidak valid.' },
+        { success: false, error: 'Invalid Tenant ID.' },
         { status: 400 }
       );
     }
@@ -123,7 +123,7 @@ export async function DELETE(
   } catch (err: any) {
     console.error('API /api/tenants/[id] DELETE Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal menghapus tenant' },
+      { success: false, error: err.message || 'Failed to delete tenant' },
       { status: 500 }
     );
   }

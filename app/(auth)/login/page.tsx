@@ -26,20 +26,20 @@ function LoginForm() {
   useEffect(() => {
     const errorParam = searchParams.get('error');
     if (errorParam === 'session_expired') {
-      setErrorMessage('Sesi telah berakhir karena tidak ada aktivitas selama 10 menit. Silakan login kembali.');
+      setErrorMessage('Your session has expired due to 15 minutes of inactivity. Please sign in again.');
     } else if (errorParam === 'browser_closed') {
-      setErrorMessage('Browser ditutup sebelumnya. Demi keamanan, silakan login kembali.');
+      setErrorMessage('Browser was previously closed. For security reasons, please sign in again.');
     } else if (errorParam === 'unauthorized') {
       setErrorMessage('Session expired or not logged in. Please sign in again.');
     } else if (errorParam === 'tenant_forbidden') {
-      setErrorMessage('Akses ditolak. Portal ini khusus untuk Superadmin. Akun Anda tidak memiliki hak akses.');
+      setErrorMessage('Access denied. This portal is restricted to Platform Administrators. Your account does not have sufficient privileges.');
     }
   }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password) {
-      setErrorMessage('Harap isi username/email dan password.');
+      setErrorMessage('Please enter username/email and password.');
       return;
     }
 
@@ -102,7 +102,7 @@ function LoginForm() {
         {/* Username / Email */}
         <div>
           <label className="block text-xs font-bold text-slate-700 mb-2">
-            Username / Email Superadmin
+            Username / Email
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -167,7 +167,7 @@ function LoginForm() {
       {/* Footer Notice */}
       <div className="mt-6 pt-5 border-t border-slate-100 text-center">
         <p className="text-xs text-slate-500 leading-relaxed">
-          Restricted to ASOC Superadmin authority. Tenant analysts please access your respective tenant portals.
+          Restricted to ASOC Platform Administrator authority. Tenant analysts please access your respective tenant portals.
         </p>
       </div>
     </div>

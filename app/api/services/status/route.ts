@@ -11,7 +11,7 @@ export async function GET(_request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/services/status GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat status background services' },
+      { success: false, error: err.message || 'Failed to load background services status' },
       { status: 500 }
     );
   }

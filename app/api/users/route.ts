@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/users GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat daftar pengguna' },
+      { success: false, error: err.message || 'Failed to load users list' },
       { status: 500 }
     );
   }
@@ -46,6 +46,15 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const authSession = request.cookies.get('auth_session')?.value;
+    let currentUser: any = null;
+    if (authSession) {
+      try {
+        currentUser = JSON.parse(decodeURIComponent(authSession));
+      } catch {}
+    }
+    const isSuperadmin = currentUser?.role === 'superadmin';
+
     const body = await request.json();
     const { username, email, password, role, tenantId } = body;
 
@@ -60,6 +69,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Password must be at least 6 characters.' },
         { status: 400 }
+      );
+    }
+
+    if (role === 'superadmin' && !isSuperadmin) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Access denied: Only Superadmin can create Superadmin accounts.',
+        },
+        { status: 403 }
       );
     }
 
@@ -106,7 +125,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/users POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal membuat pengguna baru' },
+      { success: false, error: err.message || 'Failed to create user' },
       { status: 500 }
     );
   }

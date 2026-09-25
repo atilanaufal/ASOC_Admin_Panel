@@ -86,7 +86,7 @@ export async function syncSuperadminToBetterAuth(
     // 1. Verify against master users table with Superadmin role verification
     const check = await verifySuperadminCredentials(usernameOrEmail, plainPassword);
     if (!check.success || !check.user) {
-      return { success: false, error: check.error || 'Autentikasi gagal.' };
+      return { success: false, error: check.error || 'Authentication failed.' };
     }
 
     const masterUser = check.user;

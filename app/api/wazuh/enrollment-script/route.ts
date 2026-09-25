@@ -29,10 +29,10 @@ export async function GET(request: NextRequest) {
 
     if (os === 'linux-deb') {
       command = `wget https://packages.wazuh.com/4.x/wazuh-agent_${WAZUH_AGENT_VERSION}_amd64.deb && sudo WAZUH_MANAGER='${WAZUH_MANAGER_HOST}' WAZUH_AGENT_GROUP='${targetGroup}' dpkg -i ./wazuh-agent_${WAZUH_AGENT_VERSION}_amd64.deb && sudo systemctl daemon-reload && sudo systemctl enable wazuh-agent && sudo systemctl start wazuh-agent`;
-      instructions = 'Jalankan perintah di terminal server Ubuntu/Debian dengan hak akses sudo / root.';
+      instructions = 'Run command in terminal on Ubuntu/Debian server with sudo / root privileges.';
     } else if (os === 'linux-rpm') {
       command = `sudo WAZUH_MANAGER='${WAZUH_MANAGER_HOST}' WAZUH_AGENT_GROUP='${targetGroup}' yum install -y https://packages.wazuh.com/4.x/yum/wazuh-agent-${WAZUH_AGENT_VERSION}.x86_64.rpm && sudo systemctl daemon-reload && sudo systemctl enable wazuh-agent && sudo systemctl start wazuh-agent`;
-      instructions = 'Jalankan perintah di terminal CentOS/RHEL/AlmaLinux dengan hak akses sudo / root.';
+      instructions = 'Run command in terminal on CentOS/RHEL/AlmaLinux server with sudo / root privileges.';
     } else {
       command = `Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.6-1.msi -OutFile \${env:tmp}\\wazuh-agent.msi; msiexec.exe /i \${env:tmp}\\wazuh-agent.msi /q WAZUH_MANAGER='${WAZUH_MANAGER_HOST}' WAZUH_AGENT_GROUP='${targetGroup}'; NET START Wazuh`;
       instructions = 'Buka PowerShell sebagai Administrator (Run as Administrator) lalu paste perintah di atas.';
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/wazuh/enrollment-script GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal menghasilkan skrip pendaftaran agen' },
+      { success: false, error: err.message || 'Failed to generate agent enrollment script' },
       { status: 500 }
     );
   }

@@ -30,6 +30,7 @@ interface UserModalProps {
   onSuccess: () => void;
   userToEdit?: UserItem | null;
   tenants: TenantOption[];
+  currentUserRole?: string;
 }
 
 export function UserModal({
@@ -38,6 +39,7 @@ export function UserModal({
   onSuccess,
   userToEdit,
   tenants,
+  currentUserRole,
 }: UserModalProps) {
   const isEditing = Boolean(userToEdit);
 
@@ -85,6 +87,17 @@ export function UserModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (currentUserRole !== 'superadmin') {
+      if (isEditing && userToEdit?.role === 'superadmin') {
+        setError('Access denied: You do not have permission to modify a Superadmin account.');
+        return;
+      }
+      if (role === 'superadmin') {
+        setError('Access denied: Only Superadmin can grant the Superadmin role.');
+        return;
+      }
+    }
     setLoading(true);
 
     try {
@@ -217,11 +230,18 @@ export function UserModal({
               <CustomSelect
                 value={role}
                 onChange={(val) => setRole(String(val))}
-                options={[
-                  { value: 'superadmin', label: 'Superadmin' },
-                  { value: 'admin', label: 'Admin' },
-                  { value: 'tenant', label: 'Analyst' },
-                ]}
+                options={
+                  currentUserRole === 'superadmin'
+                    ? [
+                        { value: 'superadmin', label: 'Superadmin' },
+                        { value: 'admin', label: 'Admin' },
+                        { value: 'tenant', label: 'Analyst' },
+                      ]
+                    : [
+                        { value: 'admin', label: 'Admin' },
+                        { value: 'tenant', label: 'Analyst' },
+                      ]
+                }
                 className="w-full"
               />
             </div>

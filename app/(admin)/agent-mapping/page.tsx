@@ -193,7 +193,7 @@ export default function AgentMappingPage() {
             <div className="text-2xl font-extrabold text-slate-900 mt-1">
               {loading ? '-' : summary?.total || agents.length}
             </div>
-            <span className="text-[11px] text-blue-500 font-semibold mt-1 block">Wazuh Manager :55000</span>
+            
           </div>
           <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold">
             <Server className="w-6 h-6" />
@@ -207,7 +207,7 @@ export default function AgentMappingPage() {
             <div className="text-2xl font-extrabold text-emerald-600 mt-1">
               {loading ? '-' : summary?.active || agents.filter((a) => a.status === 'active').length}
             </div>
-            <span className="text-[11px] text-emerald-500 font-semibold mt-1 block">Normal Heartbeat</span>
+            
           </div>
           <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
             <Radio className="w-6 h-6" />
@@ -221,7 +221,7 @@ export default function AgentMappingPage() {
             <div className="text-2xl font-extrabold text-slate-600 mt-1">
               {loading ? '-' : summary?.disconnected || 0}
             </div>
-            <span className="text-[11px] text-slate-400 font-semibold mt-1 block">Offline / No Keepalive</span>
+            
           </div>
           <div className="w-12 h-12 rounded-xl bg-slate-500/10 text-slate-600 flex items-center justify-center font-bold">
             <Server className="w-6 h-6" />
@@ -239,7 +239,7 @@ export default function AgentMappingPage() {
             >
               {loading ? '-' : unassignedCount}
             </div>
-            <span className="text-[11px] text-amber-500 font-semibold mt-1 block">Requires Tenant Binding</span>
+            
           </div>
           <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold">
             <ShieldAlert className="w-6 h-6" />

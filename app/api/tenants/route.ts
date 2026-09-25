@@ -30,7 +30,7 @@ export async function GET(_request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/tenants GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat data tenant' },
+      { success: false, error: err.message || 'Failed to load tenant data' },
       { status: 500 }
     );
   }
@@ -51,14 +51,14 @@ export async function POST(request: NextRequest) {
 
     if (!tenantCode || !campusName) {
       return NextResponse.json(
-        { success: false, error: 'Kode Kampus dan Nama Kampus wajib diisi.' },
+        { success: false, error: 'Tenant code and campus name are required.' },
         { status: 400 }
       );
     }
 
     if (createInitialAdmin && !adminPassword) {
       return NextResponse.json(
-        { success: false, error: 'Password Admin awal wajib diisi jika opsi admin dicentang.' },
+        { success: false, error: 'Initial Admin password is required if admin option is checked.' },
         { status: 400 }
       );
     }
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        message: `Tenant ${result.tenant?.campusName} dan database fisik '${result.tenant?.databaseName}' berhasil diprovisi 100%.`,
+        message: `Tenant ${result.tenant?.campusName} dan database fisik '${result.tenant?.databaseName}' successfully provisioned 100%.`,
         tenant: result.tenant,
       },
       { status: 201 }
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/tenants POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memproses automated provisioning' },
+      { success: false, error: err.message || 'Failed to process automated provisioning' },
       { status: 500 }
     );
   }

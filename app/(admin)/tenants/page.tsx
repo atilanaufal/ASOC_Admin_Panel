@@ -221,9 +221,7 @@ export default function TenantsPage() {
               <Building2 className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Active Multi-Tenant Organizations
-          </div>
+
         </div>
       </div>
 

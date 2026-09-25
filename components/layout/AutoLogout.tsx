@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
 
 export function AutoLogout() {

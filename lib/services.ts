@@ -270,7 +270,7 @@ export async function auditBackgroundServices(): Promise<{
     port: 6379,
     protocol: 'Redis RESP Protocol',
     latencyMs: redisRes.latencyMs,
-    description: `L1 in-memory cache dengan TTL 7 hari (${redisTotalKeys} keys aktif)`,
+    description: `L1 in-memory cache with 7-day TTL (${redisTotalKeys} active keys)`,
     error: redisRes.error,
   });
 

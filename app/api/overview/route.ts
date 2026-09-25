@@ -293,7 +293,7 @@ export async function GET() {
   } catch (error: any) {
     console.error('Overview API error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Gagal memuat ringkasan sistem.' },
+      { success: false, error: error.message || 'Failed to load system overview.' },
       { status: 500 }
     );
   }

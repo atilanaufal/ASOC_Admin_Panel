@@ -75,9 +75,9 @@ export function AgentMappingTable({
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
         <Server className="w-12 h-12 text-slate-400 mx-auto mb-3 opacity-50" />
-        <h3 className="text-base font-bold text-slate-800">Tidak ada agen Wazuh ditemukan</h3>
+        <h3 className="text-base font-bold text-slate-800">No Wazuh agents found</h3>
         <p className="text-xs text-slate-500 mt-1 mb-4">
-          Belum ada agen yang terhubung ke server Wazuh Manager :55000.
+          No agents currently connected to Wazuh Manager :55000.
         </p>
         <button
           onClick={() => onOpenEnrollmentModal()}
@@ -125,7 +125,7 @@ export function AgentMappingTable({
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
-              <th className="py-3 px-4 rounded-l-xl">ID & Nama Agen</th>
+              <th className="py-3 px-4 rounded-l-xl">Agent ID & Name</th>
               <th className="py-3 px-4">IP & Keepalive</th>
               <th className="py-3 px-4">Sistem Operasi</th>
               <th className="py-3 px-4">Grup Wazuh</th>

@@ -108,7 +108,7 @@ export function AuditDetailModal({
                 className="flex items-center gap-1 text-[11px] font-bold text-blue-500 hover:underline cursor-pointer"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Tersalin' : 'Salin JSON'}</span>
+                <span>{copied ? 'Copied' : 'Copy JSON'}</span>
               </button>
             </div>
             <pre className="p-4 rounded-2xl bg-slate-950 text-emerald-400 font-mono text-[11px] overflow-x-auto border border-slate-800 max-h-56">

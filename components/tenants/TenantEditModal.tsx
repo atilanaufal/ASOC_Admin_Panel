@@ -65,7 +65,7 @@ export function TenantEditModal({
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Gagal memperbarui profil tenant.');
+        throw new Error(json.error || 'Failed to update tenant profile.');
       }
 
       onSuccess(`Tenant ${tenantName} updated successfully.`);
@@ -115,7 +115,7 @@ export function TenantEditModal({
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
               <Building2 className="w-3.5 h-3.5 text-slate-400" />
-              <span>Nama Resmi Tenant / Kampus</span>
+              <span>Official Tenant / Campus Name</span>
             </label>
             <input
               type="text"
@@ -130,7 +130,7 @@ export function TenantEditModal({
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
               <Database className="w-3.5 h-3.5 text-slate-400" />
-              <span>Nama Database MongoDB</span>
+              <span>MongoDB Database Name</span>
             </label>
             <input
               type="text"

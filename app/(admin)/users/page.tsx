@@ -240,9 +240,7 @@ export default function UsersPage() {
               <Users className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Across All Roles
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -257,9 +255,7 @@ export default function UsersPage() {
               <ShieldAlert className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-amber-600">
-            Full System Control
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -274,9 +270,7 @@ export default function UsersPage() {
               <Shield className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-indigo-600">
-            Operational Admin
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -291,9 +285,7 @@ export default function UsersPage() {
               <UserCheck className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-emerald-600">
-            Tenant Access Level
-          </div>
+
         </div>
       </div>
 
@@ -379,6 +371,7 @@ export default function UsersPage() {
         }}
         userToEdit={userToEdit}
         tenants={tenants}
+        currentUserRole={currentUserRole}
       />
 
       {/* Modal: Reset Password */}

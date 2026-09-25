@@ -122,7 +122,7 @@ export default function AuditLogsPage() {
             <div className="text-2xl font-extrabold text-slate-900 mt-1">
               {pagination.totalRecords}
             </div>
-            <span className="text-[11px] text-blue-500 font-semibold mt-1 block">Recorded in Database</span>
+            
           </div>
           <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold">
             <Activity className="w-6 h-6" />
@@ -135,7 +135,7 @@ export default function AuditLogsPage() {
             <div className="text-2xl font-extrabold text-emerald-600 mt-1">
               {logs.filter((l) => l.status === 'SUCCESS').length}
             </div>
-            <span className="text-[11px] text-emerald-500 font-semibold mt-1 block">Status SUCCESS</span>
+            
           </div>
           <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
             <CheckCircle2 className="w-6 h-6" />
@@ -148,7 +148,7 @@ export default function AuditLogsPage() {
             <div className="text-2xl font-extrabold text-slate-600 mt-1">
               {logs.filter((l) => l.status === 'FAILED').length}
             </div>
-            <span className="text-[11px] text-slate-400 font-semibold mt-1 block">Status FAILED</span>
+            
           </div>
           <div className="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center font-bold">
             <AlertTriangle className="w-6 h-6" />
@@ -161,7 +161,7 @@ export default function AuditLogsPage() {
             <div className="text-sm font-mono font-extrabold text-indigo-600 mt-1 truncate max-w-[140px]">
               {actionType === 'all' ? 'All Actions' : actionType}
             </div>
-            <span className="text-[11px] text-indigo-500 font-semibold mt-1 block">Filter Active</span>
+            
           </div>
           <div className="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center font-bold">
             <Layers className="w-6 h-6" />

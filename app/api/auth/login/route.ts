@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
       httpOnly: false,
       secure: isSecure,
       sameSite: 'lax',
-      maxAge: 600,
+      maxAge: 1800,
     });
 
     // Also set a signed/dedicated token cookie
@@ -79,14 +79,14 @@ export async function POST(request: NextRequest) {
       httpOnly: false,
       secure: isSecure,
       sameSite: 'lax',
-      maxAge: 600,
+      maxAge: 1800,
     });
 
     return response;
   } catch (error: any) {
     console.error('Superadmin Login API Error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Terjadi kesalahan internal pada server.' },
+      { success: false, error: error.message || 'Internal server error occurred.' },
       { status: 500 }
     );
   }

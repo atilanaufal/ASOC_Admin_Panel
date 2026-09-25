@@ -75,7 +75,7 @@ function httpRequest<T = any>(
 export async function getWazuhToken(): Promise<string> {
   const { url, user, password } = getWazuhConfig();
   if (!url) {
-    throw new Error('WAZUH_API_URL tidak terdefinisi');
+    throw new Error('WAZUH_API_URL is undefined');
   }
 
   const now = Date.now();
@@ -215,7 +215,7 @@ export async function setAgentGroup(agentId: string, groupId: string): Promise<{
     });
     return {
       success: true,
-      message: res.data?.affected_items?.[0] || `Agen ${cleanAgentId} berhasil dimasukkan ke grup ${cleanGroupId}.`,
+      message: res.data?.affected_items?.[0] || `Agent ${cleanAgentId} successfully added to group ${cleanGroupId}.`,
     };
   } catch (err: any) {
     console.error(`Error setting agent ${agentId} group to ${groupId}:`, err.message);
@@ -235,7 +235,7 @@ export async function removeAgentFromGroup(agentId: string, groupId: string): Pr
     });
     return {
       success: true,
-      message: res.data?.affected_items?.[0] || `Agen ${cleanAgentId} berhasil dikeluarkan dari grup ${cleanGroupId}.`,
+      message: res.data?.affected_items?.[0] || `Agent ${cleanAgentId} successfully removed from group ${cleanGroupId}.`,
     };
   } catch (err: any) {
     console.error(`Error removing agent ${agentId} from group ${groupId}:`, err.message);

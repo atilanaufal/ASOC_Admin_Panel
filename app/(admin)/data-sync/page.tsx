@@ -94,7 +94,7 @@ export default function DataSyncPage() {
   const [loading, setLoading] = useState(true);
 
   // Top Bar State: Time Period & Tenant
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('THIS_WEEK');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('TODAY');
   const [customStartDate, setCustomStartDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
@@ -550,7 +550,7 @@ export default function DataSyncPage() {
                           Wazuh Group: {JSON.stringify(t.wazuhGroups)}
                         </span>
                         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
-                          {collapsedCards[`alerts-${t.id || t.tenantCode}`] ? 'Buka' : 'Tutup'}
+                          {collapsedCards[`alerts-${t.id || t.tenantCode}`] ? 'Expand' : 'Collapse'}
                         </span>
                       </div>
                     </div>
@@ -684,7 +684,7 @@ export default function DataSyncPage() {
                           Wazuh Group: {JSON.stringify(t.wazuhGroups)}
                         </span>
                         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
-                          {collapsedCards[`vulns-${t.id || t.tenantCode}`] ? 'Buka' : 'Tutup'}
+                          {collapsedCards[`vulns-${t.id || t.tenantCode}`] ? 'Expand' : 'Collapse'}
                         </span>
                       </div>
                     </div>
@@ -793,7 +793,7 @@ export default function DataSyncPage() {
                 const collections = [
                   {
                     name: 'Security Incidents (incident)',
-                    detail: 'Hash per-hari (Event Based)',
+                    detail: 'Daily hash (Event Based)',
                     mongo: ra?.incidents?.mongo ?? t.totalMongoIncidents,
                     redis: ra?.incidents?.redis ?? 0,
                     isSynced: ra?.incidents?.isSynced ?? (t.totalMongoIncidents === 0),
@@ -854,7 +854,7 @@ export default function DataSyncPage() {
                           {isAllSynced ? '100% IN SYNC' : 'DISCREPANCY DETECTED'}
                         </span>
                         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
-                          {collapsedCards[`redis-${t.id || t.tenantCode}`] ? 'Buka' : 'Tutup'}
+                          {collapsedCards[`redis-${t.id || t.tenantCode}`] ? 'Expand' : 'Collapse'}
                         </span>
                       </div>
                     </div>
@@ -1041,7 +1041,7 @@ export default function DataSyncPage() {
                         {t.is_in_sync ? '100% SYNC' : 'MISMATCH'}
                       </span>
                       <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
-                        {collapsedCards[`iris-${t.tenant_code}`] ? 'Buka' : 'Tutup'}
+                        {collapsedCards[`iris-${t.tenant_code}`] ? 'Expand' : 'Collapse'}
                       </span>
                     </div>
                   </div>

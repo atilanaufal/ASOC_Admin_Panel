@@ -71,7 +71,7 @@ export async function GET(_request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/tenant-mapping/iris-customer GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat pemetaan IRIS Customer' },
+      { success: false, error: err.message || 'Failed to load IRIS Customer mapping' },
       { status: 500 }
     );
   }
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
 
     if (!tenantId) {
       return NextResponse.json(
-        { success: false, error: 'Tenant ID wajib diisi.' },
+        { success: false, error: 'Tenant ID is required.' },
         { status: 400 }
       );
     }
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
       await pool.query('DELETE FROM tenant_iris_customers WHERE tenant_id = ?', [tenantId]);
       return NextResponse.json({
         success: true,
-        message: 'Pemetaan customer IRIS berhasil dihapus untuk tenant tersebut.',
+        message: 'IRIS customer mapping successfully removed for this tenant.',
       });
     }
 
@@ -137,12 +137,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Berhasil memetakan tenant ke IRIS Customer #${cId} (${cleanName}).`,
+      message: `Successfully mapped tenant to IRIS Customer #${cId} (${cleanName}).`,
     });
   } catch (err: any) {
     console.error('API /api/tenant-mapping/iris-customer POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memperbarui pemetaan IRIS Customer.' },
+      { success: false, error: err.message || 'Failed to update IRIS Customer mapping.' },
       { status: 500 }
     );
   }

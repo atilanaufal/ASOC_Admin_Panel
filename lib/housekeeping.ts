@@ -49,7 +49,7 @@ export async function flushTenantRedisCache(params: {
   );
 
   if (!rows || rows.length === 0) {
-    throw new Error(`Tenant '${params.tenantCode}' tidak ditemukan.`);
+    throw new Error(`Tenant '${params.tenantCode}' not found.`);
   }
 
   const tenant = rows[0];
@@ -59,7 +59,7 @@ export async function flushTenantRedisCache(params: {
 
   const redis = await getActiveRedisClient();
   if (!redis) {
-    throw new Error('Koneksi Redis tidak tersedia saat ini.');
+    throw new Error('Redis connection is currently unavailable.');
   }
 
   // Determine key patterns to scan
@@ -142,7 +142,7 @@ export async function flushTenantRedisCache(params: {
     autoRepumpExecuted: Boolean(params.autoRepump),
     repumpedCount: params.autoRepump ? repumpedCount : undefined,
     executionDurationMs: durationMs,
-    message: `Sukses membersihkan ${totalDeleted} kunci cache (${params.scope}) untuk ${tenant.campus_name}.${
+    message: `Successfully cleared ${totalDeleted} cache keys (${params.scope}) for ${tenant.campus_name}.${
       params.autoRepump ? ` Memompa ulang ${repumpedCount} data segar dari MongoDB.` : ''
     }`,
   };
@@ -167,7 +167,7 @@ export async function cleanupMongoHistoricData(params: {
   );
 
   if (!rows || rows.length === 0) {
-    throw new Error(`Tenant '${params.tenantCode}' tidak ditemukan.`);
+    throw new Error(`Tenant '${params.tenantCode}' not found.`);
   }
 
   const tenant = rows[0];
@@ -191,7 +191,7 @@ export async function cleanupMongoHistoricData(params: {
 
     if (!isKeywordMatch) {
       throw new Error(
-        `Konfirmasi keamanan tidak cocok. Harap ketik '${tenant.campus_name}' atau 'PURGE' untuk melanjutkan.`
+        `Security confirmation does not match. Please enter '${tenant.campus_name}' or 'PURGE' to proceed.`
       );
     }
   }
@@ -247,10 +247,10 @@ export async function cleanupMongoHistoricData(params: {
     estimatedStorageFreedFormatted: formatBytes(estimatedStorageFreedBytes),
     executionDurationMs: durationMs,
     message: params.dryRun
-      ? `Simulasi Dry-Run: Terdeteksi ${totalMatchedDocs} dokumen lebih lama dari ${days} hari (${cutoffDateStr}) dengan estimasi ruang ${formatBytes(
+      ? `Dry-Run Simulation: Detected ${totalMatchedDocs} documents older than ${days} days (${cutoffDateStr}) dengan estimasi ruang ${formatBytes(
           estimatedStorageFreedBytes
         )}.`
-      : `Pembersihan berhasil: ${totalMatchedDocs} dokumen lama (${cutoffDateStr}) telah dimusnahkan. Estimasi ruang disk dibebaskan: ${formatBytes(
+      : `Cleanup successful: ${totalMatchedDocs} legacy documents (${cutoffDateStr}) purged. Estimated disk space freed: ${formatBytes(
           estimatedStorageFreedBytes
         )}.`,
   };

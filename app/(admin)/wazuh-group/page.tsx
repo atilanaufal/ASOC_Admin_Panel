@@ -211,9 +211,7 @@ export default function WazuhGroupPage() {
               <Building2 className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Registered Tenancies
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -228,9 +226,7 @@ export default function WazuhGroupPage() {
               <CheckCircle2 className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-emerald-600">
-            Active Routing Bound
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -245,9 +241,7 @@ export default function WazuhGroupPage() {
               <AlertCircle className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-rose-600">
-            Missing Group Filter
-          </div>
+
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
@@ -262,9 +256,7 @@ export default function WazuhGroupPage() {
               <Layers className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-[11px] font-semibold text-slate-500">
-            Telemetry Target Sync
-          </div>
+
         </div>
       </div>
 

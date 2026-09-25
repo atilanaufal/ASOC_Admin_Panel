@@ -220,7 +220,7 @@ export function UserTable({
                             </span>
                             <button
                               onClick={() => handleCopy(u.id, plainPw)}
-                              title="Salin Password"
+                              title="Copy Password"
                               className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition cursor-pointer"
                             >
                               {copiedId === u.id ? (
@@ -237,7 +237,7 @@ export function UserTable({
                         )}
                         <button
                           onClick={() => togglePassword(u.id)}
-                          title={isPasswordRevealed ? 'Sembunyikan Password' : 'Lihat Password'}
+                          title={isPasswordRevealed ? 'Hide Password' : 'Show Password'}
                           className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
                         >
                           {isPasswordRevealed ? (
@@ -271,7 +271,7 @@ export function UserTable({
                     {tenantActive ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200/60">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>AKTIF</span>
+                        <span>ACTIVE</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-200/60">
@@ -284,23 +284,41 @@ export function UserTable({
                   {/* Actions */}
                   <td className="py-3.5 px-4 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      {/* Reset Password Button */}
-                      <button
-                        onClick={() => onResetPassword(u)}
-                        title="Reset Password Pengguna"
-                        className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-[#00BCD4] hover:bg-cyan-50 transition-all cursor-pointer"
-                      >
-                        <KeyRound className="w-4 h-4" />
-                      </button>
+                      {/* Reset Password Button (Admin cannot change Superadmin password) */}
+                      {(() => {
+                        const isTargetSuperadmin = u.role === 'superadmin';
+                        const canModify = isSuperadmin || !isTargetSuperadmin;
+                        return (
+                          <>
+                            <button
+                              disabled={!canModify}
+                              onClick={() => canModify && onResetPassword(u)}
+                              title={canModify ? "Reset User Password" : "Superadmin password cannot be reset by Admin"}
+                              className={`p-2 rounded-xl transition-all ${
+                                canModify
+                                  ? "bg-slate-50 text-slate-400 hover:text-[#00BCD4] hover:bg-cyan-50 cursor-pointer"
+                                  : "bg-slate-100 text-slate-300 cursor-not-allowed"
+                              }`}
+                            >
+                              <KeyRound className="w-4 h-4" />
+                            </button>
 
-                      {/* Edit Profile Button */}
-                      <button
-                        onClick={() => onEditUser(u)}
-                        title="Edit Profil / Role"
-                        className="p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all cursor-pointer"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
+                            {/* Edit Profile Button (Admin cannot edit Superadmin account) */}
+                            <button
+                              disabled={!canModify}
+                              onClick={() => canModify && onEditUser(u)}
+                              title={canModify ? "Edit Profile / Role" : "Superadmin account cannot be edited by Admin"}
+                              className={`p-2 rounded-xl transition-all ${
+                                canModify
+                                  ? "bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer"
+                                  : "bg-slate-100 text-slate-300 cursor-not-allowed"
+                              }`}
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        );
+                      })()}
 
                       {/* Delete Button (Superadmin Only - Can delete all users including other admins) */}
                       {isSuperadmin && (

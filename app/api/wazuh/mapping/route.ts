@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
 
     if (!agentId || !tenantCode) {
       return NextResponse.json(
-        { success: false, error: 'Agent ID dan Kode Tenant Kampus wajib diisi.' },
+        { success: false, error: 'Agent ID and Tenant Code are required.' },
         { status: 400 }
       );
     }
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     if (!rows || rows.length === 0) {
       return NextResponse.json(
-        { success: false, error: `Tenant '${tenantCode}' tidak ditemukan di MySQL.` },
+        { success: false, error: `Tenant '${tenantCode}' not found in MySQL.` },
         { status: 404 }
       );
     }
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Agen ${agentId} (${agentName || 'Agent'}) berhasil dipetakan ke ${tenant.campus_name} (${tenant.tenant_code}).`,
+      message: `Agen ${agentId} (${agentName || 'Agent'}) successfully mapped to ${tenant.campus_name} (${tenant.tenant_code}).`,
       wazuhGroupUpdated: wazuhRes.success,
       mongoDevicesUpdated: mongoUpdated,
       tenant: {
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/wazuh/mapping POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memperbarui pemetaan agen' },
+      { success: false, error: err.message || 'Failed to update agent mapping' },
       { status: 500 }
     );
   }

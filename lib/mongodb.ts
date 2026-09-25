@@ -4,7 +4,7 @@ import { MongoClient, Db } from 'mongodb';
 function getMongoUri(): string {
   const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
   if (!uri) {
-    throw new Error('MONGODB_URI tidak terdefinisi di environment');
+    throw new Error('MONGODB_URI is undefined in environment');
   }
   return uri;
 }
@@ -62,7 +62,7 @@ export async function getMongoClient(): Promise<MongoClient> {
     lastFailureTime = Date.now();
     activeClientPromise = null;
     globalClient = null;
-    throw new Error(`MongoDB tidak dapat diakses (${uri}): ${err.message}`);
+    throw new Error(`MongoDB cannot be accessed (${uri}): ${err.message}`);
   }
 }
 

@@ -60,9 +60,9 @@ export function AuditLogTable({
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
         <Server className="w-12 h-12 text-slate-400 mx-auto mb-3 opacity-50" />
-        <h3 className="text-base font-bold text-slate-800">Tidak ada log audit ditemukan</h3>
+        <h3 className="text-base font-bold text-slate-800">No audit logs found</h3>
         <p className="text-xs text-slate-500 mt-1">
-          Tidak ada riwayat aktivitas administratif yang cocok dengan filter yang diterapkan.
+          No administrative activity history matching the applied filters.
         </p>
       </div>
     );
@@ -193,7 +193,7 @@ export function AuditLogTable({
       <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
         <div>
           Menampilkan <span className="font-bold text-slate-800">{logs.length}</span> dari{' '}
-          <span className="font-bold text-slate-800">{pagination.totalRecords}</span> aktivitas
+          <span className="font-bold text-slate-800">{pagination.totalRecords}</span> activities
         </div>
 
         <div className="flex items-center gap-2 font-mono">

@@ -68,7 +68,7 @@ export async function GET(_request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/tenant-mapping/wazuh-group GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat pemetaan Wazuh Group' },
+      { success: false, error: err.message || 'Failed to load Wazuh Group mapping' },
       { status: 500 }
     );
   }
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
     if (!tenantId) {
       return NextResponse.json(
-        { success: false, error: 'Tenant ID wajib diisi.' },
+        { success: false, error: 'Tenant ID is required.' },
         { status: 400 }
       );
     }
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       await pool.query('DELETE FROM tenant_wazuh_groups WHERE tenant_id = ?', [tenantId]);
       return NextResponse.json({
         success: true,
-        message: 'Pemetaan grup Wazuh berhasil dihapus untuk tenant tersebut.',
+        message: 'Wazuh group mapping successfully removed for this tenant.',
       });
     }
 
@@ -121,12 +121,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Berhasil memetakan tenant ke grup Wazuh "${cleanGroup}".`,
+      message: `Successfully mapped tenant to Wazuh group "${cleanGroup}".`,
     });
   } catch (err: any) {
     console.error('API /api/tenant-mapping/wazuh-group POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memperbarui pemetaan grup Wazuh.' },
+      { success: false, error: err.message || 'Failed to update Wazuh group mapping.' },
       { status: 500 }
     );
   }

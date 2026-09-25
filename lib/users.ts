@@ -171,7 +171,7 @@ export async function createUser(data: {
     });
 
     if (userCheck && userCheck[0] && userCheck[0].length > 0) {
-      return { success: false, error: `Pengguna dengan username '${username}' atau email '${email}' sudah terdaftar.` };
+      return { success: false, error: `User with username '${username}' or email '${email}' already exists.` };
     }
 
     // 2. Branch by Role
@@ -279,7 +279,7 @@ export async function createUser(data: {
     console.error('Error creating user:', err);
     return {
       success: false,
-      error: `Gagal membuat user: ${err.message}`,
+      error: `Failed to create user: ${err.message}`,
     };
   }
 }
@@ -307,7 +307,7 @@ export async function resetUserPassword(
       await pool.query('UPDATE admin_users SET password = ? WHERE id = ?', [passwordHash, admin.id]);
       return {
         success: true,
-        message: `Password untuk Admin '${admin.username}' berhasil diperbarui.`,
+        message: `Password for Admin '${admin.username}' successfully updated.`,
       };
     }
 
@@ -328,7 +328,7 @@ export async function resetUserPassword(
     }
 
     if (!users || users.length === 0) {
-      return { success: false, error: 'User tidak ditemukan.' };
+      return { success: false, error: 'User not found.' };
     }
 
     const user = users[0];
@@ -340,11 +340,11 @@ export async function resetUserPassword(
 
     return {
       success: true,
-      message: `Password untuk user '${user.username}' berhasil diperbarui. Seluruh sesi aktif telah dicabut.`,
+      message: `Password for user '${user.username}' successfully reset. All active sessions have been revoked.`,
     };
   } catch (err: any) {
     console.error('Error resetting password:', err);
-    return { success: false, error: `Gagal mereset password: ${err.message}` };
+    return { success: false, error: `Failed to reset password: ${err.message}` };
   }
 }
 
@@ -385,7 +385,7 @@ export async function updateUser(
         vals.push(admin.id);
         await pool.query(`UPDATE admin_users SET ${updates.join(', ')} WHERE id = ?`, vals);
       }
-      return { success: true, message: `Profil Admin '${admin.username}' berhasil diperbarui.` };
+      return { success: true, message: `Admin profile '${admin.username}' successfully updated.` };
     }
 
     // 2. Update tenant user in `users`
@@ -405,7 +405,7 @@ export async function updateUser(
     }
 
     if (!users || users.length === 0) {
-      return { success: false, error: 'User tidak ditemukan.' };
+      return { success: false, error: 'User not found.' };
     }
 
     const updates: string[] = [];
@@ -441,10 +441,10 @@ export async function updateUser(
     }
 
     const username = users[0].username;
-    return { success: true, message: `Profil user '${username}' berhasil diperbarui.` };
+    return { success: true, message: `User profile '${username}' successfully updated.` };
   } catch (err: any) {
     console.error('Error updating user:', err);
-    return { success: false, error: `Gagal memperbarui user: ${err.message}` };
+    return { success: false, error: `Failed to update user: ${err.message}` };
   }
 }
 
@@ -492,14 +492,14 @@ export async function deleteUser(
     }
 
     if (!users || users.length === 0) {
-      return { success: false, error: 'User tidak ditemukan.' };
+      return { success: false, error: 'User not found.' };
     }
 
     const user = users[0];
 
     // Prevent deleting own session account to avoid self-lockout
     if (currentSessionUsername && (user.username === currentSessionUsername || String(user.id) === currentSessionUsername)) {
-      return { success: false, error: 'Tidak dapat menghapus akun Anda sendiri yang sedang aktif digunakan.' };
+      return { success: false, error: 'Cannot delete your own active session account.' };
     }
 
     // 3. Delete from MySQL
@@ -527,10 +527,10 @@ export async function deleteUser(
 
     return {
       success: true,
-      message: `User '${user.username}' berhasil dihapus.`,
+      message: `User '${user.username}' successfully deleted.`,
     };
   } catch (err: any) {
     console.error('Error deleting user:', err);
-    return { success: false, error: `Gagal menghapus user: ${err.message}` };
+    return { success: false, error: `Failed to delete user: ${err.message}` };
   }
 }
