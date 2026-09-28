@@ -1,3 +1,4 @@
+import { argon2id, argon2Verify } from 'hash-wasm';
 import './env-loader';
 import mysql from 'mysql2/promise';
 import crypto from 'crypto';
@@ -28,6 +29,27 @@ export function getMysqlPool(): mysql.Pool {
     });
   }
   return activePool;
+}
+
+export async function hashPasswordArgon2id(password: string): Promise<string> {
+  const salt = crypto.randomBytes(16);
+  return await argon2id({
+    password,
+    salt,
+    parallelism: 4,
+    iterations: 3,
+    memorySize: 65536,
+    hashLength: 32,
+    outputType: 'encoded',
+  });
+}
+
+export async function verifyPasswordArgon2id(password: string, hash: string): Promise<boolean> {
+  try {
+    return await argon2Verify({ password, hash });
+  } catch {
+    return false;
+  }
 }
 
 export function hashPasswordSHA256(password: string): string {
@@ -170,22 +192,28 @@ export async function verifySuperadminCredentials(
     }
 
     const storedHash = user.password_hash;
-    const computedSha256 = hashPasswordSHA256(passwordInput);
-    const computedSha256SaltPrimary = hashPasswordSHA256Salted(passwordInput, MYSQL_SALT);
-    const computedSha256SaltDoc = hashPasswordSHA256Salted(passwordInput, 'tguard_secure_salt_2026');
-    const computedSha512Primary = hashPasswordSHA512(passwordInput, MYSQL_SALT);
-    const computedSha512Doc = hashPasswordSHA512(passwordInput, 'tguard_secure_salt_2026');
-    const computedSha512Raw = hashPasswordSHA512Raw(passwordInput);
+    let isMatch = false;
 
-    const isMatch = (
-      storedHash === computedSha256 ||
-      storedHash === computedSha256SaltPrimary ||
-      storedHash === computedSha256SaltDoc ||
-      storedHash === computedSha512Primary ||
-      storedHash === computedSha512Doc ||
-      storedHash === computedSha512Raw ||
-      storedHash === passwordInput
-    );
+    if (storedHash && storedHash.startsWith('$argon2')) {
+      isMatch = await verifyPasswordArgon2id(passwordInput, storedHash);
+    } else {
+      const computedSha256 = hashPasswordSHA256(passwordInput);
+      const computedSha256SaltPrimary = hashPasswordSHA256Salted(passwordInput, MYSQL_SALT);
+      const computedSha256SaltDoc = hashPasswordSHA256Salted(passwordInput, 'tguard_secure_salt_2026');
+      const computedSha512Primary = hashPasswordSHA512(passwordInput, MYSQL_SALT);
+      const computedSha512Doc = hashPasswordSHA512(passwordInput, 'tguard_secure_salt_2026');
+      const computedSha512Raw = hashPasswordSHA512Raw(passwordInput);
+
+      isMatch = (
+        storedHash === computedSha256 ||
+        storedHash === computedSha256SaltPrimary ||
+        storedHash === computedSha256SaltDoc ||
+        storedHash === computedSha512Primary ||
+        storedHash === computedSha512Doc ||
+        storedHash === computedSha512Raw ||
+        storedHash === passwordInput
+      );
+    }
 
     if (!isMatch) {
       return { success: false, error: 'Incorrect password.' };

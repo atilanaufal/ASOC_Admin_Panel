@@ -1,4 +1,4 @@
-import { getMysqlPool, hashPasswordSHA256 } from './mysql';
+import { getMysqlPool, hashPasswordArgon2id } from './mysql';
 import { auth, authDbPool } from './auth';
 import crypto from 'crypto';
 
@@ -148,7 +148,7 @@ export async function createUser(data: {
     const email = data.email?.trim() || `${username}@asoc.internal`;
     const rawRole = (data.role || '').toLowerCase();
     const role = (rawRole === 'superadmin' || rawRole === 'admin') ? rawRole : 'tenant';
-    const passwordHash = hashPasswordSHA256(data.password);
+    const passwordHash = await hashPasswordArgon2id(data.password);
     const newId = crypto.randomBytes(16).toString('hex');
 
     // 1. Check existing in admin_users or users
@@ -291,7 +291,7 @@ export async function resetUserPassword(
   const pool = getMysqlPool();
 
   try {
-    const passwordHash = hashPasswordSHA256(newPassword);
+    const passwordHash = await hashPasswordArgon2id(newPassword);
 
     // 1. Check in `admin_users`
     const [adminRows]: any = await pool.query(
