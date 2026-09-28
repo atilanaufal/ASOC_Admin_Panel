@@ -1,8 +1,31 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Play, CheckCircle2, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, Play, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
 import CustomSelect from '@/components/ui/CustomSelect';
+
+interface VulnerabilityDetailRow {
+  severity: string;
+  status: string;
+  indexer: number;
+  mongo: number;
+  diff: number;
+  statusText: string;
+}
+
+interface VulnerabilityDateRow {
+  date: string;
+  indexerMaster: number;
+  totalMongo: number;
+  diff?: number;
+  status: string;
+  details?: VulnerabilityDetailRow[];
+  subtotals?: {
+    active: { indexer: number; mongo: number; diff: number; statusText: string };
+    solved: { indexer: number; mongo: number; diff: number; statusText: string };
+  };
+  total?: { indexer: number; mongo: number; diff: number; statusText: string };
+}
 
 interface DateRow {
   date: string;
@@ -60,7 +83,7 @@ interface TenantAuditItem {
   redisAudit?: RedisAuditItem;
   dateBreakdown: DateRow[];
   dateBreakdownAlerts?: DateRow[];
-  dateBreakdownVulns?: DateRow[];
+  dateBreakdownVulns?: VulnerabilityDateRow[];
 }
 
 interface IrisCaseItem {
@@ -110,6 +133,11 @@ export default function DataSyncPage() {
 
   // Script Action States
   const [runningAction, setRunningAction] = useState<string | null>(null);
+  const [expandedVulnDates, setExpandedVulnDates] = useState<Record<string, boolean>>({});
+
+  const toggleVulnDate = (key: string) => {
+    setExpandedVulnDates((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // Cronjob State
   const [cronEnabled, setCronEnabled] = useState<boolean>(true);
@@ -185,7 +213,8 @@ export default function DataSyncPage() {
   }, [selectedPeriod, selectedTenant]);
 
   // Trigger Check
-  const handleRunCheck = async (checkScript: string) => {
+  const handleRunCheck = async (checkScript: string, targetTenant?: string) => {
+    const tenantToCheck = targetTenant || selectedTenant;
     setRunningAction(checkScript);
     try {
       const res = await fetch('/api/data-sync', {
@@ -197,7 +226,7 @@ export default function DataSyncPage() {
           period: selectedPeriod,
           startDate: selectedPeriod === 'CUSTOM' ? customStartDate : undefined,
           endDate: selectedPeriod === 'CUSTOM' ? customEndDate : undefined,
-          tenant: selectedTenant,
+          tenant: tenantToCheck,
         }),
       });
 
@@ -216,8 +245,10 @@ export default function DataSyncPage() {
   };
 
   // Trigger Sync
-  const handleRunSync = async (pipeline: string) => {
-    setRunningAction(`sync-${pipeline}`);
+  const handleRunSync = async (pipeline: string, targetTenant?: string) => {
+    const tenantToSync = targetTenant || selectedTenant;
+    const actionKey = targetTenant ? `sync-${pipeline}-${targetTenant}` : `sync-${pipeline}`;
+    setRunningAction(actionKey);
     try {
       const res = await fetch('/api/data-sync', {
         method: 'POST',
@@ -225,7 +256,7 @@ export default function DataSyncPage() {
         body: JSON.stringify({
           action: 'run-sync',
           pipeline,
-          tenant: selectedTenant,
+          tenant: tenantToSync,
           period: selectedPeriod,
           startDate: selectedPeriod === 'CUSTOM' ? customStartDate : undefined,
           endDate: selectedPeriod === 'CUSTOM' ? customEndDate : undefined,
@@ -624,6 +655,13 @@ export default function DataSyncPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               <button
+                onClick={() => handleRunCheck('check_vulnerability_indexer_mongo')}
+                disabled={Boolean(runningAction)}
+                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300/80 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                {runningAction === 'check_vulnerability_indexer_mongo' ? 'Checking...' : 'Run Vulnerabilities Check'}
+              </button>
+              <button
                 onClick={() => handleRunSync('vulnerabilities')}
                 disabled={Boolean(runningAction)}
                 className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
@@ -673,10 +711,21 @@ export default function DataSyncPage() {
                         <span className="text-slate-300 font-normal">|</span>
                         <span className="font-mono text-slate-600 font-normal text-xs">Database: {t.databaseName}</span>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-mono text-slate-500">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-slate-500 hidden sm:inline">
                           Wazuh Group: {JSON.stringify(t.wazuhGroups)}
                         </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRunSync('vulnerabilities', t.tenantCode);
+                          }}
+                          disabled={Boolean(runningAction)}
+                          className="px-2.5 py-1 text-[11px] font-bold text-cyan-700 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-lg shadow-2xs transition cursor-pointer disabled:opacity-50"
+                        >
+                          {runningAction === `sync-vulnerabilities-${t.tenantCode}` ? 'Syncing...' : `Sync [${t.tenantCode}]`}
+                        </button>
                         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
                           {collapsedCards[`vulns-${t.id || t.tenantCode}`] ? 'Expand' : 'Collapse'}
                         </span>
@@ -704,20 +753,153 @@ export default function DataSyncPage() {
                               </tr>
                             ) : (
                               breakdown.map((row, idx) => (
-                                <tr key={idx} className="hover:bg-slate-50">
-                                  <td className="py-3 px-4 font-semibold text-slate-900">{row.date}</td>
-                                  <td className="py-3 px-4 font-semibold text-slate-800">{row.indexerMaster}</td>
-                                  <td className="py-3 px-4 font-semibold text-slate-800">{row.totalMongo}</td>
-                                  <td className="py-3 px-4 text-right">
-                                    <span className={`px-2.5 py-1 rounded text-xs font-bold ${
-                                      row.status === 'SYNC'
-                                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
-                                        : 'text-rose-700 bg-rose-50 border border-rose-200/60'
-                                    }`}>
-                                      {row.status}
-                                    </span>
-                                  </td>
-                                </tr>
+                                <React.Fragment key={idx}>
+                                  <tr className="hover:bg-slate-50">
+                                    <td className="py-3 px-4 font-semibold text-slate-900">
+                                      <div className="flex items-center gap-2">
+                                        {row.details && row.details.length > 0 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleVulnDate(`${t.tenantCode}-${row.date}`)}
+                                            className="p-1 rounded-md hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                                            title="Klik untuk melihat detail rekonsiliasi"
+                                          >
+                                            {expandedVulnDates[`${t.tenantCode}-${row.date}`] ? (
+                                              <ChevronDown className="w-4 h-4 text-cyan-600" />
+                                            ) : (
+                                              <ChevronRight className="w-4 h-4 text-slate-400" />
+                                            )}
+                                          </button>
+                                        )}
+                                        <span>{row.date}</span>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4 font-semibold text-slate-800">{row.indexerMaster}</td>
+                                    <td className="py-3 px-4 font-semibold text-slate-800">{row.totalMongo}</td>
+                                    <td className="py-3 px-4 text-right">
+                                      <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                        row.status === 'SYNC'
+                                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                          : 'text-rose-700 bg-rose-50 border border-rose-200/60'
+                                      }`}>
+                                        {row.status}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                  {expandedVulnDates[`${t.tenantCode}-${row.date}`] && row.details && (
+                                    <tr className="bg-slate-50/80 border-b border-slate-200">
+                                      <td colSpan={4} className="p-3 sm:p-4">
+                                        <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
+                                          <div className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2.5 flex items-center justify-between">
+                                            <span className="flex items-center gap-1.5 text-cyan-800">
+                                              <span className="w-2 h-2 rounded-full bg-cyan-500 inline-block" />
+                                              DETAIL REKONSILIASI VULNERABILITY (TANGGAL: {row.date})
+                                            </span>
+                                            <span className="font-mono text-slate-400 font-normal text-[11px]">
+                                              Tenant: [{t.tenantCode}]
+                                            </span>
+                                          </div>
+                                          <div className="overflow-x-auto">
+                                            <table className="w-full text-left font-mono text-xs">
+                                              <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                                                <tr>
+                                                  <th className="py-2 px-3">SEVERITY</th>
+                                                  <th className="py-2 px-3">STATUS</th>
+                                                  <th className="py-2 px-3">INDEXER MASTER</th>
+                                                  <th className="py-2 px-3">MONGO DOKUMEN</th>
+                                                  <th className="py-2 px-3">SELISIH</th>
+                                                  <th className="py-2 px-3 text-right">STATUS</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                                {row.details.map((d: any, dIdx: number) => (
+                                                  <tr key={dIdx} className="hover:bg-slate-50">
+                                                    <td className="py-2 px-3 font-semibold text-slate-800">{d.severity}</td>
+                                                    <td className="py-2 px-3">
+                                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                        d.status === 'Active' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                                      }`}>
+                                                        {d.status}
+                                                      </span>
+                                                    </td>
+                                                    <td className="py-2 px-3 font-mono font-medium">{d.indexer}</td>
+                                                    <td className="py-2 px-3 font-mono font-medium">{d.mongo}</td>
+                                                    <td className="py-2 px-3 font-mono font-medium">{d.diff}</td>
+                                                    <td className="py-2 px-3 text-right">
+                                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                        d.diff === 0
+                                                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                                          : 'text-rose-700 bg-rose-50 border border-rose-200'
+                                                      }`}>
+                                                        {d.statusText}
+                                                      </span>
+                                                    </td>
+                                                  </tr>
+                                                ))}
+                                                {/* Subtotal Active */}
+                                                {row.subtotals?.active && (
+                                                  <tr className="bg-slate-100/60 font-semibold text-slate-800 border-t border-slate-200">
+                                                    <td className="py-2 px-3 font-bold text-slate-900">SUBTOTAL ACTIVE</td>
+                                                    <td className="py-2 px-3 text-amber-700 font-bold">Active</td>
+                                                    <td className="py-2 px-3 font-bold">{row.subtotals.active.indexer}</td>
+                                                    <td className="py-2 px-3 font-bold">{row.subtotals.active.mongo}</td>
+                                                    <td className="py-2 px-3 font-bold">{row.subtotals.active.diff}</td>
+                                                    <td className="py-2 px-3 text-right font-bold text-slate-700">
+                                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                        row.subtotals.active.diff === 0
+                                                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                                          : 'text-indigo-700 bg-indigo-50 border border-indigo-200'
+                                                      }`}>
+                                                        {row.subtotals.active.statusText}
+                                                      </span>
+                                                    </td>
+                                                  </tr>
+                                                )}
+                                                {/* Subtotal Solved */}
+                                                {row.subtotals?.solved && (
+                                                  <tr className="bg-slate-100/60 font-semibold text-slate-800 border-t border-slate-100">
+                                                    <td className="py-2 px-3 font-bold text-slate-900">SUBTOTAL SOLVED</td>
+                                                    <td className="py-2 px-3 text-blue-700 font-bold">Solved</td>
+                                                    <td className="py-2 px-3 font-bold">{row.subtotals.solved.indexer}</td>
+                                                    <td className="py-2 px-3 font-bold">{row.subtotals.solved.mongo}</td>
+                                                    <td className="py-2 px-3 font-bold">{row.subtotals.solved.diff}</td>
+                                                    <td className="py-2 px-3 text-right font-bold text-slate-700">
+                                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                        row.subtotals.solved.diff === 0
+                                                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                                          : 'text-indigo-700 bg-indigo-50 border border-indigo-200'
+                                                      }`}>
+                                                        {row.subtotals.solved.statusText}
+                                                      </span>
+                                                    </td>
+                                                  </tr>
+                                                )}
+                                                {/* Grand Total Tanggal */}
+                                                {row.total && (
+                                                  <tr className="bg-slate-200/50 font-bold text-slate-900 border-t-2 border-slate-300">
+                                                    <td colSpan={2} className="py-2 px-3 font-black text-slate-900">TOTAL TANGGAL {row.date}</td>
+                                                    <td className="py-2 px-3 font-black text-cyan-800">{row.total.indexer}</td>
+                                                    <td className="py-2 px-3 font-black text-cyan-800">{row.total.mongo}</td>
+                                                    <td className="py-2 px-3 font-black">{row.total.diff}</td>
+                                                    <td className="py-2 px-3 text-right font-black">
+                                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                        row.total.diff === 0
+                                                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                                          : 'text-indigo-700 bg-indigo-50 border border-indigo-200'
+                                                      }`}>
+                                                        {row.total.statusText}
+                                                      </span>
+                                                    </td>
+                                                  </tr>
+                                                )}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
                               ))
                             )}
                             <tr className="bg-slate-50 font-bold border-t border-slate-200 text-sm">

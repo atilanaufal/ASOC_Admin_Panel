@@ -20,7 +20,7 @@ export function getRemoteVmConfig() {
  */
 export async function runRemoteScript(
   commandStr: string,
-  timeoutMs: number = 60000
+  timeoutMs: number = 300000
 ): Promise<{ stdout: string; stderr: string; success: boolean }> {
   try {
     const { host: vmHost, user: vmUser } = getRemoteVmConfig();

@@ -3,11 +3,8 @@ import type { NextRequest } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getActiveRedisClient } from '@/lib/redis';
 import { getMysqlPool } from '@/lib/mysql';
-import { getRemoteVmConfig } from '@/lib/remote';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { getRemoteVmConfig, runRemoteScript } from '@/lib/remote';
+import { auditVulnerabilitiesForTenant, type VulnerabilityDateBreakdown } from '@/lib/vulnerability-audit';
 
 function toScriptPeriod(period: string, startDate?: string | null, endDate?: string | null): string {
   const p = (period || 'today').toLowerCase();
@@ -23,16 +20,7 @@ function toScriptPeriod(period: string, startDate?: string | null, endDate?: str
   return p;
 }
 
-async function runRemoteScript(commandStr: string): Promise<{ stdout: string; stderr: string; success: boolean }> {
-  try {
-    const { host: vmHost, user: vmUser } = getRemoteVmConfig();
-    const remoteCmd = `ssh -o BatchMode=yes -o ConnectTimeout=8 ${vmUser}@${vmHost} "${commandStr.replace(/"/g, '\\"')}"`;
-    const { stdout, stderr } = await execAsync(remoteCmd, { timeout: 60000 });
-    return { stdout: stdout.trim(), stderr: stderr.trim(), success: true };
-  } catch (err: any) {
-    return { stdout: (err.stdout || '').trim(), stderr: (err.stderr || err.message || '').trim(), success: false };
-  }
-}
+// runRemoteScript imported from @/lib/remote
 
 function computeNextRun(schedule: string): string {
   const now = new Date();
@@ -201,7 +189,7 @@ export async function GET(request: NextRequest) {
           const dbName = t.database_name;
 
           let dateBreakdownAlerts: { date: string; indexerMaster: number; totalMongo: number; status: string }[] = [];
-          let dateBreakdownVulns: { date: string; indexerMaster: number; totalMongo: number; status: string }[] = [];
+          let dateBreakdownVulns: VulnerabilityDateBreakdown[] = [];
           let totalMongoIncidents = 0;
           let totalMongoVulns = 0;
           let totalMongoReports = 0;
@@ -284,24 +272,32 @@ export async function GET(request: NextRequest) {
                 });
               }
 
-              dateBreakdownVulns = aggVuln.map((row: any) => ({
-                date: row._id || 'N/A',
-                indexerMaster: row.count,
-                totalMongo: row.count,
-                status: 'SYNC',
-              }));
+              dateBreakdownVulns = await auditVulnerabilitiesForTenant(
+                db,
+                dateRange.start || '',
+                dateRange.end || dateRange.start || '',
+                tenantAgents.ids,
+                tenantAgents.names
+              );
 
               if (dateBreakdownVulns.length === 0 && dateRange.start) {
                 dateBreakdownVulns.push({
                   date: dateRange.start,
                   indexerMaster: 0,
                   totalMongo: 0,
+                  diff: 0,
                   status: 'SYNC',
+                  details: [],
+                  subtotals: {
+                    active: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] SINKRON (0)' },
+                    solved: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] SINKRON (0)' }
+                  },
+                  total: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] SINKRON (0)' }
                 });
               }
 
               totalMongoIncidents = aggInc.reduce((sum: number, r: any) => sum + (r.count || 0), 0);
-              totalMongoVulns = aggVuln.reduce((sum: number, r: any) => sum + (r.count || 0), 0);
+              totalMongoVulns = dateBreakdownVulns.reduce((sum: number, r: any) => sum + (r.totalMongo || 0), 0);
               totalMongoReports = repCount;
             } catch (dbErr) {
               console.error(`MongoDB error on tenant ${dbName}:`, dbErr);
@@ -655,7 +651,7 @@ export async function POST(request: NextRequest) {
       if (checkScript === 'check_iris_reports') {
         cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_iris_reports.py --tenant ${tenant} --period ${scriptPeriod} --json`;
       } else if (checkScript === 'check_vulnerability_indexer_mongo') {
-        cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_vulnerability_indexer_mongo.py --tenant ${tenant} --mode ${scriptPeriod}`;
+        cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_vulnerability_indexer_mongo.py --tenant ${tenant} --mode ${scriptPeriod} --json`;
       } else if (checkScript === 'check_mongo_redis_multitenant') {
         cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_mongo_redis_multitenant_sync.py --tenant ${tenant} --period ${scriptPeriod}`;
       } else {
@@ -666,7 +662,7 @@ export async function POST(request: NextRequest) {
       const durationMs = Date.now() - startTime;
 
       let parsedJson = null;
-      if (checkScript === 'check_iris_reports' && res.stdout) {
+      if ((checkScript === 'check_iris_reports' || checkScript === 'check_vulnerability_indexer_mongo') && res.stdout) {
         try {
           parsedJson = JSON.parse(res.stdout);
         } catch {}
@@ -708,7 +704,7 @@ export async function POST(request: NextRequest) {
       cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/sync_alerts_indexer_mongo.py --tenant ${tenant} --period ${scriptPeriod}`;
     }
 
-    const res = await runRemoteScript(cmd);
+    const res = await runRemoteScript(cmd, 300000);
     const durationMs = Date.now() - startTime;
 
     return NextResponse.json({
@@ -716,7 +712,8 @@ export async function POST(request: NextRequest) {
       action: 'run-sync',
       pipeline,
       durationMs,
-      message: res.success ? 'Synchronization completed successfully' : 'Synchronization completed with warnings',
+      message: res.success ? 'Synchronization completed successfully' : (res.stderr || 'Synchronization completed with warnings'),
+      error: res.success ? undefined : (res.stderr || res.stdout || 'Sync failed'),
     });
   } catch (err: any) {
     console.error('API /api/data-sync POST Error:', err);
