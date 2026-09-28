@@ -655,13 +655,6 @@ export default function DataSyncPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={() => handleRunCheck('check_vulnerability_indexer_mongo')}
-                disabled={Boolean(runningAction)}
-                className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300/80 rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
-              >
-                {runningAction === 'check_vulnerability_indexer_mongo' ? 'Checking...' : 'Run Vulnerabilities Check'}
-              </button>
-              <button
                 onClick={() => handleRunSync('vulnerabilities')}
                 disabled={Boolean(runningAction)}
                 className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
@@ -711,21 +704,10 @@ export default function DataSyncPage() {
                         <span className="text-slate-300 font-normal">|</span>
                         <span className="font-mono text-slate-600 font-normal text-xs">Database: {t.databaseName}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-slate-500 hidden sm:inline">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-mono text-slate-500">
                           Wazuh Group: {JSON.stringify(t.wazuhGroups)}
                         </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRunSync('vulnerabilities', t.tenantCode);
-                          }}
-                          disabled={Boolean(runningAction)}
-                          className="px-2.5 py-1 text-[11px] font-bold text-cyan-700 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-lg shadow-2xs transition cursor-pointer disabled:opacity-50"
-                        >
-                          {runningAction === `sync-vulnerabilities-${t.tenantCode}` ? 'Syncing...' : `Sync [${t.tenantCode}]`}
-                        </button>
                         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
                           {collapsedCards[`vulns-${t.id || t.tenantCode}`] ? 'Expand' : 'Collapse'}
                         </span>
