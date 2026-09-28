@@ -6,7 +6,6 @@ import {
   UserPlus,
   Edit3,
   Building2,
-  Mail,
   Lock,
   Shield,
   Eye,
@@ -204,20 +203,7 @@ export function UserModal({
             )}
           </div>
 
-          {/* Email */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-slate-400" />
-              <span>Email Address (Optional)</span>
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. soc@tenant.org"
-              className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+
 
           {/* Role & Tenant ID in 2 columns */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

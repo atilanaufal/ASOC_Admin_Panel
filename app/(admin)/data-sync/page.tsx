@@ -749,10 +749,7 @@ export default function DataSyncPage() {
           <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="text-sm font-bold text-slate-900">
-                MongoDB - Redis Cache Reconciliation
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                Audit across all collections: incident, vulnerability, reports, and devices
+                MongoDB - Redis
               </div>
             </div>
 
@@ -970,9 +967,6 @@ export default function DataSyncPage() {
             <div>
               <div className="text-sm font-bold text-slate-900">
                 DFIR-IRIS - MongoDB
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                Investigation Case Reports
               </div>
             </div>
 

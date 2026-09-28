@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import {
   ShieldAlert,
   User as UserIcon,
-  Mail,
   Building2,
   Calendar,
   CheckCircle2,
@@ -132,10 +131,6 @@ export function UserTable({
                       <div>
                         <div className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
                           <span>{u.username || (u as any).name}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                          <Mail className="w-3 h-3 text-slate-400" />
-                          <span>{u.email || '-'}</span>
                         </div>
                       </div>
                     </div>

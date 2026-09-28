@@ -275,7 +275,7 @@ export default function UsersPage() {
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
           <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
-            User Biasa
+            User
           </span>
           <div className="my-2 flex items-center justify-between">
             <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -298,7 +298,7 @@ export default function UsersPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search username, email, tenant..."
+            placeholder="Search username, tenant..."
             className="w-full pl-10 pr-8 py-2.5 bg-[#F0F4F8] hover:bg-[#E9EEF5] focus:bg-white rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none border border-transparent focus:border-[#00BCD4] transition-all"
           />
           {searchQuery && (
