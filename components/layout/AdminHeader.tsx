@@ -16,7 +16,6 @@ interface UserProfile {
   id?: string;
   username?: string;
   name?: string;
-  email?: string;
   role?: string;
 }
 
@@ -101,7 +100,7 @@ export function AdminHeader({
       : user?.role === 'admin'
       ? 'Administrator'
       : user?.role || 'Administrator';
-  const displayEmail = user?.email || (user?.username ? `${user.username}@asoc.id` : 'superadmin@asoc.id');
+  const displayUsername = user?.username ? `@${user.username}` : `@admin`;
 
   return (
     <header className="h-16 bg-white border-b border-slate-200/80 flex items-center justify-between sticky top-0 z-30 select-none shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
@@ -171,7 +170,7 @@ export function AdminHeader({
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200/80 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-3.5 py-2 border-b border-slate-100">
                   <p className="text-xs font-bold text-slate-900">{roleLabel}</p>
-                  <p className="text-[11px] text-slate-400 truncate">{displayEmail}</p>
+                  <p className="text-[11px] text-slate-400 truncate">{displayUsername}</p>
                 </div>
                 <button
                   onClick={handleLogout}

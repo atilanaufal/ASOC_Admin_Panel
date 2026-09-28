@@ -266,9 +266,8 @@ export async function provisionTenant(
       initialAdminUsername = `analyst_${tenantCode.toLowerCase()}`;
       await createUser({
         username: initialAdminUsername,
-        email: payload.picEmail || `analyst@${slug}.ac.id`,
         password: payload.adminPassword,
-        role: 'tenant',
+        role: 'user',
         tenantId: newTenantId,
       });
       initialAdminCreated = true;

@@ -31,7 +31,6 @@ export async function POST(request: NextRequest) {
     const sessionData = {
       id: user.id,
       username: user.username,
-      email: user.email,
       role: sessionRole,
       tenantId: user.tenant_id || 0,
       tenantCode: user.tenant_code || 'MASTER',
@@ -59,7 +58,6 @@ export async function POST(request: NextRequest) {
         actionType: 'AUTH_LOGIN',
         targetResource: 'portal:auth',
         status: 'SUCCESS',
-        details: { email: user.email, role: sessionRole },
       });
     } catch {}
 

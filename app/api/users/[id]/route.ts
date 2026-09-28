@@ -17,7 +17,7 @@ export async function PUT(
     const userId = /^\d+$/.test(cleanId) ? parseInt(cleanId, 10) : cleanId;
 
     const body = await request.json();
-    const { action, newPassword, email, role, tenantId } = body;
+    const { action, newPassword, role, tenantId } = body;
 
     // Caller authorization check
     const authSession = (request.cookies.get('asoc_admin_session')?.value || request.cookies.get('auth_session')?.value);
@@ -95,7 +95,6 @@ export async function PUT(
 
     // 2. Action: Update User Profile
     const result = await updateUser(userId, {
-      email,
       role,
       tenantId: tenantId ? Number(tenantId) : undefined,
     });
@@ -115,7 +114,7 @@ export async function PUT(
         actionType: 'USER_UPDATE',
         targetResource: `user:id:${userId}`,
         status: 'SUCCESS',
-        details: { userId, email, role, tenantId },
+        details: { userId, role, tenantId },
       });
     } catch {}
 

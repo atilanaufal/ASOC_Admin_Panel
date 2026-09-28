@@ -95,7 +95,6 @@ export interface UserRecord {
   id: number | string;
   tenant_id: number;
   username: string;
-  email: string | null;
   role: 'superadmin' | 'tenant' | string;
   tenant_code?: string;
   campus_name?: string;
@@ -115,11 +114,11 @@ export async function verifySuperadminCredentials(
     // 1. Check `admin_users` table first (VM 192.168.30.184 specific)
     try {
       const [adminRows]: any = await conn.execute(
-        `SELECT id, username, name, email, password AS password_hash, role
+        `SELECT id, username, name, password AS password_hash, role
          FROM admin_users
-         WHERE username = ? OR email = ?
+         WHERE username = ?
          LIMIT 1`,
-        [usernameOrEmailInput, usernameOrEmailInput]
+        [usernameOrEmailInput]
       );
       if (Array.isArray(adminRows) && adminRows.length > 0) {
         user = {
@@ -144,7 +143,6 @@ export async function verifySuperadminCredentials(
             u.tenant_id, 
             COALESCE(u.name, '') AS username, 
             u.password AS password_hash, 
-            u.email,
             u.role,
             t.tenant_code, 
             t.campus_name, 
@@ -152,9 +150,9 @@ export async function verifySuperadminCredentials(
             t.redis_prefix
            FROM users u
            LEFT JOIN tenants t ON u.tenant_id = t.id
-           WHERE u.name = ? OR u.email = ?
+           WHERE u.name = ?
            LIMIT 1`,
-          [usernameOrEmailInput, usernameOrEmailInput]
+          [usernameOrEmailInput]
         );
         if (Array.isArray(userRows) && userRows.length > 0) {
           user = userRows[0];
@@ -234,7 +232,6 @@ export async function verifySuperadminCredentials(
         id: user.id,
         tenant_id: user.tenant_id || 0,
         username: user.username,
-        email: user.email,
         role: userRole === 'superadmin' ? 'superadmin' : 'admin',
         tenant_code: user.tenant_code || 'MASTER',
         campus_name: user.campus_name || 'ASOC Central Management',

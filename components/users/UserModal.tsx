@@ -43,9 +43,8 @@ export function UserModal({
   const isEditing = Boolean(userToEdit);
 
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('tenant');
+  const [role, setRole] = useState('user');
   const [tenantId, setTenantId] = useState<number>(1);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -55,15 +54,13 @@ export function UserModal({
   useEffect(() => {
     if (userToEdit) {
       setUsername(userToEdit.username);
-      setEmail(userToEdit.email || '');
-      setRole(userToEdit.role || 'tenant');
+      setRole(userToEdit.role || 'user');
       setTenantId(userToEdit.tenant_id || (tenants[0]?.id ?? 1));
       setPassword('');
     } else {
       setUsername('');
-      setEmail('');
       setPassword('');
-      setRole('tenant');
+      setRole('user');
       if (tenants.length > 0) {
         setTenantId(tenants[0].id);
       }
@@ -106,7 +103,6 @@ export function UserModal({
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            email,
             role,
             tenantId: role === 'admin' ? undefined : Number(tenantId),
           }),
@@ -126,7 +122,6 @@ export function UserModal({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             username: username.trim(),
-            email: email.trim() || undefined,
             password,
             role,
             tenantId: role === 'admin' ? undefined : Number(tenantId),
@@ -221,11 +216,11 @@ export function UserModal({
                     ? [
                         { value: 'superadmin', label: 'Superadmin' },
                         { value: 'admin', label: 'Admin' },
-                        { value: 'tenant', label: 'User' },
+                        { value: 'user', label: 'User' },
                       ]
                     : [
                         { value: 'admin', label: 'Admin' },
-                        { value: 'tenant', label: 'User' },
+                        { value: 'user', label: 'User' },
                       ]
                 }
                 className="w-full"

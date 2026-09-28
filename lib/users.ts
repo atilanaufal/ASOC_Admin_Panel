@@ -1,12 +1,11 @@
 import { getMysqlPool, hashPasswordArgon2id } from './mysql';
-import { auth, authDbPool } from './auth';
+import { authDbPool } from './auth';
 import crypto from 'crypto';
 
 export interface UserItem {
   id: number | string;
   tenant_id: number;
   username: string;
-  email: string | null;
   role: string;
   created_at: string | Date;
   tenant_code?: string;
@@ -40,7 +39,6 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
           id,
           0 AS tenant_id,
           COALESCE(username, name, '') AS username,
-          email,
           COALESCE(role, 'admin') AS role,
           created_at,
           '-' AS tenant_code,
@@ -59,8 +57,8 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
       }
       if (params.search && params.search.trim()) {
         const s = `%${params.search.trim()}%`;
-        adminQuery += ` AND (username LIKE ? OR email LIKE ? OR name LIKE ?)`;
-        adminParams.push(s, s, s);
+        adminQuery += ` AND (username LIKE ? OR name LIKE ?)`;
+        adminParams.push(s, s);
       }
       adminQuery += ` ORDER BY created_at DESC`;
       const [adminRows]: any = await pool.query(adminQuery, adminParams);
@@ -71,7 +69,7 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
   }
 
   // 2. Fetch Tenant Users from `users`
-  const shouldIncludeTenantUsers = !params.role || params.role === 'all' || params.role === 'tenant' || params.role === 'analyst';
+  const shouldIncludeTenantUsers = !params.role || params.role === 'all' || params.role === 'user' || params.role === 'tenant';
 
   if (shouldIncludeTenantUsers) {
     let query = `
@@ -79,7 +77,6 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
         u.id,
         u.tenant_id,
         COALESCE(u.name, '') AS username,
-        u.email,
         u.role,
         u.created_at,
         t.tenant_code,
@@ -99,15 +96,15 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
     }
 
     if (params.role && params.role !== 'all') {
-      const dbRole = params.role === 'admin' ? 'admin' : 'tenant';
+      const dbRole = params.role === 'admin' ? 'admin' : (params.role === 'user' ? 'user' : params.role);
       query += ` AND u.role = ?`;
       queryParams.push(dbRole);
     }
 
     if (params.search && params.search.trim()) {
       const searchTerm = `%${params.search.trim()}%`;
-      query += ` AND (u.name LIKE ? OR u.email LIKE ? OR t.campus_name LIKE ? OR t.tenant_code LIKE ?)`;
-      queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm);
+      query += ` AND (u.name LIKE ? OR t.campus_name LIKE ? OR t.tenant_code LIKE ?)`;
+      queryParams.push(searchTerm, searchTerm, searchTerm);
     }
 
     query += ` ORDER BY u.created_at DESC`;
@@ -117,12 +114,8 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
       if (Array.isArray(rows)) {
         allUsers.push(...rows);
       }
-    } catch {
-      const legacyQuery = query.replace('COALESCE(u.name, \'\') AS username,', 'u.username,').replace('u.name LIKE ?', 'u.username LIKE ?');
-      const [legacyRows]: any = await pool.query(legacyQuery, queryParams);
-      if (Array.isArray(legacyRows)) {
-        allUsers.push(...legacyRows);
-      }
+    } catch (e: any) {
+      console.error('Error fetching tenant users:', e);
     }
   }
 
@@ -131,12 +124,11 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
 
 /**
  * Creates a new user.
- * Role 'admin' -> Inserts into `admin_users` without tenant binding.
- * Role 'tenant' -> Inserts into `users` tied to tenant_id.
+ * Role 'superadmin' / 'admin' -> Inserts into `admin_users` without tenant binding.
+ * Role 'user' -> Inserts into `users` tied to tenant_id.
  */
 export async function createUser(data: {
   username: string;
-  email?: string;
   password: string;
   role: string;
   tenantId?: number | null;
@@ -145,64 +137,42 @@ export async function createUser(data: {
 
   try {
     const username = data.username.trim();
-    const email = data.email?.trim() || `${username}@asoc.internal`;
     const rawRole = (data.role || '').toLowerCase();
-    const role = (rawRole === 'superadmin' || rawRole === 'admin') ? rawRole : 'tenant';
+    const role = (rawRole === 'superadmin' || rawRole === 'admin') ? rawRole : 'user';
     const passwordHash = await hashPasswordArgon2id(data.password);
     const newId = crypto.randomBytes(16).toString('hex');
 
     // 1. Check existing in admin_users or users
     const [adminCheck]: any = await pool.query(
-      'SELECT id FROM admin_users WHERE username = ? OR email = ? LIMIT 1',
-      [username, email]
+      'SELECT id FROM admin_users WHERE username = ? LIMIT 1',
+      [username]
     );
     if (adminCheck && adminCheck.length > 0) {
-      return { success: false, error: `Pengguna dengan username '${username}' atau email '${email}' sudah terdaftar sebagai Admin.` };
+      return { success: false, error: `Pengguna dengan username '${username}' sudah terdaftar sebagai Admin.` };
     }
 
     const [userCheck]: any = await pool.query(
-      'SELECT id FROM users WHERE name = ? OR email = ? LIMIT 1',
-      [username, email]
-    ).catch(async () => {
-      return await pool.query('SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1', [username, email]);
-    });
+      'SELECT id FROM users WHERE name = ? LIMIT 1',
+      [username]
+    );
 
-    if (userCheck && userCheck[0] && userCheck[0].length > 0) {
-      return { success: false, error: `User with username '${username}' or email '${email}' already exists.` };
+    if (userCheck && userCheck.length > 0) {
+      return { success: false, error: `User with username '${username}' already exists.` };
     }
 
     // 2. Branch by Role
     if (role === 'superadmin' || role === 'admin') {
       // Platform Admin / Superadmin: stored in `admin_users`, NO tenant binding
       await pool.query(
-        'INSERT INTO admin_users (id, username, name, email, password, role) VALUES (?, ?, ?, ?, ?, ?)',
-        [newId, username, username, email, passwordHash, role]
+        'INSERT INTO admin_users (id, username, name, password, role) VALUES (?, ?, ?, ?, ?)',
+        [newId, username, username, passwordHash, role]
       );
-
-      // Sync with Better-Auth
-      try {
-        await auth.api.signUpEmail({
-          body: {
-            email,
-            password: data.password,
-            name: username,
-            username,
-            role,
-            tenantId: 0,
-            tenantCode: 'MASTER',
-            campusName: 'ASOC Central Management',
-            databaseName: '-',
-            redisPrefix: 'asoc_master',
-          } as any,
-        }).catch(() => {});
-      } catch {}
 
       return {
         success: true,
         user: {
           id: newId,
           username,
-          email,
           role,
           tenantId: null,
           campusName: '-',
@@ -211,7 +181,7 @@ export async function createUser(data: {
       };
     }
 
-    // Tenant Analyst: requires tenant
+    // Tenant User: requires tenant
     const tenantId = Number(data.tenantId) || 1;
     let tenantInfo = {
       tenant_code: 'TNT1',
@@ -228,45 +198,17 @@ export async function createUser(data: {
       tenantInfo = tenants[0];
     }
 
-    let insertedId: any = newId;
-    try {
-      await pool.query(
-        'INSERT INTO users (id, tenant_id, name, password, email, role) VALUES (?, ?, ?, ?, ?, ?)',
-        [newId, tenantId, username, passwordHash, email, 'tenant']
-      );
-    } catch {
-      const [insertResult]: any = await pool.query(
-        'INSERT INTO users (tenant_id, username, password_hash, email, role) VALUES (?, ?, ?, ?, ?)',
-        [tenantId, username, passwordHash, email, 'tenant']
-      );
-      insertedId = insertResult.insertId;
-    }
-
-    // Sync with Better-Auth
-    try {
-      await auth.api.signUpEmail({
-        body: {
-          email,
-          password: data.password,
-          name: username,
-          username,
-          role: 'tenant',
-          tenantId,
-          tenantCode: tenantInfo.tenant_code,
-          campusName: tenantInfo.campus_name,
-          databaseName: tenantInfo.database_name,
-          redisPrefix: tenantInfo.redis_prefix,
-        } as any,
-      }).catch(() => {});
-    } catch {}
+    await pool.query(
+      'INSERT INTO users (id, tenant_id, name, password, role) VALUES (?, ?, ?, ?, ?)',
+      [newId, tenantId, username, passwordHash, 'user']
+    );
 
     return {
       success: true,
       user: {
-        id: insertedId,
+        id: newId,
         username,
-        email,
-        role: 'tenant',
+        role: 'user',
         tenantId,
         campusName: tenantInfo.campus_name,
         databaseName: tenantInfo.database_name,
@@ -274,71 +216,48 @@ export async function createUser(data: {
     };
   } catch (err: any) {
     console.error('Error creating user:', err);
-    return {
-      success: false,
-      error: `Failed to create user: ${err.message}`,
-    };
+    return { success: false, error: `Failed to create user: ${err.message}` };
   }
 }
 
 /**
- * Resets user password in MySQL `admin_users` or `users` and synchronizes to Better-Auth.
+ * Resets user password in MySQL `users` or `admin_users` table.
  */
 export async function resetUserPassword(
   userId: number | string,
-  newPassword: string
+  newPasswordPlain: string
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   const pool = getMysqlPool();
 
   try {
-    const passwordHash = await hashPasswordArgon2id(newPassword);
+    const passwordHash = await hashPasswordArgon2id(newPasswordPlain);
 
     // 1. Check in `admin_users`
     const [adminRows]: any = await pool.query(
-      'SELECT id, username, email FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
+      'SELECT id, username FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
       [userId, userId]
     );
 
     if (adminRows && adminRows.length > 0) {
       const admin = adminRows[0];
       await pool.query('UPDATE admin_users SET password = ? WHERE id = ?', [passwordHash, admin.id]);
-      return {
-        success: true,
-        message: `Password for Admin '${admin.username}' successfully updated.`,
-      };
+      return { success: true, message: `Password for admin '${admin.username}' updated successfully.` };
     }
 
     // 2. Check in `users`
-    let users: any[] = [];
-    try {
-      const [res]: any = await pool.query(
-        'SELECT id, COALESCE(name, "") AS username, email FROM users WHERE id = ? LIMIT 1',
-        [userId]
-      );
-      users = res || [];
-    } catch {
-      const [res]: any = await pool.query(
-        'SELECT id, username, email FROM users WHERE id = ? LIMIT 1',
-        [userId]
-      );
-      users = res || [];
+    const [userRows]: any = await pool.query(
+      'SELECT id, COALESCE(name, "") AS username FROM users WHERE id = ? LIMIT 1',
+      [userId]
+    );
+
+    if (!userRows || userRows.length === 0) {
+      return { success: false, error: 'User not found in authentication database.' };
     }
 
-    if (!users || users.length === 0) {
-      return { success: false, error: 'User not found.' };
-    }
+    const user = userRows[0];
+    await pool.query('UPDATE users SET password = ? WHERE id = ?', [passwordHash, user.id]);
 
-    const user = users[0];
-    try {
-      await pool.query('UPDATE users SET password = ? WHERE id = ?', [passwordHash, user.id]);
-    } catch {
-      await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, user.id]);
-    }
-
-    return {
-      success: true,
-      message: `Password for user '${user.username}' successfully reset. All active sessions have been revoked.`,
-    };
+    return { success: true, message: `Password for user '${user.username}' updated successfully.` };
   } catch (err: any) {
     console.error('Error resetting password:', err);
     return { success: false, error: `Failed to reset password: ${err.message}` };
@@ -346,18 +265,23 @@ export async function resetUserPassword(
 }
 
 /**
- * Updates user profile (email, role, tenantId).
+ * Updates user profile / role / tenant assignment.
  */
 export async function updateUser(
   userId: number | string,
-  data: { email?: string; role?: string; tenantId?: number; username?: string; name?: string }
+  data: {
+    username?: string;
+    role?: string;
+    tenantId?: number;
+    name?: string;
+  }
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   const pool = getMysqlPool();
 
   try {
     // 1. Check if admin
     const [adminRows]: any = await pool.query(
-      'SELECT id, username, email FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
+      'SELECT id, username FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
       [userId, userId]
     );
 
@@ -365,10 +289,6 @@ export async function updateUser(
       const admin = adminRows[0];
       const updates: string[] = [];
       const vals: any[] = [];
-      if (data.email) {
-        updates.push('email = ?');
-        vals.push(data.email.trim());
-      }
       if (data.name || data.username) {
         updates.push('name = ?');
         vals.push((data.name || data.username || '').trim());
@@ -386,36 +306,21 @@ export async function updateUser(
     }
 
     // 2. Update tenant user in `users`
-    let users: any[] = [];
-    try {
-      const [res]: any = await pool.query(
-        'SELECT id, COALESCE(name, "") AS username FROM users WHERE id = ? LIMIT 1',
-        [userId]
-      );
-      users = res || [];
-    } catch {
-      const [res]: any = await pool.query(
-        'SELECT id, username FROM users WHERE id = ? LIMIT 1',
-        [userId]
-      );
-      users = res || [];
-    }
+    const [userRows]: any = await pool.query(
+      'SELECT id, COALESCE(name, "") AS username FROM users WHERE id = ? LIMIT 1',
+      [userId]
+    );
 
-    if (!users || users.length === 0) {
+    if (!userRows || userRows.length === 0) {
       return { success: false, error: 'User not found.' };
     }
 
     const updates: string[] = [];
     const values: any[] = [];
 
-    if (data.email !== undefined) {
-      updates.push('email = ?');
-      values.push(data.email.trim());
-    }
     if (data.role !== undefined) {
-      const dbRole = data.role === 'admin' ? 'admin' : 'tenant';
       updates.push('role = ?');
-      values.push(dbRole);
+      values.push(data.role || 'user');
     }
     if (data.tenantId !== undefined) {
       updates.push('tenant_id = ?');
@@ -423,13 +328,8 @@ export async function updateUser(
     }
     if (data.username !== undefined || data.name !== undefined) {
       const newName = (data.username || data.name || '').trim();
-      try {
-        updates.push('name = ?');
-        values.push(newName);
-      } catch {
-        updates.push('username = ?');
-        values.push(newName);
-      }
+      updates.push('name = ?');
+      values.push(newName);
     }
 
     if (updates.length > 0) {
@@ -437,7 +337,7 @@ export async function updateUser(
       await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
     }
 
-    const username = users[0].username;
+    const username = userRows[0].username;
     return { success: true, message: `User profile '${username}' successfully updated.` };
   } catch (err: any) {
     console.error('Error updating user:', err);
@@ -460,32 +360,24 @@ export async function deleteUser(
     let isFromAdminTable = false;
 
     // 1. Check in `users`
-    try {
-      const [res]: any = await pool.query(
-        'SELECT id, COALESCE(name, "") AS username, email, role FROM users WHERE id = ? LIMIT 1',
-        [userId]
-      );
-      users = res || [];
-    } catch {
-      const [res]: any = await pool.query(
-        'SELECT id, username, email, role FROM users WHERE id = ? LIMIT 1',
-        [userId]
-      );
-      users = res || [];
+    const [uRes]: any = await pool.query(
+      'SELECT id, COALESCE(name, "") AS username, role FROM users WHERE id = ? LIMIT 1',
+      [userId]
+    );
+    if (uRes && uRes.length > 0) {
+      users = uRes;
     }
 
     // 2. Check in `admin_users`
     if (!users || users.length === 0) {
-      try {
-        const [aRes]: any = await pool.query(
-          'SELECT id, username, email, role FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
-          [userId, userId]
-        );
-        if (aRes && aRes.length > 0) {
-          users = aRes;
-          isFromAdminTable = true;
-        }
-      } catch {}
+      const [aRes]: any = await pool.query(
+        'SELECT id, username, role FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
+        [userId, userId]
+      );
+      if (aRes && aRes.length > 0) {
+        users = aRes;
+        isFromAdminTable = true;
+      }
     }
 
     if (!users || users.length === 0) {
@@ -506,26 +398,7 @@ export async function deleteUser(
       await pool.query('DELETE FROM users WHERE id = ?', [user.id]);
     }
 
-    // 4. Delete from Better-Auth (optional)
-    try {
-      const userEmail = user.email || `${user.username}@asoc.internal`;
-      const [baUsers]: any = await authDbPool.query(
-        'SELECT id FROM user WHERE username = ? OR email = ? LIMIT 1',
-        [user.username, userEmail]
-      );
-
-      if (baUsers && baUsers.length > 0) {
-        const baUserId = baUsers[0].id;
-        await authDbPool.query('DELETE FROM session WHERE userId = ?', [baUserId]);
-        await authDbPool.query('DELETE FROM account WHERE userId = ?', [baUserId]);
-        await authDbPool.query('DELETE FROM user WHERE id = ?', [baUserId]);
-      }
-    } catch {}
-
-    return {
-      success: true,
-      message: `User '${user.username}' successfully deleted.`,
-    };
+    return { success: true, message: `User '${user.username}' successfully deleted.` };
   } catch (err: any) {
     console.error('Error deleting user:', err);
     return { success: false, error: `Failed to delete user: ${err.message}` };

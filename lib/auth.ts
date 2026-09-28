@@ -83,65 +83,12 @@ export async function syncSuperadminToBetterAuth(
   plainPassword: string
 ): Promise<{ success: boolean; error?: string; user?: any }> {
   try {
-    // 1. Verify against master users table with Superadmin role verification
     const check = await verifySuperadminCredentials(usernameOrEmail, plainPassword);
     if (!check.success || !check.user) {
       return { success: false, error: check.error || 'Authentication failed.' };
     }
 
-    const masterUser = check.user;
-    const userEmail = masterUser.email || `${masterUser.username}@asoc.internal`;
-
-    // 2. Optionally synchronize with Better Auth if tables exist
-    try {
-      const [existingRows]: any = await authDbPool.query(
-        'SELECT id, email, username, role FROM user WHERE username = ? OR email = ? LIMIT 1',
-        [masterUser.username, userEmail]
-      );
-
-      if (existingRows && existingRows.length > 0) {
-        const baUser = existingRows[0];
-        await authDbPool.query(
-          `UPDATE user SET 
-            role = ?, 
-            tenantId = ?, 
-            tenantCode = ?, 
-            campusName = ?, 
-            databaseName = ?, 
-            redisPrefix = ?
-           WHERE id = ?`,
-          [
-            masterUser.role || 'admin',
-            masterUser.tenant_id,
-            masterUser.tenant_code || 'MASTER',
-            masterUser.campus_name || 'ASOC Central Management',
-            masterUser.database_name || '-',
-            masterUser.redis_prefix || 'asoc_master',
-            baUser.id,
-          ]
-        );
-      } else {
-        await auth.api.signUpEmail({
-          body: {
-            email: userEmail,
-            password: plainPassword,
-            name: 'ASOC Superadmin',
-            username: masterUser.username,
-            role: 'superadmin',
-            tenantId: masterUser.tenant_id,
-            tenantCode: masterUser.tenant_code || 'MASTER',
-            campusName: masterUser.campus_name || 'ASOC Central Management',
-            databaseName: masterUser.database_name || '-',
-            redisPrefix: masterUser.redis_prefix || 'asoc_master',
-          } as any,
-        });
-      }
-    } catch (baErr: any) {
-      // Non-blocking: native admin_users / users authentication is the SSOT
-      console.warn('Better Auth sync skipped or table absent:', baErr.message);
-    }
-
-    return { success: true, user: masterUser };
+    return { success: true, user: check.user };
   } catch (err: any) {
     console.error('Error in syncSuperadminToBetterAuth:', err);
     return { success: false, error: err.message };

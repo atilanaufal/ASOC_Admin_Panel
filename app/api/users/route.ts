@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     const isSuperadmin = currentUser?.role === 'superadmin';
 
     const body = await request.json();
-    const { username, email, password, role, tenantId } = body;
+    const { username, password, role, tenantId } = body;
 
     if (!username || !password) {
       return NextResponse.json(
@@ -75,9 +75,8 @@ export async function POST(request: NextRequest) {
 
     const result = await createUser({
       username,
-      email,
       password,
-      role: role || 'tenant',
+      role: role || 'user',
       tenantId: (role === 'admin' || role === 'superadmin') ? null : (Number(tenantId) || 1),
     });
 
