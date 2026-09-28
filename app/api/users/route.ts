@@ -18,16 +18,7 @@ export async function GET(request: NextRequest) {
     }
     const isSuperadmin = currentUser?.role === 'superadmin';
 
-    const rawUsers = await listUsers({ tenant, role, search });
-
-    // Map users: only superadmin receives password
-    const users = rawUsers.map((u) => {
-      if (!isSuperadmin) {
-        const { password, ...rest } = u;
-        return rest;
-      }
-      return u;
-    });
+    const users = await listUsers({ tenant, role, search });
 
     return NextResponse.json({
       success: true,

@@ -14,7 +14,6 @@ export interface UserItem {
   database_name?: string;
   redis_prefix?: string;
   tenant_is_active?: number | boolean;
-  password?: string;
 }
 
 export interface ListUsersParams {
@@ -48,8 +47,7 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
           '-' AS campus_name,
           '-' AS database_name,
           '-' AS redis_prefix,
-          1 AS tenant_is_active,
-          COALESCE(password, '') AS password
+          1 AS tenant_is_active
         FROM admin_users
         WHERE 1=1
       `;
@@ -88,8 +86,7 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
         t.campus_name,
         t.database_name,
         t.redis_prefix,
-        t.is_active AS tenant_is_active,
-        COALESCE(u.password, '') AS password
+        t.is_active AS tenant_is_active
       FROM users u
       LEFT JOIN tenants t ON u.tenant_id = t.id
       WHERE 1=1

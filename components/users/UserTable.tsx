@@ -12,26 +12,10 @@ import {
   KeyRound,
   Trash2,
   Edit2,
-  Eye,
-  EyeOff,
-  Copy,
-  Check,
 } from 'lucide-react';
 import type { UserItem } from '@/lib/users';
 
-const KNOWN_HASHES: Record<string, string> = {
-  '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918': 'admin',
-  '41e5653fc7aeb894026d6bb7b2db7f65902b454945fa8fd65a6327047b5277fb': 'admin12345',
-};
 
-function formatPassword(raw?: string): string {
-  if (!raw) return '-';
-  const clean = raw.trim();
-  if (KNOWN_HASHES[clean]) {
-    return KNOWN_HASHES[clean];
-  }
-  return clean;
-}
 
 interface UserTableProps {
   users: UserItem[];
@@ -53,21 +37,6 @@ export function UserTable({
   onDeleteUser,
 }: UserTableProps) {
   const isSuperadmin = currentUserRole === 'superadmin';
-  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
-  const [copiedId, setCopiedId] = useState<string | number | null>(null);
-
-  const togglePassword = (id: string | number) => {
-    setRevealedPasswords((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
-
-  const handleCopy = (id: string | number, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
 
   if (loading) {
     return (
@@ -135,7 +104,6 @@ export function UserTable({
               <th className="py-3 px-4 rounded-l-xl">User & Account</th>
               <th className="py-3 px-4">Assigned Tenant</th>
               <th className="py-3 px-4">Role & Permissions</th>
-              {isSuperadmin && <th className="py-3 px-4">Password</th>}
               <th className="py-3 px-4">Registration Date</th>
               <th className="py-3 px-4">Access Status</th>
               <th className="py-3 px-4 rounded-r-xl text-right">Actions</th>
@@ -149,8 +117,6 @@ export function UserTable({
                 currentUsername &&
                 (u.username === currentUsername || String(u.id) === currentUsername)
               );
-              const isPasswordRevealed = Boolean(revealedPasswords[u.id]);
-              const plainPw = formatPassword(u.password);
 
               return (
                 <tr
@@ -208,47 +174,6 @@ export function UserTable({
 
                   {/* Role */}
                   <td className="py-3.5 px-4">{renderRoleBadge(u.role)}</td>
-
-                  {/* Password (Superadmin Only) */}
-                  {isSuperadmin && (
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-2">
-                        {isPasswordRevealed ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded select-all border border-slate-200/60">
-                              {plainPw}
-                            </span>
-                            <button
-                              onClick={() => handleCopy(u.id, plainPw)}
-                              title="Copy Password"
-                              className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition cursor-pointer"
-                            >
-                              {copiedId === u.id ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-slate-400 font-mono tracking-widest text-xs select-none">
-                            ••••••••
-                          </span>
-                        )}
-                        <button
-                          onClick={() => togglePassword(u.id)}
-                          title={isPasswordRevealed ? 'Hide Password' : 'Show Password'}
-                          className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
-                        >
-                          {isPasswordRevealed ? (
-                            <EyeOff className="w-3.5 h-3.5 text-slate-500" />
-                          ) : (
-                            <Eye className="w-3.5 h-3.5 text-blue-600" />
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                  )}
 
                   {/* Registered Date */}
                   <td className="py-3.5 px-4">
