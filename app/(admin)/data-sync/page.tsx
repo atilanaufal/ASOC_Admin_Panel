@@ -736,22 +736,20 @@ export default function DataSyncPage() {
                             ) : (
                               breakdown.map((row, idx) => (
                                 <React.Fragment key={idx}>
-                                  <tr className="hover:bg-slate-50">
+                                  <tr
+                                    onClick={() => row.details && row.details.length > 0 && toggleVulnDate(`${t.tenantCode}-${row.date}`)}
+                                    className={`hover:bg-slate-50 transition-colors ${row.details && row.details.length > 0 ? 'cursor-pointer' : ''}`}
+                                  >
                                     <td className="py-3 px-4 font-semibold text-slate-900">
                                       <div className="flex items-center gap-2">
                                         {row.details && row.details.length > 0 && (
-                                          <button
-                                            type="button"
-                                            onClick={() => toggleVulnDate(`${t.tenantCode}-${row.date}`)}
-                                            className="p-1 rounded-md hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition cursor-pointer"
-                                            title="Klik untuk melihat detail rekonsiliasi"
-                                          >
+                                          <span className="p-1 rounded-md text-slate-500 hover:text-slate-800 transition">
                                             {expandedVulnDates[`${t.tenantCode}-${row.date}`] ? (
                                               <ChevronDown className="w-4 h-4 text-cyan-600" />
                                             ) : (
                                               <ChevronRight className="w-4 h-4 text-slate-400" />
                                             )}
-                                          </button>
+                                          </span>
                                         )}
                                         <span>{row.date}</span>
                                       </div>
@@ -775,7 +773,7 @@ export default function DataSyncPage() {
                                           <div className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2.5 flex items-center justify-between">
                                             <span className="flex items-center gap-1.5 text-cyan-800">
                                               <span className="w-2 h-2 rounded-full bg-cyan-500 inline-block" />
-                                              DETAIL REKONSILIASI VULNERABILITY (TANGGAL: {row.date})
+                                              VULNERABILITY RECONCILIATION DETAILS (DATE: {row.date})
                                             </span>
                                             <span className="font-mono text-slate-400 font-normal text-[11px]">
                                               Tenant: [{t.tenantCode}]
@@ -788,8 +786,8 @@ export default function DataSyncPage() {
                                                   <th className="py-2 px-3">SEVERITY</th>
                                                   <th className="py-2 px-3">STATUS</th>
                                                   <th className="py-2 px-3">INDEXER MASTER</th>
-                                                  <th className="py-2 px-3">MONGO DOKUMEN</th>
-                                                  <th className="py-2 px-3">SELISIH</th>
+                                                  <th className="py-2 px-3">MONGO DOCUMENTS</th>
+                                                  <th className="py-2 px-3">DIFFERENCE</th>
                                                   <th className="py-2 px-3 text-right">STATUS</th>
                                                 </tr>
                                               </thead>
@@ -859,7 +857,7 @@ export default function DataSyncPage() {
                                                 {/* Grand Total Tanggal */}
                                                 {row.total && (
                                                   <tr className="bg-slate-200/50 font-bold text-slate-900 border-t-2 border-slate-300">
-                                                    <td colSpan={2} className="py-2 px-3 font-black text-slate-900">TOTAL TANGGAL {row.date}</td>
+                                                    <td colSpan={2} className="py-2 px-3 font-black text-slate-900">TOTAL DATE {row.date}</td>
                                                     <td className="py-2 px-3 font-black text-cyan-800">{row.total.indexer}</td>
                                                     <td className="py-2 px-3 font-black text-cyan-800">{row.total.mongo}</td>
                                                     <td className="py-2 px-3 font-black">{row.total.diff}</td>
@@ -947,29 +945,25 @@ export default function DataSyncPage() {
 
                 const collections = [
                   {
-                    name: 'Security Incidents (incident)',
-                    detail: 'Daily hash (Event Based)',
+                    name: 'Alerts',
                     mongo: ra?.incidents?.mongo ?? t.totalMongoIncidents,
                     redis: ra?.incidents?.redis ?? 0,
                     isSynced: ra?.incidents?.isSynced ?? (t.totalMongoIncidents === 0),
                   },
                   {
-                    name: 'Package Vulnerabilities (vulnerability)',
-                    detail: 'This Week Cache (Wazuh Vulnerabilities)',
+                    name: 'Vulnerabilities',
                     mongo: ra?.vulnerabilities?.mongo ?? 0,
                     redis: ra?.vulnerabilities?.redis ?? 0,
                     isSynced: ra?.vulnerabilities?.isSynced ?? ((ra?.vulnerabilities?.mongo ?? 0) === (ra?.vulnerabilities?.redis ?? 0)),
                   },
                   {
-                    name: 'Investigation Reports (reports)',
-                    detail: 'DFIR-IRIS Investigation Reports',
+                    name: 'IRIS Reports',
                     mongo: ra?.reports?.mongo ?? 0,
                     redis: ra?.reports?.redis ?? 0,
                     isSynced: ra?.reports?.isSynced ?? true,
                   },
                   {
-                    name: 'Device Inventory (devices)',
-                    detail: 'Wazuh Agent Device Inventory',
+                    name: 'Devices',
                     mongo: ra?.devices?.mongo ?? 0,
                     redis: ra?.devices?.redis ?? 0,
                     isSynced: ra?.devices?.isSynced ?? true,
@@ -1020,7 +1014,7 @@ export default function DataSyncPage() {
                         <table className="w-full text-left font-mono text-sm">
                           <thead className="bg-slate-100 text-slate-800 font-bold text-xs uppercase tracking-wider">
                             <tr>
-                              <th className="py-3 px-4 rounded-l-xl">COLLECTION / TELEMETRY METRIC</th>
+                              <th className="py-3 px-4 rounded-l-xl">COLLECTION</th>
                               <th className="py-3 px-4">MONGO MASTER</th>
                               <th className="py-3 px-4">REDIS CACHE</th>
                               <th className="py-3 px-4 rounded-r-xl text-right">STATUS</th>
@@ -1031,7 +1025,6 @@ export default function DataSyncPage() {
                               <tr key={idx} className="hover:bg-slate-50">
                                 <td className="py-3.5 px-4 font-sans">
                                   <div className="font-semibold text-slate-900 text-sm">{item.name}</div>
-                                  <div className="text-xs text-slate-400 font-mono">{item.detail}</div>
                                 </td>
                                 <td className="py-3.5 px-4 font-bold text-slate-900 text-sm">{item.mongo}</td>
                                 <td className="py-3.5 px-4 font-bold text-indigo-600 text-sm">{item.redis}</td>
@@ -1050,8 +1043,7 @@ export default function DataSyncPage() {
                             {/* Historical Stats KPI Row */}
                             <tr className="hover:bg-slate-50">
                               <td className="py-3.5 px-4 font-sans">
-                                <div className="font-semibold text-slate-900 text-sm">Historical Stats (Weekly KPI)</div>
-                                <div className="text-xs text-slate-400 font-mono">14-day aggregated telemetry KPIs</div>
+                                <div className="font-semibold text-slate-900 text-sm">Historical Stats</div>
                               </td>
                               <td className="py-3.5 px-4 font-medium text-slate-700 text-sm font-sans">Available</td>
                               <td className="py-3.5 px-4 font-medium text-indigo-600 text-sm font-sans">
@@ -1076,7 +1068,7 @@ export default function DataSyncPage() {
                     {!collapsedCards[`redis-${t.id || t.tenantCode}`] && ra?.incidents?.dateBreakdown && ra.incidents.dateBreakdown.length > 0 && (
                       <div className="p-4 bg-slate-50/70 border-t border-slate-200/70">
                         <div className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center justify-between">
-                          <span>Incidents Daily Breakdown (Date Hash Keys)</span>
+                          <span>Alert Daily Breakdown</span>
                           <span className="text-xs text-slate-500 font-mono">
                             Total: Mongo {ra.incidents.mongo} / Redis {ra.incidents.redis}
                           </span>

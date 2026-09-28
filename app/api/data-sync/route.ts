@@ -289,10 +289,10 @@ export async function GET(request: NextRequest) {
                   status: 'SYNC',
                   details: [],
                   subtotals: {
-                    active: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] SINKRON (0)' },
-                    solved: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] SINKRON (0)' }
+                    active: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] 100% SYNC' },
+                    solved: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] 100% SYNC' }
                   },
-                  total: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] SINKRON (0)' }
+                  total: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] 100% SYNC' }
                 });
               }
 
