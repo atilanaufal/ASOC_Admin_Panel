@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
 
     if (!username || !password) {
       return NextResponse.json(
-        { success: false, error: 'Username/Email and Password are required.' },
+        { success: false, error: 'Username and Password are required.' },
         { status: 400 }
       );
     }

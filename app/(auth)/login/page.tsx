@@ -39,7 +39,7 @@ function LoginForm() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password) {
-      setErrorMessage('Please enter username/email and password.');
+      setErrorMessage('Please enter username and password.');
       return;
     }
 
@@ -99,10 +99,10 @@ function LoginForm() {
       )}
 
       <form onSubmit={handleLogin} className="space-y-5">
-        {/* Username / Email */}
+        {/* Username */}
         <div>
           <label className="block text-xs font-bold text-slate-700 mb-2">
-            Username / Email
+            Username
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -112,7 +112,7 @@ function LoginForm() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="superadmin"
+              placeholder="Username"
               required
               autoFocus
               className="w-full pl-10 pr-4 py-2.5 bg-[#F0F4F8] hover:bg-[#E9EEF5] focus:bg-white border border-transparent focus:border-blue-400 rounded-xl text-sm text-slate-900 placeholder-slate-400 outline-none transition-all"
