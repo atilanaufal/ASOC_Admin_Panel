@@ -415,10 +415,10 @@ export default function DataSyncPage() {
 
       {/* 3 TOP KPI CARDS (NO PIPELINE PARITY, NO SUBTEXT, NO BADGE) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Card 1: Security Incidents */}
+        {/* Card 1: Alert */}
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between">
           <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
-            Security Incidents
+            Alert
           </span>
           <div className="my-2">
             <div className="text-3xl font-extrabold text-slate-800 tracking-tight">
@@ -439,10 +439,10 @@ export default function DataSyncPage() {
           </div>
         </div>
 
-        {/* Card 3: Investigation Cases */}
+        {/* Card 3: IRIS Cases */}
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between">
           <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
-            Investigation Cases
+            IRIS Cases
           </span>
           <div className="my-2">
             <div className="text-3xl font-extrabold text-slate-800 tracking-tight">
@@ -458,7 +458,7 @@ export default function DataSyncPage() {
           { id: 'alerts', label: 'Alerts' },
           { id: 'vulnerabilities', label: 'Vulnerabilities' },
           { id: 'redis', label: 'Redis' },
-          { id: 'iris', label: 'IRIS' },
+          { id: 'iris', label: 'IRIS Cases' },
           { id: 'cronjob', label: 'CronJob' },
         ].map((tab) => {
           const isActive = activeTab === tab.id;
@@ -487,10 +487,7 @@ export default function DataSyncPage() {
           <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="text-sm font-bold text-slate-900">
-                Indexer - MongoDB (Alerts)
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                Security Alerts (rule.level ≥ 7)
+                Indexer - MongoDB (Alerts - rule.level ≥ 7)
               </div>
             </div>
 
@@ -621,10 +618,7 @@ export default function DataSyncPage() {
           <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="text-sm font-bold text-slate-900">
-                Indexer - MongoDB (Vulnerabilities)
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                Package Vulnerabilities (Medium - Critical)
+                Indexer - MongoDB (Vulnerabilities - Medium - Critical)
               </div>
             </div>
 

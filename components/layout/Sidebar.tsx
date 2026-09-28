@@ -66,30 +66,30 @@ const NAV_ITEMS: NavItem[] = [
 
   // User Authentication
   {
-    label: 'User Management',
-    href: '/users',
-    icon: <Users className="w-[18px] h-[18px]" />,
-    category: 'User Authentication',
-  },
-  {
     label: 'Tenant Management',
     href: '/tenants',
     icon: <Building2 className="w-[18px] h-[18px]" />,
     category: 'User Authentication',
   },
+  {
+    label: 'User Management',
+    href: '/users',
+    icon: <Users className="w-[18px] h-[18px]" />,
+    category: 'User Authentication',
+  },
 
-  // Data Mapping
+  // Group Management
   {
     label: 'Wazuh Group Mapping',
     href: '/wazuh-group',
     icon: <ShieldAlert className="w-[18px] h-[18px]" />,
-    category: 'Data Mapping',
+    category: 'Group Management',
   },
   {
     label: 'IRIS Customer Mapping',
     href: '/iris-customer',
     icon: <FolderTree className="w-[18px] h-[18px]" />,
-    category: 'Data Mapping',
+    category: 'Group Management',
   },
 ];
 
@@ -105,7 +105,7 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
     'System Monitoring',
     'System Maintenance',
     'User Authentication',
-    'Data Mapping',
+    'Group Management',
   ];
 
   return (

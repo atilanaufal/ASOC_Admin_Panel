@@ -353,7 +353,7 @@ export default function DataRetentionPage() {
                   <th className="py-3 px-4 rounded-l-xl">Tenant Profile</th>
                   <th className="py-3 px-4">MongoDB</th>
                   <th className="py-3 px-4">Stored Documents</th>
-                  <th className="py-3 px-4">Disk Capacity</th>
+                  <th className="py-3 px-4">Disk Usage</th>
                   <th className="py-3 px-4">MongoDB TTL</th>
                   <th className="py-3 px-4">Redis TTL</th>
                   <th className="py-3 px-4 rounded-r-xl text-right">Action</th>

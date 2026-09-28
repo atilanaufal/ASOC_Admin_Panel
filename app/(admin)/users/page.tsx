@@ -275,7 +275,7 @@ export default function UsersPage() {
 
         <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
           <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
-            Tenant Analysts
+            User Biasa
           </span>
           <div className="my-2 flex items-center justify-between">
             <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -337,7 +337,7 @@ export default function UsersPage() {
               { value: 'all', label: 'All Roles' },
               { value: 'superadmin', label: 'Superadmin' },
               { value: 'admin', label: 'Admin' },
-              { value: 'tenant', label: 'Analyst' },
+              { value: 'tenant', label: 'User' },
             ]}
             icon={<Shield className="w-3.5 h-3.5 text-indigo-500" />}
             className="w-full sm:w-48"

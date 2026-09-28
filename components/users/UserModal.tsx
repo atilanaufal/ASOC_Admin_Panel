@@ -235,11 +235,11 @@ export function UserModal({
                     ? [
                         { value: 'superadmin', label: 'Superadmin' },
                         { value: 'admin', label: 'Admin' },
-                        { value: 'tenant', label: 'Analyst' },
+                        { value: 'tenant', label: 'User' },
                       ]
                     : [
                         { value: 'admin', label: 'Admin' },
-                        { value: 'tenant', label: 'Analyst' },
+                        { value: 'tenant', label: 'User' },
                       ]
                 }
                 className="w-full"

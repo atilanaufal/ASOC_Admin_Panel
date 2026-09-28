@@ -81,7 +81,7 @@ export function UserTable({
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
         <UserIcon className="w-3.5 h-3.5 text-emerald-500" />
-        <span>ANALYST</span>
+        <span>USER</span>
       </span>
     );
   };
@@ -132,15 +132,6 @@ export function UserTable({
                       <div>
                         <div className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
                           <span>{u.username || (u as any).name}</span>
-                          {u.role === 'superadmin' ? (
-                            <span className="text-[10px] font-mono text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                              SUPERADMIN
-                            </span>
-                          ) : u.role === 'admin' ? (
-                            <span className="text-[10px] font-mono text-indigo-600 font-bold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
-                              ADMIN
-                            </span>
-                          ) : null}
                         </div>
                         <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                           <Mail className="w-3 h-3 text-slate-400" />
@@ -165,9 +156,7 @@ export function UserTable({
                           </span>
                           <span>{u.campus_name || 'Tenant'}</span>
                         </div>
-                        <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                          DB: {u.database_name || '-'}
-                        </div>
+
                       </div>
                     )}
                   </td>
