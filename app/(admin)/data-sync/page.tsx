@@ -161,7 +161,6 @@ export default function DataSyncPage() {
 
   const fetchAuditData = async (
     period = selectedPeriod,
-    tenant = selectedTenant,
     start = customStartDate,
     end = customEndDate
   ) => {
@@ -169,7 +168,7 @@ export default function DataSyncPage() {
     try {
       const params = new URLSearchParams();
       params.set('period', period);
-      if (tenant) params.set('tenant', tenant);
+      params.set('tenant', 'all');
       if (period === 'CUSTOM') {
         if (start) params.set('startDate', start);
         if (end) params.set('endDate', end);
@@ -214,9 +213,9 @@ export default function DataSyncPage() {
   }, [activeTab, selectedPeriod]);
 
   useEffect(() => {
-    fetchAuditData(selectedPeriod, selectedTenant, customStartDate, customEndDate);
+    fetchAuditData(selectedPeriod, customStartDate, customEndDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeriod, selectedTenant]);
+  }, [selectedPeriod]);
 
   // Trigger Check
   const handleRunCheck = async (checkScript: string, targetTenant?: string) => {
@@ -412,7 +411,7 @@ export default function DataSyncPage() {
                 className="text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#00BCD4]"
               />
               <button
-                onClick={() => fetchAuditData('CUSTOM', selectedTenant, customStartDate, customEndDate)}
+                onClick={() => fetchAuditData('CUSTOM', customStartDate, customEndDate)}
                 className="px-2.5 py-1 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-lg transition cursor-pointer"
               >
                 Apply
@@ -440,7 +439,7 @@ export default function DataSyncPage() {
           />
 
           <button
-            onClick={() => fetchAuditData(selectedPeriod, selectedTenant, customStartDate, customEndDate)}
+            onClick={() => fetchAuditData(selectedPeriod, customStartDate, customEndDate)}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/80 shadow-2xs rounded-xl transition-all disabled:opacity-50 cursor-pointer"
           >
