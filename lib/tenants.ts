@@ -3,7 +3,6 @@ import { getMongoClient } from './mongodb';
 import { getActiveRedisClient } from './redis';
 import { createUser } from './users';
 import { formatBytes, slugifyCampusName } from './tenant-utils';
-import { runRemoteScript } from './remote';
 
 export { formatBytes, slugifyCampusName };
 
@@ -211,16 +210,14 @@ export async function provisionTenant(
       };
     }
 
-    // Step 1: Execute local provisioning script on the remote VM host using /opt/venv/bin/python.
-    // register_tenant.py registers tenant in MySQL auth_db, maps wazuh_group and iris_customer if provided,
-    // and initializes the MongoDB database with all 5 collections and composite indexes.
-    const createTenantCmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/register_tenant.py --code "${tenantCode}" --name "${campusName}" --db "${databaseName}"`;
-    const remoteRes = await runRemoteScript(createTenantCmd);
-    if (!remoteRes.success && remoteRes.stderr && !remoteRes.stdout.includes('PENDAFTARAN TENANT BERHASIL')) {
-      console.warn('register_tenant warning:', remoteRes.stderr || remoteRes.stdout);
-    }
+    // Step 1: Native registration in MySQL
+    const [insertTenant]: any = await mysqlPool.query(
+      `INSERT INTO tenants (tenant_code, campus_name, database_name, redis_prefix, is_active) 
+       VALUES (?, ?, ?, ?, 1)
+       ON DUPLICATE KEY UPDATE campus_name = VALUES(campus_name), database_name = VALUES(database_name), redis_prefix = VALUES(redis_prefix)`,
+      [tenantCode, campusName, databaseName, redisPrefix]
+    );
 
-    // Step 2: Retrieve registered tenant ID from MySQL
     let newTenantId = 0;
     const [rows]: any = await mysqlPool.query(
       'SELECT id FROM tenants WHERE tenant_code = ? LIMIT 1',
@@ -229,15 +226,48 @@ export async function provisionTenant(
     if (rows && rows.length > 0) {
       newTenantId = rows[0].id;
     } else {
-      const [insertTenant]: any = await mysqlPool.query(
-        'INSERT INTO tenants (tenant_code, campus_name, database_name, redis_prefix, is_active) VALUES (?, ?, ?, ?, 1)',
-        [tenantCode, campusName, databaseName, redisPrefix]
-      );
       newTenantId = insertTenant.insertId;
     }
 
-    // Step 3: Run init_indexes.py locally on VM using /opt/venv/bin/python
-    await runRemoteScript('/opt/venv/bin/python /opt/multi-tenant/scripts/init_indexes.py');
+    // Step 2: Initialize MongoDB collections and indexes natively (zero Python execution)
+    try {
+      const mongoClient = await getMongoClient();
+      const db = mongoClient.db(databaseName);
+      const TTL_30_DAYS = 30 * 24 * 3600;
+      const TTL_60_DAYS = 60 * 24 * 3600;
+
+      // incident
+      const inc = db.collection('incident');
+      await inc.createIndex({ date: 1, severity: 1 }, { name: 'date_severity_idx' }).catch(() => {});
+      await inc.createIndex({ rule_id: 1 }, { name: 'rule_id_idx' }).catch(() => {});
+      await inc.createIndex({ agent_id: 1, rule_id: 1, first_observed: 1 }, { name: 'incident_dedup_idx' }).catch(() => {});
+      await inc.createIndex({ first_observed: 1 }, { expireAfterSeconds: TTL_30_DAYS, name: 'first_observed_ttl' }).catch(() => {});
+      await inc.createIndex({ date: -1, first_observed: -1 }, { name: 'date_-1_first_observed_-1' }).catch(() => {});
+
+      // vulnerability
+      const vuln = db.collection('vulnerability');
+      await vuln.createIndex({ cve: 1 }, { name: 'cve_idx' }).catch(() => {});
+      await vuln.createIndex({ agent_id: 1, cve: 1, vulnerability: 1 }, { name: 'vuln_dedup_idx' }).catch(() => {});
+      await vuln.createIndex({ severity: 1, status: 1 }, { name: 'severity_status_idx' }).catch(() => {});
+      await vuln.createIndex({ status: 1 }, { name: 'status_idx' }).catch(() => {});
+      await vuln.createIndex({ detected_at: 1 }, { expireAfterSeconds: TTL_30_DAYS, name: 'detected_at_ttl' }).catch(() => {});
+
+      // devices
+      const dev = db.collection('devices');
+      await dev.createIndex({ id: 1 }, { unique: true, sparse: true, name: 'agent_id_unique' }).catch(() => {});
+
+      // reports
+      const rep = db.collection('reports');
+      await rep.createIndex({ report_id: 1 }, { name: 'report_id_idx' }).catch(() => {});
+      await rep.createIndex({ date_generated: 1 }, { expireAfterSeconds: TTL_30_DAYS, name: 'date_generated_ttl' }).catch(() => {});
+
+      // historical_statistics
+      const stat = db.collection('historical_statistics');
+      await stat.createIndex({ date: 1 }, { unique: true, name: 'date_1' }).catch(() => {});
+      await stat.createIndex({ created_at: 1 }, { expireAfterSeconds: TTL_60_DAYS, name: 'created_at_ttl' }).catch(() => {});
+    } catch (mErr: any) {
+      console.warn('MongoDB native collection init warning:', mErr.message);
+    }
 
     // Step 4: Redis Cache Namespace Allocation with baseline summary
     try {
@@ -376,11 +406,29 @@ export async function deleteTenant(
 
     const tenant = rows[0];
 
-    // Execute remote script delete_tenant.py on VM using /opt/venv/bin/python
-    // This drops MongoDB database, purges Redis keys, and deletes MySQL user/tenant records
-    await runRemoteScript(`/opt/venv/bin/python /opt/multi-tenant/scripts/delete_tenant.py --id ${tenantId} --force`);
+    // Step 1: Drop MongoDB database natively (zero Python)
+    try {
+      const mongoClient = await getMongoClient();
+      await mongoClient.db(tenant.database_name).dropDatabase();
+    } catch (mErr: any) {
+      console.warn('MongoDB drop database warning:', mErr.message);
+    }
 
-    // Ensure deleted from MySQL relational junction tables
+    // Step 2: Purge Redis cache keys natively (zero Python)
+    try {
+      const redisClient = await getActiveRedisClient();
+      if (redisClient) {
+        const prefix = tenant.redis_prefix || `${tenant.database_name}:`;
+        const keys = await redisClient.keys(`${prefix}*`);
+        if (keys && keys.length > 0) {
+          await redisClient.del(...keys);
+        }
+      }
+    } catch (rErr: any) {
+      console.warn('Redis purge keys warning:', rErr.message);
+    }
+
+    // Step 3: Ensure deleted from MySQL relational junction tables
     await mysqlPool.query('DELETE FROM users WHERE tenant_id = ?', [tenantId]).catch(() => {});
     await mysqlPool.query('DELETE FROM tenant_wazuh_groups WHERE tenant_id = ?', [tenantId]).catch(() => {});
     await mysqlPool.query('DELETE FROM tenant_iris_customers WHERE tenant_id = ?', [tenantId]).catch(() => {});

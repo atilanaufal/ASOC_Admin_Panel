@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMysqlPool } from "@/lib/mysql";
-import { runRemoteScript } from "@/lib/remote";
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,31 +20,34 @@ export async function GET(request: NextRequest) {
       database_name: "tenant1",
     };
 
-    let wazuhManagerHost = "10.20.100.131";
-    let wazuhAgentVersion = "4.14.6-1";
-    try {
-      const res = await runRemoteScript(
-        "/opt/venv/bin/python /opt/multi-tenant/scripts/manage_tenant_mappings.py --available --json"
-      );
-      if (res.success && res.stdout) {
-        const j = JSON.parse(res.stdout);
-        if (j.wazuh_manager_host) wazuhManagerHost = j.wazuh_manager_host;
-        if (j.wazuh_agent_version) wazuhAgentVersion = j.wazuh_agent_version;
+    // Native resolution with cluster failover support (zero Python execution)
+    const resolveWazuhHost = (): string => {
+      if (process.env.WAZUH_MANAGER_HOST) return process.env.WAZUH_MANAGER_HOST;
+      if (process.env.WAZUH_NODE1_HOST) return process.env.WAZUH_NODE1_HOST;
+      if (process.env.WAZUH_NODE1_URL) {
+        try { return new URL(process.env.WAZUH_NODE1_URL).hostname; } catch {}
       }
-    } catch {}
+      if (process.env.WAZUH_API_URL) {
+        try { return new URL(process.env.WAZUH_API_URL).hostname; } catch {}
+      }
+      return "10.20.100.131";
+    };
+
+    const wazuhManagerHost = resolveWazuhHost();
+    const wazuhAgentVersion = process.env.WAZUH_AGENT_VERSION || "4.14.6-1";
 
     const targetGroup = tenant.database_name;
     let command = "";
     let instructions = "";
 
     if (os === "linux-deb") {
-      command = `wget https://packages.wazuh.com/4.x/wazuh-agent_${wazuhAgentVersion}_amd64.deb && sudo WAZUH_MANAGER= WAZUH_AGENT_GROUP= dpkg -i ./wazuh-agent_${wazuhAgentVersion}_amd64.deb && sudo systemctl daemon-reload && sudo systemctl enable wazuh-agent && sudo systemctl start wazuh-agent`;
+      command = `wget https://packages.wazuh.com/4.x/wazuh-agent_${wazuhAgentVersion}_amd64.deb && sudo WAZUH_MANAGER='${wazuhManagerHost}' WAZUH_AGENT_GROUP='${targetGroup}' dpkg -i ./wazuh-agent_${wazuhAgentVersion}_amd64.deb && sudo systemctl daemon-reload && sudo systemctl enable wazuh-agent && sudo systemctl start wazuh-agent`;
       instructions = "Run command in terminal on Ubuntu/Debian server with sudo / root privileges.";
     } else if (os === "linux-rpm") {
-      command = `sudo WAZUH_MANAGER= WAZUH_AGENT_GROUP= yum install -y https://packages.wazuh.com/4.x/yum/wazuh-agent-${wazuhAgentVersion}.x86_64.rpm && sudo systemctl daemon-reload && sudo systemctl enable wazuh-agent && sudo systemctl start wazuh-agent`;
+      command = `sudo WAZUH_MANAGER='${wazuhManagerHost}' WAZUH_AGENT_GROUP='${targetGroup}' yum install -y https://packages.wazuh.com/4.x/yum/wazuh-agent-${wazuhAgentVersion}.x86_64.rpm && sudo systemctl daemon-reload && sudo systemctl enable wazuh-agent && sudo systemctl start wazuh-agent`;
       instructions = "Run command in terminal on CentOS/RHEL/AlmaLinux server with sudo / root privileges.";
     } else {
-      command = `Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-${wazuhAgentVersion}.msi -OutFile \${env:tmp}\\wazuh-agent.msi; msiexec.exe /i \${env:tmp}\\wazuh-agent.msi /q WAZUH_MANAGER= WAZUH_AGENT_GROUP=; NET START Wazuh`;
+      command = `Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-${wazuhAgentVersion}.msi -OutFile \${env:tmp}\\wazuh-agent.msi; msiexec.exe /i \${env:tmp}\\wazuh-agent.msi /q WAZUH_MANAGER='${wazuhManagerHost}' WAZUH_AGENT_GROUP='${targetGroup}'; NET START Wazuh`;
       instructions = "Buka PowerShell sebagai Administrator (Run as Administrator) lalu paste perintah di atas.";
     }
 

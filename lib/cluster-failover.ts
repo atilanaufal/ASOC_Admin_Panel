@@ -23,13 +23,13 @@ function getIndexerNodes(): ClusterNodeConfig[] {
 
 function getWazuhNodes(): ClusterNodeConfig[] {
   const user = process.env.WAZUH_NODE1_USER || process.env.WAZUH_API_USER || "wazuh-wui";
-  const pass = process.env.WAZUH_NODE1_PASS || process.env.WAZUH_API_PASS || "SecretPassword-123";
+  const pass = process.env.WAZUH_NODE1_PASS || process.env.WAZUH_API_PASS || process.env.WAZUH_API_PASSWORD || "";
   const nodes: ClusterNodeConfig[] = [
     { url: process.env.WAZUH_NODE1_URL || process.env.WAZUH_API_URL || "https://10.20.100.131:55000", user, pass },
     { url: process.env.WAZUH_NODE2_URL || "", user, pass },
     { url: process.env.WAZUH_NODE3_URL || "", user, pass },
   ];
-  return nodes.filter(n => Boolean(n.url && n.url.trim().length > 0));
+  return nodes.filter(n => Boolean(n.url && n.url.trim().length > 0 && n.pass && n.pass.trim().length > 0));
 }
 
 let activeIndexerIndex = 0;
@@ -213,7 +213,11 @@ export async function queryIrisSingle<T = any>(
   timeoutMs = 15000
 ): Promise<T | null> {
   const baseUrl = process.env.IRIS_BASE_URL || process.env.IRIS_API_URL || "https://10.20.100.133:443";
-  const token = process.env.IRIS_API_KEY || "K0_0XjSgo2BhNYQPw153P3r6mNtLB8r8kKXqO4SXt5v20XXAdq3dpdE9Se74lVmfzlR5QUhtpigxaWPF8Q-hog";
+  const token = process.env.IRIS_API_KEY || process.env.IRIS_TOKEN || "";
+  if (!token) {
+    console.warn("IRIS_API_KEY is not configured in environment.");
+    return null;
+  }
 
   try {
     const parsed = new URL(baseUrl);

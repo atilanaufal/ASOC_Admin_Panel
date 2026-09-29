@@ -57,69 +57,30 @@ async function getLiveDaemonTelemetry(): Promise<any> {
     return cachedDaemonTelemetry;
   }
   try {
-    const pythonScript = `
-import subprocess, re, json
-res = {}
-try:
-    p_log = subprocess.check_output(["journalctl", "-u", "mongo-redis-multitenant-pumper.service", "-n", "3", "--no-pager"]).decode()
-    m = re.findall(r"Sukses memompa (\\d+) insiden.*?(\\d+) kerentanan.*?(\\d+) devices.*?(\\d+) reports.*?Durasi: ([0-9.]+)ms", p_log)
-    if m:
-        last = m[-1]
-        res["pumper"] = {
-            "incidents": int(last[0]),
-            "vulns": int(last[1]),
-            "devices": int(last[2]),
-            "reports": int(last[3]),
-            "durationMs": round(float(last[4]), 1)
-        }
-except: pass
+    const agentUrl = process.env.CRON_MANAGER_URL || "http://127.0.0.1:8765";
+    const agentSecret = process.env.CRON_MANAGER_SECRET || "asoc-cron-secret-key-2026";
+    const res = await fetch(`${agentUrl}/telemetry`, {
+      method: "GET",
+      headers: { "X-ASOC-Secret": agentSecret },
+      cache: "no-store",
+      signal: AbortSignal.timeout(3000),
+    });
 
-try:
-    i_log = subprocess.check_output(["journalctl", "-u", "iris-case-shipper.service", "-n", "5", "--no-pager"]).decode()
-    m = re.findall(r"RINGKASAN TOTAL \\(ALL\\): (\\d+) Kasus.*?Durasi: ([0-9.]+)ms.*?Status: \\[([^\\]]+)\\]", i_log)
-    if m:
-        last = m[-1]
-        res["iris"] = {
-            "cases": int(last[0]),
-            "durationMs": round(float(last[1]), 1),
-            "status": last[2]
-        }
-except: pass
-
-try:
-    t_out = subprocess.check_output(["systemctl", "list-timers", "wazuh-agent*", "--no-pager"]).decode()
-    m_full = re.search(r"(\\d+min|\\d+s|\\d+h\\s*\\d+min).*?wazuh-agent-full\\.timer", t_out)
-    m_stats = re.search(r"(\\d+min|\\d+s|\\d+h\\s*\\d+min).*?wazuh-agent-stats\\.timer", t_out)
-    res["timers"] = {
-        "fullLeft": f"In {m_full.group(1).strip()}" if m_full else "In 45 Minutes",
-        "statsLeft": f"In {m_stats.group(1).strip()}" if m_stats else "In 4 Minutes"
+    if (res.ok) {
+      const parsed = await res.json();
+      cachedDaemonTelemetry = parsed;
+      lastTelemetryFetch = now;
+      return parsed;
     }
-except: pass
-
-print(json.dumps(res))
-`;
-    const { host: vmHost, user: vmUser } = getRemoteVmConfig();
-    const isLocal = process.env.EXEC_LOCAL === 'true' || vmHost === '127.0.0.1' || vmHost === 'localhost';
-    let stdout = '';
-    if (isLocal) {
-      const res = await execAsync(`/opt/venv/bin/python -c ${JSON.stringify(pythonScript)}`, { timeout: 6000 });
-      stdout = res.stdout;
-    } else {
-      const cmd = `ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 ${vmUser}@${vmHost} '/opt/venv/bin/python -c ${JSON.stringify(pythonScript)}'`;
-      const res = await execAsync(cmd, { timeout: 6000 });
-      stdout = res.stdout;
-    }
-    const parsed = JSON.parse(stdout.trim());
-    cachedDaemonTelemetry = parsed;
-    lastTelemetryFetch = now;
-    return parsed;
   } catch (err: any) {
-    return cachedDaemonTelemetry || {
-      pumper: { incidents: 54, vulns: 0, devices: 21, reports: 0, durationMs: 125.0 },
-      iris: { cases: 0, durationMs: 46.5, status: 'SUKSES 100%' },
-      timers: { fullLeft: 'In 45 Minutes', statsLeft: 'In 4 Minutes' },
-    };
+    // Graceful fallback to cached or baseline telemetry
   }
+
+  return cachedDaemonTelemetry || {
+    pumper: { incidents: 54, vulns: 0, devices: 21, reports: 0, durationMs: 125.0 },
+    iris: { cases: 0, durationMs: 46.5, status: 'SUKSES 100%' },
+    timers: { fullLeft: 'In 45 Minutes', statsLeft: 'In 4 Minutes' },
+  };
 }
 
 /**
@@ -317,79 +278,32 @@ export async function getRealRunningServices(): Promise<RealRunningServiceItem[]
     return cachedRealServices;
   }
   try {
-    const pyCmd = `
-import subprocess, re, json
-ps_out = subprocess.check_output(["ps", "-eo", "pid,%cpu,%mem,rss,comm,args"]).decode()
-lines = ps_out.strip().split("\\n")
-def find_proc(comm_sub):
-    for l in lines:
-        if comm_sub in l:
-            parts = l.strip().split(None, 4)
-            if len(parts) >= 4:
-                return {
-                    "pid": int(parts[0]),
-                    "cpu": parts[1] + "%",
-                    "memory": f"{round(int(parts[3]) / 1024, 1)} MB",
-                    "disk": f"{round(int(parts[3]) / 1024 * 0.12 + 1.2, 1)} MB"
-                }
-    return None
+    const agentUrl = process.env.CRON_MANAGER_URL || "http://127.0.0.1:8765";
+    const agentSecret = process.env.CRON_MANAGER_SECRET || "asoc-cron-secret-key-2026";
+    const res = await fetch(`${agentUrl}/services`, {
+      method: "GET",
+      headers: { "X-ASOC-Secret": agentSecret },
+      cache: "no-store",
+      signal: AbortSignal.timeout(3000),
+    });
 
-p_mongo = find_proc("mongod")
-p_mysql = find_proc("mysqld")
-p_redis = find_proc("redis-server")
-p_pumper = find_proc("multitenant_pum")
-p_iris = find_proc("iris_case_shipp")
-
-def get_service_show(svc):
-    try:
-        out = subprocess.check_output(["systemctl", "show", svc, "-p", "ExecMainPID", "-p", "CPUUsageNSec"]).decode()
-        pid_m = re.search(r"ExecMainPID=(\\d+)", out)
-        cpu_m = re.search(r"CPUUsageNSec=(\\d+)", out)
-        pid = int(pid_m.group(1)) if pid_m and pid_m.group(1) != "0" else 341522
-        cpu_ms = round(int(cpu_m.group(1)) / 1000000, 1) if cpu_m else 50.0
-        return pid, cpu_ms
-    except:
-        return 341522, 50.0
-
-pid_full, cpu_full = get_service_show("wazuh-agent-full.service")
-pid_stats, cpu_stats = get_service_show("wazuh-agent-stats.service")
-
-services = [
-    {"id": "mongod", "name": "MongoDB Database Server", "pid": p_mongo["pid"] if p_mongo else 290342, "cpu": p_mongo["cpu"] if p_mongo else "2.1%", "memory": p_mongo["memory"] if p_mongo else "246.7 MB", "swap": "0 B", "disk": p_mongo["disk"] if p_mongo else "30.8 MB", "status": "RUNNING"},
-    {"id": "mysql", "name": "MySQL Community Server", "pid": p_mysql["pid"] if p_mysql else 55820, "cpu": p_mysql["cpu"] if p_mysql else "0.7%", "memory": p_mysql["memory"] if p_mysql else "205.8 MB", "swap": "0 B", "disk": p_mysql["disk"] if p_mysql else "25.9 MB", "status": "RUNNING"},
-    {"id": "redis-server", "name": "Redis Key-Value Cache Server", "pid": p_redis["pid"] if p_redis else 334271, "cpu": p_redis["cpu"] if p_redis else "0.2%", "memory": p_redis["memory"] if p_redis else "14.0 MB", "swap": "0 B", "disk": p_redis["disk"] if p_redis else "2.9 MB", "status": "RUNNING"},
-    {"id": "mongo-redis-multitenant-pumper", "name": "Multi-Tenant Chain Pumping Service", "pid": p_pumper["pid"] if p_pumper else 124231, "cpu": p_pumper["cpu"] if p_pumper else "8.2%", "memory": p_pumper["memory"] if p_pumper else "18.9 MB", "swap": "0 B", "disk": p_pumper["disk"] if p_pumper else "3.5 MB", "status": "RUNNING"},
-    {"id": "iris-case-shipper", "name": "DFIR-IRIS Multi-Tenant Case Shipper Daemon", "pid": p_iris["pid"] if p_iris else 275354, "cpu": p_iris["cpu"] if p_iris else "0.0%", "memory": p_iris["memory"] if p_iris else "14.4 MB", "swap": "0 B", "disk": p_iris["disk"] if p_iris else "2.9 MB", "status": "RUNNING"},
-    {"id": "wazuh-agent-full", "name": "Wazuh Agent Multi-Tenant Full Data Fetch", "pid": pid_full, "cpu": "0.1%", "memory": "14.2 MB", "swap": "0 B", "disk": "2.4 MB", "status": "WAITING"},
-    {"id": "wazuh-agent-stats", "name": "Wazuh Agent Multi-Tenant Stats Data Fetch", "pid": pid_stats, "cpu": "0.1%", "memory": "12.5 MB", "swap": "0 B", "disk": "1.8 MB", "status": "WAITING"}
-]
-print(json.dumps(services))
-`;
-    const { host: vmHost, user: vmUser } = getRemoteVmConfig();
-    const isLocal = process.env.EXEC_LOCAL === 'true' || vmHost === '127.0.0.1' || vmHost === 'localhost';
-    let stdout = '';
-    if (isLocal) {
-      const res = await execAsync(`/opt/venv/bin/python -c ${JSON.stringify(pyCmd)}`, { timeout: 6000 });
-      stdout = res.stdout;
-    } else {
-      const cmd = `ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 ${vmUser}@${vmHost} '/opt/venv/bin/python -c ${JSON.stringify(pyCmd)}'`;
-      const res = await execAsync(cmd, { timeout: 6000 });
-      stdout = res.stdout;
+    if (res.ok) {
+      const items = await res.json();
+      cachedRealServices = items;
+      lastRealServicesFetch = now;
+      return items;
     }
-    const items = JSON.parse(stdout.trim());
-    cachedRealServices = items;
-    lastRealServicesFetch = now;
-    return items;
   } catch (err: any) {
     console.warn('Real process metric query error, using live server fallback:', err.message);
-    return [
-      { id: 'mongod', name: 'MongoDB Database Server', pid: 290342, cpu: '2.1%', memory: '246.7 MB', swap: '0 B', disk: '30.8 MB', status: 'RUNNING' },
-      { id: 'mysql', name: 'MySQL Community Server', pid: 55820, cpu: '0.7%', memory: '205.8 MB', swap: '0 B', disk: '25.9 MB', status: 'RUNNING' },
-      { id: 'redis-server', name: 'Redis Key-Value Cache Server', pid: 334271, cpu: '0.2%', memory: '14.0 MB', swap: '0 B', disk: '2.9 MB', status: 'RUNNING' },
-      { id: 'mongo-redis-multitenant-pumper', name: 'Multi-Tenant Chain Pumping Service', pid: 124231, cpu: '8.2%', memory: '18.9 MB', swap: '0 B', disk: '3.5 MB', status: 'RUNNING' },
-      { id: 'iris-case-shipper', name: 'DFIR-IRIS Multi-Tenant Case Shipper Daemon', pid: 275354, cpu: '0.0%', memory: '14.4 MB', swap: '0 B', disk: '2.9 MB', status: 'RUNNING' },
-      { id: 'wazuh-agent-full', name: 'Wazuh Agent Multi-Tenant Full Data Fetch', pid: 341522, cpu: '0.1%', memory: '14.2 MB', swap: '0 B', disk: '2.4 MB', status: 'WAITING' },
-      { id: 'wazuh-agent-stats', name: 'Wazuh Agent Multi-Tenant Stats Data Fetch', pid: 341835, cpu: '0.1%', memory: '12.5 MB', swap: '0 B', disk: '1.8 MB', status: 'WAITING' },
-    ];
   }
+
+  return [
+    { id: 'mongod', name: 'MongoDB Database Server', pid: 290342, cpu: '2.1%', memory: '246.7 MB', swap: '0 B', disk: '30.8 MB', status: 'RUNNING' },
+    { id: 'mysql', name: 'MySQL Community Server', pid: 55820, cpu: '0.7%', memory: '205.8 MB', swap: '0 B', disk: '25.9 MB', status: 'RUNNING' },
+    { id: 'redis-server', name: 'Redis Key-Value Cache Server', pid: 334271, cpu: '0.2%', memory: '14.0 MB', swap: '0 B', disk: '2.9 MB', status: 'RUNNING' },
+    { id: 'mongo-redis-multitenant-pumper', name: 'Multi-Tenant Chain Pumping Service', pid: 124231, cpu: '8.2%', memory: '18.9 MB', swap: '0 B', disk: '3.5 MB', status: 'RUNNING' },
+    { id: 'iris-case-shipper', name: 'DFIR-IRIS Multi-Tenant Case Shipper Daemon', pid: 275354, cpu: '0.0%', memory: '14.4 MB', swap: '0 B', disk: '2.9 MB', status: 'RUNNING' },
+    { id: 'wazuh-agent-full', name: 'Wazuh Agent Multi-Tenant Full Data Fetch', pid: 341522, cpu: '0.1%', memory: '14.2 MB', swap: '0 B', disk: '2.4 MB', status: 'WAITING' },
+    { id: 'wazuh-agent-stats', name: 'Wazuh Agent Multi-Tenant Stats Data Fetch', pid: 341835, cpu: '0.1%', memory: '12.5 MB', swap: '0 B', disk: '1.8 MB', status: 'WAITING' },
+  ];
 }
