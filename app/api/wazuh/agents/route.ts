@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
-import { runRemoteScript } from '@/lib/remote';
+import { syncAgentsNative, SyncTarget } from '@/lib/native-sync';
 
 export interface MappedAgentItem {
   id: string;
@@ -28,49 +28,51 @@ export async function GET(_request: NextRequest) {
   const shouldSync = _request.nextUrl.searchParams.get('sync') === 'true';
   let syncResult: any = null;
 
-  if (shouldSync) {
-    const syncStartTime = Date.now();
-    const tenant = _request.nextUrl.searchParams.get('tenant') || 'all';
-    const mode = _request.nextUrl.searchParams.get('mode') || 'full';
-    const cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/sync_wazuh_agents.py --tenant ${tenant} --mode ${mode} --json`;
+  try {
+    const pool = getMysqlPool();
+    const [tenantsRows]: any = await pool.query(`
+      SELECT t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix,
+             GROUP_CONCAT(DISTINCT wg.wazuh_group_name) as wazuh_groups
+      FROM tenants t
+      LEFT JOIN tenant_wazuh_groups wg ON t.id = wg.tenant_id
+      WHERE t.is_active = 1
+      GROUP BY t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix
+      ORDER BY t.id ASC
+    `);
+    const tenants = Array.isArray(tenantsRows) ? tenantsRows : [];
+    const mongoClient = await getMongoClient();
 
-    try {
-      const res = await runRemoteScript(cmd, 45000);
+    // If sync requested via query param (?sync=true)
+    if (shouldSync) {
+      const syncStartTime = Date.now();
+      const tenantParam = _request.nextUrl.searchParams.get('tenant') || 'all';
+      const targetList = tenantParam === 'all' 
+        ? tenants 
+        : tenants.filter((t: any) => t.tenant_code.toLowerCase() === tenantParam.toLowerCase());
+
+      const syncTargets: SyncTarget[] = targetList.map((t: any) => ({
+        tenantCode: t.tenant_code,
+        campusName: t.campus_name,
+        databaseName: t.database_name,
+        redisPrefix: t.redis_prefix || `${t.database_name}:`,
+        wazuhGroups: t.wazuh_groups ? t.wazuh_groups.split(',').map((g: string) => g.trim()) : [],
+        filterAgentIds: [],
+        filterAgentNames: [],
+      }));
+
+      const res = await syncAgentsNative(syncTargets, mongoClient);
       const durationMs = Date.now() - syncStartTime;
-      let parsedOutput: any = null;
-      if (res.stdout) {
-        try {
-          parsedOutput = JSON.parse(res.stdout);
-        } catch {
-          parsedOutput = { raw: res.stdout };
-        }
-      }
       syncResult = {
         success: res.success,
         durationMs,
-        script: 'sync_wazuh_agents.py',
-        message: res.success ? 'Sinkronisasi Wazuh agent berhasil dieksekusi' : 'Sinkronisasi Wazuh agent gagal',
-        output: parsedOutput,
-        error: res.success ? undefined : res.stderr,
-      };
-    } catch (sErr: any) {
-      syncResult = {
-        success: false,
-        script: 'sync_wazuh_agents.py',
-        message: sErr.message || 'Eksekusi script sinkronisasi gagal',
+        native: true,
+        message: 'Native synchronization of Wazuh agents completed successfully.',
+        totalAgents: res.totalAgents,
+        details: res.details,
       };
     }
-  }
-  try {
-    const pool = getMysqlPool();
-    const [tenantsRows]: any = await pool.query(
-      'SELECT id, tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE is_active = 1 ORDER BY id ASC'
-    );
-    const tenants = Array.isArray(tenantsRows) ? tenantsRows : [];
 
-    const mongoClient = await getMongoClient();
     const mappedAgents: MappedAgentItem[] = [];
-
     let activeCount = 0;
     let disconnectedCount = 0;
 
@@ -182,40 +184,59 @@ export async function GET(_request: NextRequest) {
   }
 }
 
-
 export async function POST(request: NextRequest) {
   const syncStartTime = Date.now();
   try {
     const body = await request.json().catch(() => ({}));
-    const tenant = body.tenant || 'all';
-    const mode = body.mode || 'full';
-    const cmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/sync_wazuh_agents.py --tenant ${tenant} --mode ${mode} --json`;
+    const tenantParam = body.tenant || 'all';
 
-    const res = await runRemoteScript(cmd, 45000);
+    const pool = getMysqlPool();
+    const [tenantsRows]: any = await pool.query(`
+      SELECT t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix,
+             GROUP_CONCAT(DISTINCT wg.wazuh_group_name) as wazuh_groups
+      FROM tenants t
+      LEFT JOIN tenant_wazuh_groups wg ON t.id = wg.tenant_id
+      WHERE t.is_active = 1
+      GROUP BY t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix
+      ORDER BY t.id ASC
+    `);
+    const tenants = Array.isArray(tenantsRows) ? tenantsRows : [];
+    const targetList = tenantParam === 'all' 
+      ? tenants 
+      : tenants.filter((t: any) => t.tenant_code.toLowerCase() === tenantParam.toLowerCase());
+
+    const mongoClient = await getMongoClient();
+
+    const syncTargets: SyncTarget[] = targetList.map((t: any) => ({
+      tenantCode: t.tenant_code,
+      campusName: t.campus_name,
+      databaseName: t.database_name,
+      redisPrefix: t.redis_prefix || `${t.database_name}:`,
+      wazuhGroups: t.wazuh_groups ? t.wazuh_groups.split(',').map((g: string) => g.trim()) : [],
+      filterAgentIds: [],
+      filterAgentNames: [],
+    }));
+
+    const res = await syncAgentsNative(syncTargets, mongoClient);
     const durationMs = Date.now() - syncStartTime;
-    let parsedOutput: any = null;
-    if (res.stdout) {
-      try {
-        parsedOutput = JSON.parse(res.stdout);
-      } catch {
-        parsedOutput = { raw: res.stdout };
-      }
-    }
 
     return NextResponse.json({
       success: res.success,
       durationMs,
-      script: 'sync_wazuh_agents.py',
-      message: res.success
-        ? 'Script sync_wazuh_agents berhasil dieksekusi'
-        : 'Eksekusi sync_wazuh_agents gagal',
-      output: parsedOutput,
-      error: res.success ? undefined : res.stderr,
+      native: true,
+      message: `Native refresh agents completed successfully (${res.totalAgents} agents updated).`,
+      output: {
+        status: "success",
+        action: "sync",
+        tenant: tenantParam.toUpperCase(),
+        total_agents: res.totalAgents,
+        details: res.details,
+      },
     });
   } catch (err: any) {
     console.error('API /api/wazuh/agents POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Failed to execute sync_wazuh_agents' },
+      { success: false, error: err.message || 'Failed to execute native sync_wazuh_agents' },
       { status: 500 }
     );
   }
