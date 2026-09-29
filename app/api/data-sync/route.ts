@@ -18,6 +18,11 @@ import {
   syncRedisNative,
   syncIrisNative,
 } from "@/lib/native-sync";
+import {
+  getHostCronStatus,
+  updateHostCron,
+  getHostCronLogs,
+} from "@/lib/cron-manager-client";
 
 function computeNextRun(cronExpr: string): string {
   try {
@@ -258,14 +263,23 @@ export async function GET(req: NextRequest) {
           } catch {}
         }
 
-        const crontabRes = await runRemoteScript("sudo crontab -l", 5000);
+        // Try Host Cron Manager (Agent API) first for Dockerized or Native compatibility
+        const hostCron = await getHostCronStatus();
         let status = "Inactive";
-        if (crontabRes.success && crontabRes.stdout) {
-          const hasCron = crontabRes.stdout.split("\n").some((l: string) =>
-            !l.trim().startsWith("#") && l.includes("cron_hourly_sync.sh")
-          );
-          status = hasCron ? "Active" : "Disabled";
-          if (!hasCron) enabled = false;
+        if (hostCron.success) {
+          status = hostCron.active ? "Active" : "Disabled";
+          enabled = hostCron.enabled;
+          schedule = hostCron.schedule;
+        } else {
+          // Fallback to direct shell check if Agent is not reachable
+          const crontabRes = await runRemoteScript("sudo crontab -l", 5000);
+          if (crontabRes.success && crontabRes.stdout) {
+            const hasCron = crontabRes.stdout.split("\n").some((l: string) =>
+              !l.trim().startsWith("#") && l.includes("cron_hourly_sync.sh")
+            );
+            status = hasCron ? "Active" : "Disabled";
+            if (!hasCron) enabled = false;
+          }
         }
 
         cronConfig = {
@@ -279,9 +293,12 @@ export async function GET(req: NextRequest) {
         console.error("Failed to load cron config:", err);
       }
 
-      const logRes = await runRemoteScript('tail -n 60 /var/log/multi-tenant-sync.log 2>/dev/null || echo "No log found"', 5000);
-      if (logRes.success) {
-        cronLogs = logRes.stdout;
+      cronLogs = await getHostCronLogs(60);
+      if (!cronLogs || cronLogs.startsWith("Error") || cronLogs.startsWith("Failed")) {
+        const logRes = await runRemoteScript('tail -n 60 /var/log/multi-tenant-sync.log 2>/dev/null || echo "No log found"', 5000);
+        if (logRes.success) {
+          cronLogs = logRes.stdout;
+        }
       }
     }
 
@@ -446,20 +463,25 @@ export async function POST(req: NextRequest) {
       const isEnabled = Boolean(enabled);
       const pool = getMysqlPool();
 
-      const readCron = await runRemoteScript("sudo crontab -l 2>/dev/null || true", 10000);
-      const lines = (readCron.stdout || "")
-        .split("\n")
-        .filter((l: string) => !l.includes("cron_hourly_sync.sh") && l.trim().length > 0);
+      // Update via Host Cron Manager (Agent API)
+      const agentRes = await updateHostCron(sched, isEnabled);
+      if (!agentRes.success) {
+        // Fallback to direct shell crontab if Agent not reachable
+        const readCron = await runRemoteScript("sudo crontab -l 2>/dev/null || true", 10000);
+        const lines = (readCron.stdout || "")
+          .split("\n")
+          .filter((l: string) => !l.includes("cron_hourly_sync.sh") && l.trim().length > 0);
 
-      const cronEntry = isEnabled
-        ? `${sched} /opt/multi-tenant/scripts/cron_hourly_sync.sh`
-        : `# ${sched} /opt/multi-tenant/scripts/cron_hourly_sync.sh`;
-      lines.push(cronEntry);
+        const cronEntry = isEnabled
+          ? `${sched} /opt/multi-tenant/scripts/cron_hourly_sync.sh`
+          : `# ${sched} /opt/multi-tenant/scripts/cron_hourly_sync.sh`;
+        lines.push(cronEntry);
 
-      const newCrontabContent = lines.join("\n") + "\n";
-      const writeCron = await runRemoteScript(`echo -e ${JSON.stringify(newCrontabContent)} | sudo crontab -`, 10000);
-      if (!writeCron.success) {
-        return NextResponse.json({ success: false, error: writeCron.stderr || "Failed to update system crontab" }, { status: 500 });
+        const newCrontabContent = lines.join("\n") + "\n";
+        const writeCron = await runRemoteScript(`echo -e ${JSON.stringify(newCrontabContent)} | sudo crontab -`, 10000);
+        if (!writeCron.success) {
+          return NextResponse.json({ success: false, error: agentRes.error || writeCron.stderr || "Failed to update system crontab" }, { status: 500 });
+        }
       }
 
       const now = new Date();
