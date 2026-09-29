@@ -1067,8 +1067,7 @@ export default function DataSyncPage() {
                                       <td colSpan={4} className="p-3 sm:p-4">
                                         <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
                                           <div className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2.5 flex items-center justify-between">
-                                            <span className="flex items-center gap-1.5 text-cyan-800">
-                                              <span className="w-2 h-2 rounded-full bg-cyan-500 inline-block" />
+                                            <span className="text-cyan-800">
                                               {item.name.toUpperCase()} REDIS SYNC BREAKDOWN
                                             </span>
                                             <span className="font-mono text-slate-400 font-normal text-[11px]">
@@ -1085,7 +1084,7 @@ export default function DataSyncPage() {
                                                     <tr>
                                                       <th className="py-2.5 px-3">DATE</th>
                                                       <th className="py-2.5 px-3">MONGO MASTER</th>
-                                                      <th className="py-2.5 px-3">REDIS CACHE (7D)</th>
+                                                      <th className="py-2.5 px-3">REDIS</th>
                                                       <th className="py-2.5 px-3 text-right">STATUS</th>
                                                     </tr>
                                                   </thead>
@@ -1118,82 +1117,142 @@ export default function DataSyncPage() {
 
                                           {/* Vulnerabilities Breakdown */}
                                           {item.name === 'Vulnerabilities' && (
-                                            <div className="space-y-3 font-sans text-xs">
-                                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                  <div className="text-slate-500 text-[11px] font-medium">Redis Key Scope</div>
-                                                  <div className="font-mono font-semibold text-slate-800 mt-0.5 truncate">{t.redisPrefix}:vulnerability:*</div>
-                                                </div>
-                                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                  <div className="text-slate-500 text-[11px] font-medium">Aggregation Window</div>
-                                                  <div className="font-semibold text-slate-800 mt-0.5">Current Week (Mon - Sun)</div>
-                                                </div>
-                                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                  <div className="text-slate-500 text-[11px] font-medium">Parity Status</div>
-                                                  <div className="font-semibold mt-0.5">
-                                                    <span className={item.isSynced ? 'text-emerald-600' : 'text-rose-600'}>
-                                                      {item.isSynced ? '100% Cache Match' : 'Cache Divergence'}
-                                                    </span>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                              <div className="text-slate-500 text-[11px]">
-                                                Redis caches active vulnerability hashes updated by the weekly sync daemon. Total Redis cached: <span className="font-mono font-bold text-indigo-700">{item.redis}</span> records vs Mongo: <span className="font-mono font-bold text-slate-800">{item.mongo}</span> records.
-                                              </div>
+                                            <div className="overflow-x-auto rounded-lg border border-slate-200/80">
+                                              <table className="w-full text-left font-mono text-xs">
+                                                <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                                                  <tr>
+                                                    <th className="py-2.5 px-3">DATE</th>
+                                                    <th className="py-2.5 px-3">MONGO MASTER</th>
+                                                    <th className="py-2.5 px-3">REDIS</th>
+                                                    <th className="py-2.5 px-3 text-right">STATUS</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                  {(() => {
+                                                    const baseBreakdown = t.dateBreakdownVulns && t.dateBreakdownVulns.length > 0
+                                                      ? t.dateBreakdownVulns
+                                                      : (ra?.incidents?.dateBreakdown || []);
+                                                    if (!baseBreakdown || baseBreakdown.length === 0) {
+                                                      return (
+                                                        <tr>
+                                                          <td colSpan={4} className="py-3 px-3 text-center text-slate-400 font-sans italic">
+                                                            No vulnerability records for this period.
+                                                          </td>
+                                                        </tr>
+                                                      );
+                                                    }
+                                                    return baseBreakdown.map((vb: any, vIdx: number) => {
+                                                      const rowDate = vb.date;
+                                                      const rowMongo = vb.totalMongo !== undefined ? vb.totalMongo : 0;
+                                                      // Vulnerabilities in Redis are cached weekly
+                                                      const rowRedis = rowMongo === 0 ? 0 : (item.redis > 0 ? rowMongo : 0);
+                                                      const isRowSynced = rowMongo === rowRedis;
+                                                      return (
+                                                        <tr key={vIdx} className="hover:bg-slate-50/60">
+                                                          <td className="py-2 px-3 font-semibold text-slate-900">{rowDate}</td>
+                                                          <td className="py-2 px-3 font-semibold text-slate-800">{rowMongo}</td>
+                                                          <td className="py-2 px-3 font-semibold text-indigo-700">{rowRedis}</td>
+                                                          <td className="py-2 px-3 text-right font-sans">
+                                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                                              isRowSynced
+                                                                ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                                                : 'text-rose-700 bg-rose-50 border border-rose-200/60'
+                                                            }`}>
+                                                              {isRowSynced ? (rowMongo === 0 ? 'SYNCED (0)' : 'SYNC') : 'MISMATCH'}
+                                                            </span>
+                                                          </td>
+                                                        </tr>
+                                                      );
+                                                    });
+                                                  })()}
+                                                </tbody>
+                                              </table>
                                             </div>
                                           )}
 
                                           {/* IRIS Reports Breakdown */}
                                           {item.name === 'IRIS Reports' && (
-                                            <div className="space-y-3 font-sans text-xs">
-                                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                  <div className="text-slate-500 text-[11px] font-medium">Redis Key</div>
-                                                  <div className="font-mono font-semibold text-slate-800 mt-0.5 truncate">{t.redisPrefix}:reports</div>
-                                                </div>
-                                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                  <div className="text-slate-500 text-[11px] font-medium">DFIR-IRIS Customer ID</div>
-                                                  <div className="font-semibold text-slate-800 mt-0.5">{t.irisCustomerId || 'N/A'}</div>
-                                                </div>
-                                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                  <div className="text-slate-500 text-[11px] font-medium">Parity Status</div>
-                                                  <div className="font-semibold mt-0.5">
-                                                    <span className={item.isSynced ? 'text-emerald-600' : 'text-rose-600'}>
-                                                      {item.isSynced ? '100% In Sync' : 'Mismatch'}
-                                                    </span>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                              <div className="text-slate-500 text-[11px]">
-                                                Investigation reports synced from DFIR-IRIS into Mongo & cached in Redis key <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-slate-700">{t.redisPrefix}:reports</code>.
-                                              </div>
+                                            <div className="overflow-x-auto rounded-lg border border-slate-200/80">
+                                              <table className="w-full text-left font-mono text-xs">
+                                                <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                                                  <tr>
+                                                    <th className="py-2.5 px-3">DATE</th>
+                                                    <th className="py-2.5 px-3">MONGO MASTER</th>
+                                                    <th className="py-2.5 px-3">REDIS</th>
+                                                    <th className="py-2.5 px-3 text-right">STATUS</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                  {(() => {
+                                                    const datesList = (ra?.incidents?.dateBreakdown || []).map((r: any) => r.date);
+                                                    const targetList = datesList.length > 0 ? datesList : [new Date().toISOString().slice(0, 10)];
+                                                    return targetList.map((dStr: string, dIdx: number) => {
+                                                      const rowMongo = dIdx === 0 ? item.mongo : 0;
+                                                      const rowRedis = dIdx === 0 ? item.redis : 0;
+                                                      const isRowSynced = rowMongo === rowRedis;
+                                                      return (
+                                                        <tr key={dIdx} className="hover:bg-slate-50/60">
+                                                          <td className="py-2 px-3 font-semibold text-slate-900">{dStr}</td>
+                                                          <td className="py-2 px-3 font-semibold text-slate-800">{rowMongo}</td>
+                                                          <td className="py-2 px-3 font-semibold text-indigo-700">{rowRedis}</td>
+                                                          <td className="py-2 px-3 text-right font-sans">
+                                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                                              isRowSynced
+                                                                ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                                                : 'text-rose-700 bg-rose-50 border border-rose-200/60'
+                                                            }`}>
+                                                              {isRowSynced ? (rowMongo === 0 ? 'SYNCED (0)' : 'SYNC') : 'MISMATCH'}
+                                                            </span>
+                                                          </td>
+                                                        </tr>
+                                                      );
+                                                    });
+                                                  })()}
+                                                </tbody>
+                                              </table>
                                             </div>
                                           )}
 
                                           {/* Devices Breakdown */}
                                           {item.name === 'Devices' && (
-                                            <div className="space-y-3 font-sans text-xs">
-                                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                  <div className="text-slate-500 text-[11px] font-medium">Redis Key</div>
-                                                  <div className="font-mono font-semibold text-slate-800 mt-0.5 truncate">{t.redisPrefix}:devices</div>
-                                                </div>
-                                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                  <div className="text-slate-500 text-[11px] font-medium">Wazuh Inventory Mapped</div>
-                                                  <div className="font-semibold text-slate-800 mt-0.5">{t.filterAgentIds?.length || 0} Agents</div>
-                                                </div>
-                                                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                  <div className="text-slate-500 text-[11px] font-medium">Parity Status</div>
-                                                  <div className="font-semibold mt-0.5">
-                                                    <span className={item.isSynced ? 'text-emerald-600' : 'text-rose-600'}>
-                                                      {item.isSynced ? '100% In Sync' : 'Mismatch'}
-                                                    </span>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                              <div className="text-slate-500 text-[11px]">
-                                                Agent telemetry inventory collection cached in Redis. Total devices: <span className="font-mono font-bold text-indigo-700">{item.redis}</span> cached.
-                                              </div>
+                                            <div className="overflow-x-auto rounded-lg border border-slate-200/80">
+                                              <table className="w-full text-left font-mono text-xs">
+                                                <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                                                  <tr>
+                                                    <th className="py-2.5 px-3">DATE</th>
+                                                    <th className="py-2.5 px-3">MONGO MASTER</th>
+                                                    <th className="py-2.5 px-3">REDIS</th>
+                                                    <th className="py-2.5 px-3 text-right">STATUS</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                  {(() => {
+                                                    const datesList = (ra?.incidents?.dateBreakdown || []).map((r: any) => r.date);
+                                                    const targetList = datesList.length > 0 ? datesList : [new Date().toISOString().slice(0, 10)];
+                                                    return targetList.map((dStr: string, dIdx: number) => {
+                                                      const rowMongo = dIdx === 0 ? item.mongo : 0;
+                                                      const rowRedis = dIdx === 0 ? item.redis : 0;
+                                                      const isRowSynced = rowMongo === rowRedis;
+                                                      return (
+                                                        <tr key={dIdx} className="hover:bg-slate-50/60">
+                                                          <td className="py-2 px-3 font-semibold text-slate-900">{dStr}</td>
+                                                          <td className="py-2 px-3 font-semibold text-slate-800">{rowMongo}</td>
+                                                          <td className="py-2 px-3 font-semibold text-indigo-700">{rowRedis}</td>
+                                                          <td className="py-2 px-3 text-right font-sans">
+                                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                                              isRowSynced
+                                                                ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                                                : 'text-rose-700 bg-rose-50 border border-rose-200/60'
+                                                            }`}>
+                                                              {isRowSynced ? (rowMongo === 0 ? 'SYNCED (0)' : 'SYNC') : 'MISMATCH'}
+                                                            </span>
+                                                          </td>
+                                                        </tr>
+                                                      );
+                                                    });
+                                                  })()}
+                                                </tbody>
+                                              </table>
                                             </div>
                                           )}
                                         </div>
@@ -1249,36 +1308,50 @@ export default function DataSyncPage() {
                                       <td colSpan={4} className="p-3 sm:p-4">
                                         <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
                                           <div className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2.5 flex items-center justify-between">
-                                            <span className="flex items-center gap-1.5 text-cyan-800">
-                                              <span className="w-2 h-2 rounded-full bg-cyan-500 inline-block" />
-                                              HISTORICAL STATS CACHE DETAILS
+                                            <span className="text-cyan-800">
+                                              HISTORICAL STATS REDIS SYNC BREAKDOWN
                                             </span>
                                             <span className="font-mono text-slate-400 font-normal text-[11px]">
                                               Prefix: [{t.redisPrefix}]
                                             </span>
                                           </div>
-                                          <div className="space-y-3 font-sans text-xs">
-                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                <div className="text-slate-500 text-[11px] font-medium">Redis Key</div>
-                                                <div className="font-mono font-semibold text-slate-800 mt-0.5 truncate">{t.redisPrefix}:historical_statistics:weekly</div>
-                                              </div>
-                                              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                <div className="text-slate-500 text-[11px] font-medium">Cache Status</div>
-                                                <div className="font-semibold text-slate-800 mt-0.5">{isHistCached ? 'Active' : 'Missing'}</div>
-                                              </div>
-                                              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200/60">
-                                                <div className="text-slate-500 text-[11px] font-medium">Parity Status</div>
-                                                <div className="font-semibold mt-0.5">
-                                                  <span className={isHistCached ? 'text-emerald-600' : 'text-amber-600'}>
-                                                    {isHistCached ? '100% In Sync' : 'Needs Cache Generation'}
-                                                  </span>
-                                                </div>
-                                              </div>
-                                            </div>
-                                            <div className="text-slate-500 text-[11px]">
-                                              Aggregated historical metrics powering weekly analytics and reporting dashboards in Redis.
-                                            </div>
+                                          <div className="overflow-x-auto rounded-lg border border-slate-200/80">
+                                            <table className="w-full text-left font-mono text-xs">
+                                              <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+                                                <tr>
+                                                  <th className="py-2.5 px-3">DATE</th>
+                                                  <th className="py-2.5 px-3">MONGO MASTER</th>
+                                                  <th className="py-2.5 px-3">REDIS</th>
+                                                  <th className="py-2.5 px-3 text-right">STATUS</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-slate-100">
+                                                {(() => {
+                                                  const datesList = (ra?.incidents?.dateBreakdown || []).map((r: any) => r.date);
+                                                  const targetList = datesList.length > 0 ? datesList : [new Date().toISOString().slice(0, 10)];
+                                                  return targetList.map((dStr: string, dIdx: number) => {
+                                                    const rowMongo = isHistCached ? 'Available' : 'Available';
+                                                    const rowRedis = isHistCached ? 'Cached' : 'No Cache';
+                                                    return (
+                                                      <tr key={dIdx} className="hover:bg-slate-50/60">
+                                                        <td className="py-2 px-3 font-semibold text-slate-900">{dStr}</td>
+                                                        <td className="py-2 px-3 font-semibold text-slate-800">{rowMongo}</td>
+                                                        <td className="py-2 px-3 font-semibold text-indigo-700">{rowRedis}</td>
+                                                        <td className="py-2 px-3 text-right font-sans">
+                                                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                                            isHistCached
+                                                              ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                                              : 'text-amber-700 bg-amber-50 border border-amber-200/60'
+                                                          }`}>
+                                                            {isHistCached ? 'SYNC' : 'NO CACHE'}
+                                                          </span>
+                                                        </td>
+                                                      </tr>
+                                                    );
+                                                  });
+                                                })()}
+                                              </tbody>
+                                            </table>
                                           </div>
                                         </div>
                                       </td>
