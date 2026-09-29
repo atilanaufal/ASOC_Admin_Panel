@@ -4,6 +4,7 @@ import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
 import { formatBytes } from '@/lib/tenant-utils';
 import { getRemoteVmConfig } from '@/lib/remote';
+import { withCache, invalidateCachePrefix } from '@/lib/server-cache';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -21,8 +22,9 @@ async function runRemoteScript(commandStr: string): Promise<{ stdout: string; st
 }
 
 export async function GET(_request: NextRequest) {
-  try {
+  return withCache('data-retention:status', 30_000, async () => {
     const pool = getMysqlPool();
+
     const [tenantsRows]: any = await pool.query(
       'SELECT id, tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE is_active = 1 ORDER BY id ASC'
     );
@@ -129,18 +131,21 @@ export async function GET(_request: NextRequest) {
       globalPolicy,
       tenants: tenantRetentionList,
     });
-  } catch (err: any) {
+  }).catch((err: any) => {
     console.error('API /api/data-retention GET Error:', err);
     return NextResponse.json(
       { success: false, error: err.message || 'Failed to load data retention configuration' },
       { status: 500 }
     );
-  }
+  });
 }
 
 export async function POST(request: NextRequest) {
+  // Invalidate cache so next GET fetches fresh data
+  invalidateCachePrefix('data-retention:');
   try {
     const body = await request.json();
+
     const {
       tenantId = 'all',
       action,

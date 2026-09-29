@@ -3,8 +3,6 @@ import type { NextRequest } from 'next/server';
 import { pingMysql, getMysqlPool } from '@/lib/mysql';
 import { pingMongo, getMongoClient } from '@/lib/mongodb';
 import { pingRedis, getActiveRedisClient } from '@/lib/redis';
-import { pingWazuh, fetchWazuhAgents } from '@/lib/wazuh';
-import { pingIris, pingOpenSearch } from '@/lib/iris';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,19 +29,16 @@ function formatStartedAt(seconds?: number): string {
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const targetTenantParam = searchParams.get('tenant') || 'all';
-  const periodParam = searchParams.get('period') || 'all';
 
   try {
-    // 1. Health checks on all 6 engines
-    const [mysqlHealth, mongoHealth, redisHealth, wazuhHealth, opensearchHealth, irisHealth] =
+    // Health checks on core 3 databases only
+    const [mysqlHealth, mongoHealth, redisHealth] =
       await Promise.all([
         pingMysql(),
         pingMongo(),
         pingRedis(),
-        pingWazuh(),
-        pingOpenSearch(),
-        pingIris(),
       ]);
+
 
     // 2. Fetch all tenants from MySQL
     let tenantsList: any[] = [];
@@ -100,21 +95,12 @@ export async function GET(request: NextRequest) {
     const mongoClient = mongoHealth.ok ? await getMongoClient() : null;
     const redisClient = redisHealth.ok ? await getActiveRedisClient() : null;
 
-    let wazuhApiAgents: any[] = [];
-    if (wazuhHealth.ok) {
-      try {
-        wazuhApiAgents = await fetchWazuhAgents(500);
-      } catch (err) {
-        console.error('Error fetching Wazuh API agents:', err);
-      }
-    }
 
     const tenantAudits = [];
 
+
     for (const t of (targetTenants.length > 0 ? targetTenants : tenantsList)) {
       const dbName = t.database_name;
-      const tCode = t.tenant_code;
-      const tPrefix = t.redis_prefix;
 
       let script1_incidentsByDate: Array<{ date: string; openSearchHits: number; mongoCount: number; isSynced: boolean; status: string }> = [];
       let script1_vulnBySeverity: Array<{ severity: string; openSearchHits: number; mongoCount: number; isSynced: boolean; status: string }> = [];
@@ -224,7 +210,7 @@ export async function GET(request: NextRequest) {
         } catch {}
       }
 
-      const combinedDevices = dbDevices.length > 0 ? dbDevices : (tCode === 'ITB' ? [] : wazuhApiAgents);
+      const combinedDevices = dbDevices;
       for (const dev of combinedDevices) {
         const id = String(dev.id || dev.agent_id || '001');
         const name = dev.name || dev.agent || dev.hostname || `Agent-${id}`;

@@ -5,6 +5,7 @@ import { getActiveRedisClient } from '@/lib/redis';
 import { getMysqlPool } from '@/lib/mysql';
 import { getRemoteVmConfig, runRemoteScript } from '@/lib/remote';
 import { auditVulnerabilitiesForTenant, type VulnerabilityDateBreakdown } from '@/lib/vulnerability-audit';
+import { withCache, invalidateCachePrefix } from '@/lib/server-cache';
 
 function toScriptPeriod(period: string, startDate?: string | null, endDate?: string | null): string {
   const p = (period || 'today').toLowerCase();
@@ -110,12 +111,15 @@ function getDateRangeForPeriod(
 }
 
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const period = searchParams.get('period') || 'THIS_WEEK';
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-    const tenantFilter = searchParams.get('tenant') || 'all';
+  const { searchParams } = new URL(request.url);
+  const period = searchParams.get('period') || 'THIS_WEEK';
+  const startDate = searchParams.get('startDate');
+  const endDate = searchParams.get('endDate');
+  const tenantFilter = searchParams.get('tenant') || 'all';
+
+  const cacheKey = `data-sync:${period}:${tenantFilter}:${startDate || ''}:${endDate || ''}`;
+
+  return withCache(cacheKey, 60_000, async () => {
     const dateRange = getDateRangeForPeriod(period, startDate, endDate);
     const scriptPeriod = toScriptPeriod(period, startDate, endDate);
 
@@ -609,21 +613,24 @@ export async function GET(request: NextRequest) {
       cronConfig,
       allTenants,
     });
-  } catch (err: any) {
+  }).catch((err: any) => {
     console.error('API /api/data-sync GET Error:', err);
     return NextResponse.json(
       { success: false, error: err.message || 'Failed to fetch audit data' },
       { status: 500 }
     );
-  }
+  });
 }
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
+  // Invalidate data-sync cache after any sync/check action
+  invalidateCachePrefix('data-sync:');
   try {
     const body = await request.json();
     const { action } = body;
     const pool = getMysqlPool();
+
 
     // ----------------------------------------------------
     // ACTION 1: UPDATE CRON CONFIG (DIRECT HOST CRONTAB)
