@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { MorphismSummary } from '@/components/ui/MorphismSummary';
 import CustomSelect from '@/components/ui/CustomSelect';
+import { getClientCache, setClientCache } from '@/lib/client-cache';
 
 interface TenantIrisItem {
   id: number;
@@ -57,6 +58,16 @@ export default function IrisCustomerPage() {
   };
 
   const fetchData = async (isManual = false) => {
+    if (!isManual) {
+      const cached = getClientCache<any>('iris-customer');
+      if (cached) {
+        setTenants(cached.tenants || []);
+        setAvailableCustomers(cached.availableCustomers || []);
+        setSummary(cached.summary || null);
+        setLoading(false);
+        return;
+      }
+    }
     if (isManual) setRefreshing(true);
     try {
       const res = await fetch('/api/tenant-mapping/iris-customer');
@@ -65,6 +76,11 @@ export default function IrisCustomerPage() {
         setTenants(data.tenants || []);
         setAvailableCustomers(data.availableCustomers || []);
         setSummary(data.summary || null);
+        setClientCache('iris-customer', {
+          tenants: data.tenants || [],
+          availableCustomers: data.availableCustomers || [],
+          summary: data.summary || null,
+        });
         if (isManual) showToast('DFIR-IRIS customer mapping data refreshed successfully.');
       } else {
         throw new Error('Failed to fetch IRIS customer mapping data');
@@ -163,9 +179,9 @@ export default function IrisCustomerPage() {
     );
   });
 
-  const mappedCount = summary?.mappedTenants ?? tenants.filter((t) => t.isMapped).length;
-  const unmappedCount = summary?.unmappedTenants ?? tenants.filter((t) => !t.isMapped).length;
-  const coverageRatio = tenants.length > 0 ? Math.round((mappedCount / tenants.length) * 100) : 100;
+  const mappedCount = summary?.mappedCount ?? summary?.mappedTenants ?? tenants.filter((t) => t.isMapped || (t as any).hasMapping).length;
+  const unmappedCount = summary?.unmappedCount ?? summary?.unmappedTenants ?? (tenants.length - mappedCount);
+  const coverageRatio = summary?.mappingCoverage ?? (tenants.length > 0 ? Math.round((mappedCount / tenants.length) * 100) : 100);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -374,7 +390,7 @@ export default function IrisCustomerPage() {
 
                       {/* Status */}
                       <td className="py-3.5 px-4">
-                        {t.isMapped ? (
+                        {(t.isMapped || (t as any).hasMapping) ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             Mapped
@@ -484,7 +500,7 @@ export default function IrisCustomerPage() {
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              {selectedTenant.isMapped ? (
+              {(selectedTenant.isMapped || (selectedTenant as any).hasMapping) ? (
                 <button
                   onClick={handleRemoveMapping}
                   disabled={saving}

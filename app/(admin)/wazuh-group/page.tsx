@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { MorphismSummary } from '@/components/ui/MorphismSummary';
 import CustomSelect from '@/components/ui/CustomSelect';
+import { getClientCache, setClientCache } from '@/lib/client-cache';
 
 interface TenantGroupItem {
   id: number;
@@ -54,6 +55,16 @@ export default function WazuhGroupPage() {
   };
 
   const fetchData = async (isManual = false) => {
+    if (!isManual) {
+      const cached = getClientCache<any>('wazuh-group');
+      if (cached) {
+        setTenants(cached.tenants || []);
+        setAvailableGroups(cached.availableGroups || []);
+        setSummary(cached.summary || null);
+        setLoading(false);
+        return;
+      }
+    }
     if (isManual) setRefreshing(true);
     try {
       const res = await fetch('/api/tenant-mapping/wazuh-group');
@@ -62,6 +73,11 @@ export default function WazuhGroupPage() {
         setTenants(data.tenants || []);
         setAvailableGroups(data.availableGroups || []);
         setSummary(data.summary || null);
+        setClientCache('wazuh-group', {
+          tenants: data.tenants || [],
+          availableGroups: data.availableGroups || [],
+          summary: data.summary || null,
+        });
         if (isManual) showToast('Wazuh group mapping data refreshed successfully.');
       } else {
         throw new Error('Failed to fetch Wazuh group mapping data');
@@ -152,9 +168,9 @@ export default function WazuhGroupPage() {
     );
   });
 
-  const mappedCount = summary?.mappedTenants ?? tenants.filter((t) => t.isMapped).length;
-  const unmappedCount = summary?.unmappedTenants ?? tenants.filter((t) => !t.isMapped).length;
-  const coverageRatio = tenants.length > 0 ? Math.round((mappedCount / tenants.length) * 100) : 100;
+  const mappedCount = summary?.mappedCount ?? summary?.mappedTenants ?? tenants.filter((t) => t.isMapped || (t as any).hasMapping).length;
+  const unmappedCount = summary?.unmappedCount ?? summary?.unmappedTenants ?? (tenants.length - mappedCount);
+  const coverageRatio = summary?.mappingCoverage ?? (tenants.length > 0 ? Math.round((mappedCount / tenants.length) * 100) : 100);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -360,7 +376,7 @@ export default function WazuhGroupPage() {
 
                       {/* Status */}
                       <td className="py-3.5 px-4">
-                        {t.isMapped ? (
+                        {(t.isMapped || (t as any).hasMapping) ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             Mapped
@@ -439,7 +455,7 @@ export default function WazuhGroupPage() {
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              {selectedTenant.isMapped ? (
+              {(selectedTenant.isMapped || (selectedTenant as any).hasMapping) ? (
                 <button
                   onClick={handleRemoveMapping}
                   disabled={saving}

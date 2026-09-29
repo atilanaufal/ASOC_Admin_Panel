@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Play, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
 import CustomSelect from '@/components/ui/CustomSelect';
+import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
 
 interface VulnerabilityDetailRow {
   severity: string;
@@ -77,7 +78,9 @@ interface TenantAuditItem {
   irisCustomerId: number | null;
   irisCustomerName: string;
   totalMongoIncidents: number;
+  totalIndexerIncidents?: number;
   totalMongoVulns: number;
+  totalIndexerVulns?: number;
   totalMongoReports: number;
   redisKeysCount: number;
   redisSummaryPresent: boolean;
@@ -111,7 +114,9 @@ interface IrisTenantItem {
 type TabType = 'alerts' | 'vulnerabilities' | 'redis' | 'iris' | 'cronjob';
 
 export default function DataSyncPage() {
-  const [tenants, setTenants] = useState<TenantAuditItem[]>([]);
+  const [alertsTenants, setAlertsTenants] = useState<TenantAuditItem[]>([]);
+  const [vulnsTenants, setVulnsTenants] = useState<TenantAuditItem[]>([]);
+  const [redisTenants, setRedisTenants] = useState<TenantAuditItem[]>([]);
   const [masterTenants, setMasterTenants] = useState<{ id: number; tenantCode: string; tenantName: string }[]>([]);
   const [irisData, setIrisData] = useState<{ is_in_sync: boolean; tenants: IrisTenantItem[] } | null>(null);
   const [cronConfig, setCronConfig] = useState<any>(null);
@@ -131,6 +136,7 @@ export default function DataSyncPage() {
 
   // 5 Tabs: Alerts | Vulnerabilities | Redis | IRIS | CronJob
   const [activeTab, setActiveTab] = useState<TabType>('alerts');
+  const [loadedTabs, setLoadedTabs] = useState<Record<string, boolean>>({});
 
   // Script Action States
   const [runningAction, setRunningAction] = useState<string | null>(null);
@@ -159,14 +165,60 @@ export default function DataSyncPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const fetchAuditData = async (
+  const getCacheKey = (period: string, start?: string, end?: string) =>
+    `data-sync-${period}-${period === 'CUSTOM' ? `${start}_${end}` : ''}`;
+
+  const loadPeriodData = async (
+    period: string,
+    tab: TabType,
+    start: string,
+    end: string,
+    force = false
+  ) => {
+    const key = getCacheKey(period, start, end);
+    const cached = force ? null : getClientCache<any>(key);
+
+    if (cached) {
+      if (cached.masterTenants?.length) setMasterTenants(cached.masterTenants);
+      setAlertsTenants(cached.alertsTenants || []);
+      setVulnsTenants(cached.vulnsTenants || []);
+      setRedisTenants(cached.redisTenants || []);
+      setIrisData(cached.irisData || null);
+      if (cached.cronConfig) {
+        setCronConfig(cached.cronConfig);
+        setCronEnabled(cached.cronConfig.enabled);
+        setCronSchedule(cached.cronConfig.schedule || '0 * * * *');
+      }
+      setLoadedTabs(cached.loadedTabs || {});
+
+      if (!cached.loadedTabs?.[tab]) {
+        await fetchTabAuditData(tab, period, start, end, false);
+      } else {
+        setLoading(false);
+      }
+      return;
+    }
+
+    setAlertsTenants([]);
+    setVulnsTenants([]);
+    setRedisTenants([]);
+    setIrisData(null);
+    setLoadedTabs({});
+
+    await fetchTabAuditData(tab, period, start, end, true);
+  };
+
+  const fetchTabAuditData = async (
+    tab: TabType = activeTab,
     period = selectedPeriod,
     start = customStartDate,
-    end = customEndDate
+    end = customEndDate,
+    force = false
   ) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set('tab', tab);
       params.set('period', period);
       params.set('tenant', 'all');
       if (period === 'CUSTOM') {
@@ -177,7 +229,6 @@ export default function DataSyncPage() {
       const res = await fetch(`/api/data-sync?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
-        setTenants(json.auditResults || []);
         if (json.allTenants && Array.isArray(json.allTenants) && json.allTenants.length > 0) {
           setMasterTenants(json.allTenants);
         } else if (masterTenants.length === 0 && json.auditResults?.length > 0) {
@@ -189,6 +240,17 @@ export default function DataSyncPage() {
             }))
           );
         }
+
+        if (json.auditResults && Array.isArray(json.auditResults)) {
+          if (tab === 'alerts') {
+            setAlertsTenants(json.auditResults);
+          } else if (tab === 'vulnerabilities') {
+            setVulnsTenants(json.auditResults);
+          } else if (tab === 'redis') {
+            setRedisTenants(json.auditResults);
+          }
+        }
+
         if (json.irisAudit) {
           setIrisData(json.irisAudit);
         }
@@ -197,25 +259,58 @@ export default function DataSyncPage() {
           setCronEnabled(json.cronConfig.enabled);
           setCronSchedule(json.cronConfig.schedule || '0 * * * *');
         }
+
+        const cacheKey = getCacheKey(period, start, end);
+        const prevC = getClientCache<any>(cacheKey) || { loadedTabs: {} };
+        const updatedLoadedTabs = { ...(prevC.loadedTabs || {}), [tab]: true };
+        setLoadedTabs(updatedLoadedTabs);
+
+        setClientCache(cacheKey, {
+          ...prevC,
+          masterTenants: json.allTenants || prevC.masterTenants || masterTenants,
+          alertsTenants: tab === 'alerts' ? json.auditResults : (prevC.alertsTenants || []),
+          vulnsTenants: tab === 'vulnerabilities' ? json.auditResults : (prevC.vulnsTenants || []),
+          redisTenants: tab === 'redis' ? json.auditResults : (prevC.redisTenants || []),
+          irisData: tab === 'iris' ? json.irisAudit : (prevC.irisData || null),
+          cronConfig: json.cronConfig || prevC.cronConfig || cronConfig,
+          loadedTabs: updatedLoadedTabs,
+        });
       }
     } catch (err) {
       console.error(err);
-      showToast('Failed to load audit data', 'error');
+      showToast(`Failed to load ${tab} data`, 'error');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleTabChange = (newTab: TabType) => {
+    setActiveTab(newTab);
+    const cacheKey = getCacheKey(selectedPeriod, customStartDate, customEndDate);
+    const cached = getClientCache<any>(cacheKey);
+    if (!cached?.loadedTabs?.[newTab]) {
+      fetchTabAuditData(newTab, selectedPeriod, customStartDate, customEndDate, false);
+    }
+  };
+
+  const handlePeriodChange = (newPeriod: string) => {
+    if (newPeriod === selectedPeriod) return;
+    setSelectedPeriod(newPeriod);
+    loadPeriodData(newPeriod, activeTab, customStartDate, customEndDate);
+  };
+
   useEffect(() => {
     if (activeTab === 'redis' && selectedPeriod !== 'TODAY' && selectedPeriod !== 'THIS_WEEK') {
       setSelectedPeriod('THIS_WEEK');
+      loadPeriodData('THIS_WEEK', 'redis', customStartDate, customEndDate);
     }
   }, [activeTab, selectedPeriod]);
 
   useEffect(() => {
-    fetchAuditData(selectedPeriod, customStartDate, customEndDate);
+    loadPeriodData(selectedPeriod, activeTab, customStartDate, customEndDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeriod]);
+  }, []);
+
 
   // Trigger Check
   const handleRunCheck = async (checkScript: string, targetTenant?: string) => {
@@ -241,7 +336,9 @@ export default function DataSyncPage() {
       }
 
       showToast(json.message || 'Audit verification completed');
-      fetchAuditData();
+      const cacheKey = getCacheKey(selectedPeriod, customStartDate, customEndDate);
+      clearClientCache(cacheKey);
+      fetchTabAuditData(activeTab, selectedPeriod, customStartDate, customEndDate, true);
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -274,7 +371,9 @@ export default function DataSyncPage() {
       }
 
       showToast(json.message || 'Synchronization executed successfully');
-      fetchAuditData();
+      const cacheKey = getCacheKey(selectedPeriod, customStartDate, customEndDate);
+      clearClientCache(cacheKey);
+      fetchTabAuditData(activeTab, selectedPeriod, customStartDate, customEndDate, true);
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -312,9 +411,15 @@ export default function DataSyncPage() {
     }
   };
 
+  const currentTenants = (
+    activeTab === 'vulnerabilities' ? vulnsTenants :
+    activeTab === 'redis' ? redisTenants :
+    alertsTenants
+  ) || [];
+
   const displayedTenants = selectedTenant === 'all'
-    ? tenants
-    : tenants.filter((t) => t.tenantCode === selectedTenant);
+    ? currentTenants
+    : currentTenants.filter((t) => t.tenantCode === selectedTenant);
 
   const displayedIrisTenants = irisData?.tenants
     ? selectedTenant === 'all'
@@ -322,8 +427,10 @@ export default function DataSyncPage() {
       : irisData.tenants.filter((t) => t.tenant_code === selectedTenant)
     : [];
 
-  const totalIncidents = displayedTenants.reduce((s, t) => s + (t.totalMongoIncidents || 0), 0);
-  const totalVulns = displayedTenants.reduce((s, t) => s + (t.totalMongoVulns || 0), 0);
+  const displayedAlerts = selectedTenant === 'all' ? alertsTenants : alertsTenants.filter(t => t.tenantCode === selectedTenant);
+  const displayedVulns = selectedTenant === 'all' ? vulnsTenants : vulnsTenants.filter(t => t.tenantCode === selectedTenant);
+  const totalIncidents = displayedAlerts.reduce((s, t) => s + (t.totalMongoIncidents || 0), 0);
+  const totalVulns = displayedVulns.reduce((s, t) => s + (t.totalMongoVulns || 0), 0);
   const totalReports = displayedIrisTenants.reduce((s, t) => s + (t.mongo_reports_count || 0), 0);
 
   return (
@@ -382,7 +489,7 @@ export default function DataSyncPage() {
             ).map((p) => (
               <button
                 key={p.id}
-                onClick={() => setSelectedPeriod(p.id)}
+                onClick={() => handlePeriodChange(p.id)}
                 className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   selectedPeriod === p.id
                     ? 'bg-white text-[#00BCD4] shadow-xs'
@@ -411,7 +518,7 @@ export default function DataSyncPage() {
                 className="text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#00BCD4]"
               />
               <button
-                onClick={() => fetchAuditData('CUSTOM', customStartDate, customEndDate)}
+                onClick={() => { loadPeriodData('CUSTOM', activeTab, customStartDate, customEndDate, true); }}
                 className="px-2.5 py-1 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-lg transition cursor-pointer"
               >
                 Apply
@@ -428,7 +535,7 @@ export default function DataSyncPage() {
             onChange={(val) => setSelectedTenant(String(val))}
             options={[
               { value: 'all', label: 'All Tenants', badge: 'ALL' },
-              ...(masterTenants.length > 0 ? masterTenants : tenants).map((t) => ({
+              ...(masterTenants.length > 0 ? masterTenants : currentTenants).map((t) => ({
                 value: t.tenantCode,
                 label: `[${t.tenantCode}] ${t.tenantName || (t as any).campusName || t.tenantCode}`,
                 badge: t.tenantCode,
@@ -439,7 +546,11 @@ export default function DataSyncPage() {
           />
 
           <button
-            onClick={() => fetchAuditData(selectedPeriod, customStartDate, customEndDate)}
+            onClick={() => {
+            const cacheKey = getCacheKey(selectedPeriod, customStartDate, customEndDate);
+            clearClientCache(cacheKey);
+            fetchTabAuditData(activeTab, selectedPeriod, customStartDate, customEndDate, true);
+          }}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/80 shadow-2xs rounded-xl transition-all disabled:opacity-50 cursor-pointer"
           >
@@ -501,7 +612,7 @@ export default function DataSyncPage() {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as TabType)}
+              onClick={() => handleTabChange(tab.id as TabType)}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 isActive
                   ? 'bg-white text-[#00BCD4] border border-slate-200/80 shadow-xs'
@@ -946,7 +1057,6 @@ export default function DataSyncPage() {
             <div className="space-y-4">
               {displayedTenants.map((t) => {
                 const ra = t.redisAudit;
-                const isAllSynced = ra?.isAllSynced ?? false;
 
                 const collections = [
                   {
@@ -979,6 +1089,8 @@ export default function DataSyncPage() {
                   },
                 ];
 
+                const isAllSynced = collections.every((c) => c.isSynced);
+
                 return (
                   <div
                     key={t.id}
@@ -1009,7 +1121,7 @@ export default function DataSyncPage() {
                             ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
                             : 'text-rose-700 bg-rose-50 border border-rose-200'
                         }`}>
-                          {isAllSynced ? '100% IN SYNC' : 'DISCREPANCY DETECTED'}
+                          {isAllSynced ? '100% IN SYNC' : 'MISMATCH'}
                         </span>
                         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700">
                           {collapsedCards[`redis-${t.id || t.tenantCode}`] ? 'Expand' : 'Collapse'}

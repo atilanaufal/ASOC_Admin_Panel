@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { MorphismSummary } from '@/components/ui/MorphismSummary';
 import CustomSelect from '@/components/ui/CustomSelect';
+import { getClientCache, setClientCache } from '@/lib/client-cache';
 
 interface TenantRetentionItem {
   id: number;
@@ -63,6 +64,15 @@ export default function DataRetentionPage() {
   };
 
   const fetchData = async (isManual = false) => {
+    if (!isManual) {
+      const cached = getClientCache<any>('data-retention');
+      if (cached) {
+        setTenants(cached.tenants || []);
+        setGlobalPolicy(cached.globalPolicy || null);
+        setLoading(false);
+        return;
+      }
+    }
     if (isManual) setRefreshing(true);
     try {
       const res = await fetch('/api/data-retention');
@@ -70,6 +80,10 @@ export default function DataRetentionPage() {
         const data = await res.json();
         setTenants(data.tenants || []);
         setGlobalPolicy(data.globalPolicy || null);
+        setClientCache('data-retention', {
+          tenants: data.tenants || [],
+          globalPolicy: data.globalPolicy || null,
+        });
         if (isManual) showToast('Retention policy data updated successfully.');
       } else {
         throw new Error('Failed to fetch retention policies');
