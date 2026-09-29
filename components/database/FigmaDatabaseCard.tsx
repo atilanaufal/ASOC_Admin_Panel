@@ -105,16 +105,6 @@ export function FigmaDatabaseCard({ node }: FigmaDatabaseCardProps) {
           <span className="text-slate-600 font-medium">Uptime :</span>
           <span className="text-slate-900 font-semibold">{uptimeText}</span>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-slate-600 font-medium">Last Seen :</span>
-          <span
-            className={`font-semibold ${
-              isOnline ? 'text-emerald-600' : 'text-slate-500'
-            }`}
-          >
-            {lastSeenText}
-          </span>
-        </div>
       </div>
     </div>
   );

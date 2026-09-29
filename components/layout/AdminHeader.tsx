@@ -145,10 +145,10 @@ export function AdminHeader({
         {/* Right side: Clock, Date, and User Profile */}
         <div className="flex items-center gap-5 md:gap-8 ml-auto">
           {/* Digital Clock & Date */}
-          <div className="text-xs md:text-sm font-medium text-slate-600 tracking-wide font-mono hidden sm:flex items-center gap-2">
+          <div className="text-xs md:text-sm font-semibold text-slate-700 tracking-wide font-mono hidden sm:flex items-center gap-2">
             <span>{timeString}</span>
-            <span className="text-slate-300">—</span>
-            <span className="text-slate-500">{dateString}</span>
+            <span className="text-slate-300 font-normal">—</span>
+            <span className="text-slate-600">{dateString}</span>
           </div>
 
           {/* User Profile avatar + dynamic account name */}
