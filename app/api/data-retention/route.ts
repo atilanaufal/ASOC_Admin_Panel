@@ -3,14 +3,26 @@ import type { NextRequest } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
 import { formatBytes } from '@/lib/tenant-utils';
-import { runRemoteScript } from '@/lib/remote';
-import { withCache, invalidateCachePrefix } from '@/lib/server-cache';
+import { getRemoteVmConfig } from '@/lib/remote';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
+const execAsync = promisify(exec);
+
+async function runRemoteScript(commandStr: string): Promise<{ stdout: string; stderr: string; success: boolean }> {
+  try {
+    const { host: vmHost, user: vmUser } = getRemoteVmConfig();
+    const remoteCmd = `ssh -o BatchMode=yes -o ConnectTimeout=8 ${vmUser}@${vmHost} "${commandStr.replace(/"/g, '\\"')}"`;
+    const { stdout, stderr } = await execAsync(remoteCmd, { timeout: 60000 });
+    return { stdout: stdout.trim(), stderr: stderr.trim(), success: true };
+  } catch (err: any) {
+    return { stdout: (err.stdout || '').trim(), stderr: (err.stderr || err.message || '').trim(), success: false };
+  }
+}
 
 export async function GET(_request: NextRequest) {
-  return withCache('data-retention:status', 30_000, async () => {
+  try {
     const pool = getMysqlPool();
-
     const [tenantsRows]: any = await pool.query(
       'SELECT id, tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE is_active = 1 ORDER BY id ASC'
     );
@@ -117,21 +129,18 @@ export async function GET(_request: NextRequest) {
       globalPolicy,
       tenants: tenantRetentionList,
     });
-  }).catch((err: any) => {
+  } catch (err: any) {
     console.error('API /api/data-retention GET Error:', err);
     return NextResponse.json(
       { success: false, error: err.message || 'Failed to load data retention configuration' },
       { status: 500 }
     );
-  });
+  }
 }
 
 export async function POST(request: NextRequest) {
-  // Invalidate cache so next GET fetches fresh data
-  invalidateCachePrefix('data-retention:');
   try {
     const body = await request.json();
-
     const {
       tenantId = 'all',
       action,
