@@ -954,24 +954,28 @@ export default function DataSyncPage() {
                     mongo: ra?.incidents?.mongo ?? t.totalMongoIncidents,
                     redis: ra?.incidents?.redis ?? 0,
                     isSynced: ra?.incidents?.isSynced ?? (t.totalMongoIncidents === 0),
+                    canExpand: true,
                   },
                   {
                     name: 'Vulnerabilities',
                     mongo: ra?.vulnerabilities?.mongo ?? 0,
                     redis: ra?.vulnerabilities?.redis ?? 0,
                     isSynced: ra?.vulnerabilities?.isSynced ?? ((ra?.vulnerabilities?.mongo ?? 0) === (ra?.vulnerabilities?.redis ?? 0)),
+                    canExpand: true,
                   },
                   {
                     name: 'IRIS Reports',
                     mongo: ra?.reports?.mongo ?? 0,
                     redis: ra?.reports?.redis ?? 0,
                     isSynced: ra?.reports?.isSynced ?? true,
+                    canExpand: true,
                   },
                   {
                     name: 'Devices',
                     mongo: ra?.devices?.mongo ?? 0,
                     redis: ra?.devices?.redis ?? 0,
                     isSynced: ra?.devices?.isSynced ?? true,
+                    canExpand: false,
                   },
                 ];
 
@@ -1028,23 +1032,27 @@ export default function DataSyncPage() {
                           <tbody className="divide-y divide-slate-100 text-slate-800">
                             {collections.map((item, idx) => {
                               const expandKey = `${t.tenantCode}-${item.name}`;
-                              const isExpanded = expandedRedisCollections[expandKey];
+                              const isExpanded = item.canExpand && Boolean(expandedRedisCollections[expandKey]);
 
                               return (
                                 <React.Fragment key={idx}>
                                   <tr
-                                    onClick={() => toggleRedisCollection(expandKey)}
-                                    className="hover:bg-slate-50 cursor-pointer transition-colors"
+                                    onClick={() => item.canExpand && toggleRedisCollection(expandKey)}
+                                    className={`hover:bg-slate-50 transition-colors ${item.canExpand ? 'cursor-pointer' : ''}`}
                                   >
                                     <td className="py-3.5 px-4 font-sans">
                                       <div className="flex items-center gap-2">
-                                        <span className="p-1 rounded-md text-slate-500 hover:text-slate-800 transition">
-                                          {isExpanded ? (
-                                            <ChevronDown className="w-4 h-4 text-cyan-600" />
-                                          ) : (
-                                            <ChevronRight className="w-4 h-4 text-slate-400" />
-                                          )}
-                                        </span>
+                                        {item.canExpand ? (
+                                          <span className="p-1 rounded-md text-slate-500 hover:text-slate-800 transition">
+                                            {isExpanded ? (
+                                              <ChevronDown className="w-4 h-4 text-cyan-600" />
+                                            ) : (
+                                              <ChevronRight className="w-4 h-4 text-slate-400" />
+                                            )}
+                                          </span>
+                                        ) : (
+                                          <span className="w-4 h-4 inline-block ml-1" />
+                                        )}
                                         <div className="font-semibold text-slate-900 text-sm">{item.name}</div>
                                       </div>
                                     </td>
@@ -1061,8 +1069,8 @@ export default function DataSyncPage() {
                                     </td>
                                   </tr>
 
-                                  {/* Expandable Breakdown for Item */}
-                                  {isExpanded && (
+                                  {/* Expandable Breakdown for Item (Only Alerts, Vulnerabilities, IRIS Reports) */}
+                                  {item.canExpand && isExpanded && (
                                     <tr className="bg-slate-50/80 border-b border-slate-200">
                                       <td colSpan={4} className="p-3 sm:p-4">
                                         <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
@@ -1144,7 +1152,6 @@ export default function DataSyncPage() {
                                                     return baseBreakdown.map((vb: any, vIdx: number) => {
                                                       const rowDate = vb.date;
                                                       const rowMongo = vb.totalMongo !== undefined ? vb.totalMongo : 0;
-                                                      // Vulnerabilities in Redis are cached weekly
                                                       const rowRedis = rowMongo === 0 ? 0 : (item.redis > 0 ? rowMongo : 0);
                                                       const isRowSynced = rowMongo === rowRedis;
                                                       return (
@@ -1212,49 +1219,6 @@ export default function DataSyncPage() {
                                               </table>
                                             </div>
                                           )}
-
-                                          {/* Devices Breakdown */}
-                                          {item.name === 'Devices' && (
-                                            <div className="overflow-x-auto rounded-lg border border-slate-200/80">
-                                              <table className="w-full text-left font-mono text-xs">
-                                                <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
-                                                  <tr>
-                                                    <th className="py-2.5 px-3">DATE</th>
-                                                    <th className="py-2.5 px-3">MONGO MASTER</th>
-                                                    <th className="py-2.5 px-3">REDIS</th>
-                                                    <th className="py-2.5 px-3 text-right">STATUS</th>
-                                                  </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                  {(() => {
-                                                    const datesList = (ra?.incidents?.dateBreakdown || []).map((r: any) => r.date);
-                                                    const targetList = datesList.length > 0 ? datesList : [new Date().toISOString().slice(0, 10)];
-                                                    return targetList.map((dStr: string, dIdx: number) => {
-                                                      const rowMongo = dIdx === 0 ? item.mongo : 0;
-                                                      const rowRedis = dIdx === 0 ? item.redis : 0;
-                                                      const isRowSynced = rowMongo === rowRedis;
-                                                      return (
-                                                        <tr key={dIdx} className="hover:bg-slate-50/60">
-                                                          <td className="py-2 px-3 font-semibold text-slate-900">{dStr}</td>
-                                                          <td className="py-2 px-3 font-semibold text-slate-800">{rowMongo}</td>
-                                                          <td className="py-2 px-3 font-semibold text-indigo-700">{rowRedis}</td>
-                                                          <td className="py-2 px-3 text-right font-sans">
-                                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                                              isRowSynced
-                                                                ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
-                                                                : 'text-rose-700 bg-rose-50 border border-rose-200/60'
-                                                            }`}>
-                                                              {isRowSynced ? (rowMongo === 0 ? 'SYNCED (0)' : 'SYNC') : 'MISMATCH'}
-                                                            </span>
-                                                          </td>
-                                                        </tr>
-                                                      );
-                                                    });
-                                                  })()}
-                                                </tbody>
-                                              </table>
-                                            </div>
-                                          )}
                                         </div>
                                       </td>
                                     </tr>
@@ -1263,101 +1227,32 @@ export default function DataSyncPage() {
                               );
                             })}
 
-                            {/* Historical Stats KPI Row */}
+                            {/* Historical Stats KPI Row (No Expand) */}
                             {(() => {
-                              const histKey = `${t.tenantCode}-Historical Stats`;
-                              const isHistExpanded = expandedRedisCollections[histKey];
                               const isHistCached = Boolean(ra?.historicalStats?.cached);
 
                               return (
-                                <React.Fragment>
-                                  <tr
-                                    onClick={() => toggleRedisCollection(histKey)}
-                                    className="hover:bg-slate-50 cursor-pointer transition-colors"
-                                  >
-                                    <td className="py-3.5 px-4 font-sans">
-                                      <div className="flex items-center gap-2">
-                                        <span className="p-1 rounded-md text-slate-500 hover:text-slate-800 transition">
-                                          {isHistExpanded ? (
-                                            <ChevronDown className="w-4 h-4 text-cyan-600" />
-                                          ) : (
-                                            <ChevronRight className="w-4 h-4 text-slate-400" />
-                                          )}
-                                        </span>
-                                        <div className="font-semibold text-slate-900 text-sm">Historical Stats</div>
-                                      </div>
-                                    </td>
-                                    <td className="py-3.5 px-4 font-medium text-slate-700 text-sm font-sans">Available</td>
-                                    <td className="py-3.5 px-4 font-medium text-indigo-600 text-sm font-sans">
-                                      {isHistCached ? 'Cached (Weekly)' : 'No Cache'}
-                                    </td>
-                                    <td className="py-3.5 px-4 pr-4 text-right font-sans">
-                                      <span className={`px-2.5 py-1 rounded text-xs font-bold ${
-                                        isHistCached
-                                          ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
-                                          : 'text-amber-700 bg-amber-50 border border-amber-200/60'
-                                      }`}>
-                                        {isHistCached ? 'SYNCED (Weekly KPI)' : 'NO CACHE'}
-                                      </span>
-                                    </td>
-                                  </tr>
-
-                                  {/* Expandable Breakdown for Historical Stats */}
-                                  {isHistExpanded && (
-                                    <tr className="bg-slate-50/80 border-b border-slate-200">
-                                      <td colSpan={4} className="p-3 sm:p-4">
-                                        <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">
-                                          <div className="text-xs font-bold uppercase tracking-wider text-slate-800 mb-2.5 flex items-center justify-between">
-                                            <span className="text-cyan-800">
-                                              HISTORICAL STATS REDIS SYNC BREAKDOWN
-                                            </span>
-                                            <span className="font-mono text-slate-400 font-normal text-[11px]">
-                                              Prefix: [{t.redisPrefix}]
-                                            </span>
-                                          </div>
-                                          <div className="overflow-x-auto rounded-lg border border-slate-200/80">
-                                            <table className="w-full text-left font-mono text-xs">
-                                              <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
-                                                <tr>
-                                                  <th className="py-2.5 px-3">DATE</th>
-                                                  <th className="py-2.5 px-3">MONGO MASTER</th>
-                                                  <th className="py-2.5 px-3">REDIS</th>
-                                                  <th className="py-2.5 px-3 text-right">STATUS</th>
-                                                </tr>
-                                              </thead>
-                                              <tbody className="divide-y divide-slate-100">
-                                                {(() => {
-                                                  const datesList = (ra?.incidents?.dateBreakdown || []).map((r: any) => r.date);
-                                                  const targetList = datesList.length > 0 ? datesList : [new Date().toISOString().slice(0, 10)];
-                                                  return targetList.map((dStr: string, dIdx: number) => {
-                                                    const rowMongo = isHistCached ? 'Available' : 'Available';
-                                                    const rowRedis = isHistCached ? 'Cached' : 'No Cache';
-                                                    return (
-                                                      <tr key={dIdx} className="hover:bg-slate-50/60">
-                                                        <td className="py-2 px-3 font-semibold text-slate-900">{dStr}</td>
-                                                        <td className="py-2 px-3 font-semibold text-slate-800">{rowMongo}</td>
-                                                        <td className="py-2 px-3 font-semibold text-indigo-700">{rowRedis}</td>
-                                                        <td className="py-2 px-3 text-right font-sans">
-                                                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                                            isHistCached
-                                                              ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
-                                                              : 'text-amber-700 bg-amber-50 border border-amber-200/60'
-                                                          }`}>
-                                                            {isHistCached ? 'SYNC' : 'NO CACHE'}
-                                                          </span>
-                                                        </td>
-                                                      </tr>
-                                                    );
-                                                  });
-                                                })()}
-                                              </tbody>
-                                            </table>
-                                          </div>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                </React.Fragment>
+                                <tr className="hover:bg-slate-50 transition-colors">
+                                  <td className="py-3.5 px-4 font-sans">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-4 h-4 inline-block ml-1" />
+                                      <div className="font-semibold text-slate-900 text-sm">Historical Stats</div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3.5 px-4 font-medium text-slate-700 text-sm font-sans">Available</td>
+                                  <td className="py-3.5 px-4 font-medium text-indigo-600 text-sm font-sans">
+                                    {isHistCached ? 'Cached (Weekly)' : 'No Cache'}
+                                  </td>
+                                  <td className="py-3.5 px-4 pr-4 text-right font-sans">
+                                    <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                      isHistCached
+                                        ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
+                                        : 'text-amber-700 bg-amber-50 border border-amber-200/60'
+                                    }`}>
+                                      {isHistCached ? 'SYNCED (Weekly KPI)' : 'NO CACHE'}
+                                    </span>
+                                  </td>
+                                </tr>
                               );
                             })()}
                           </tbody>
