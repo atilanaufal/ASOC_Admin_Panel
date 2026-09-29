@@ -25,21 +25,58 @@ import {
 } from "@/lib/cron-manager-client";
 
 function computeNextRun(cronExpr: string): string {
+  const now = new Date();
+  const next = new Date(now.getTime());
+
   try {
     const parts = cronExpr.trim().split(/\s+/);
-    const minute = parseInt(parts[0], 10);
-    const now = new Date();
-    const next = new Date(now);
-    if (!isNaN(minute)) {
-      next.setMinutes(minute, 0, 0);
-      if (next <= now) next.setHours(next.getHours() + 1);
-    } else {
-      next.setHours(next.getHours() + 1, 0, 0, 0);
+    if (parts.length >= 5) {
+      const minPart = parts[0];
+      const hourPart = parts[1];
+
+      next.setSeconds(0, 0);
+
+      // Handle step minutes: */5, */15, */30
+      if (minPart.startsWith("*/")) {
+        const step = parseInt(minPart.slice(2), 10);
+        if (!isNaN(step) && step > 0) {
+          const currentMin = now.getMinutes();
+          const remainder = currentMin % step;
+          const addMin = step - remainder;
+          next.setMinutes(currentMin + addMin);
+          return next.toISOString();
+        }
+      }
+
+      // Handle exact minute: "0", "15", etc.
+      const exactMin = parseInt(minPart, 10);
+      if (!isNaN(exactMin)) {
+        next.setMinutes(exactMin);
+
+        // Check hour part
+        const exactHour = parseInt(hourPart, 10);
+        if (!isNaN(exactHour)) {
+          next.setHours(exactHour);
+          if (next <= now) {
+            next.setDate(next.getDate() + 1);
+          }
+          return next.toISOString();
+        }
+
+        // Hourly at exactMin
+        if (next <= now) {
+          next.setHours(next.getHours() + 1);
+        }
+        return next.toISOString();
+      }
     }
-    return next.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) + " WIB";
-  } catch {
-    return "--:-- WIB";
+  } catch (e) {
+    console.error("computeNextRun error:", e);
   }
+
+  // Fallback: 1 hour from now
+  next.setHours(next.getHours() + 1);
+  return next.toISOString();
 }
 
 function parsePeriodToDates(period: string, startDate?: string, endDate?: string): { start: string; end: string; dates: string[] } {
@@ -282,12 +319,20 @@ export async function GET(req: NextRequest) {
           }
         }
 
+        // Recompute nextRun if nextRunAt is stale or not a valid ISO date
+        let validNextRun = nextRunAt;
+        if (!validNextRun || isNaN(new Date(validNextRun).getTime()) || new Date(validNextRun) <= new Date()) {
+          validNextRun = computeNextRun(schedule);
+        }
+
         cronConfig = {
           enabled,
           schedule,
           status,
-          nextRun: nextRunAt,
+          nextRun: validNextRun,
           lastRun: lastRunAt,
+          nextRunAt: validNextRun,
+          lastRunAt,
         };
       } catch (err) {
         console.error("Failed to load cron config:", err);

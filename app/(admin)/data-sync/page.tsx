@@ -1587,7 +1587,12 @@ export default function DataSyncPage() {
               <span className="text-slate-400 font-sans">Last Executed:</span>
               <span className="font-bold text-slate-800">
                 {cronConfig?.lastRunAt
-                  ? new Date(cronConfig.lastRunAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                  ? (() => {
+                      const d = new Date(cronConfig.lastRunAt);
+                      return !isNaN(d.getTime())
+                        ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                        : cronConfig.lastRunAt;
+                    })()
                   : '15 mins ago'}
               </span>
             </div>
@@ -1595,7 +1600,12 @@ export default function DataSyncPage() {
               <span className="text-slate-400 font-sans">Next Run:</span>
               <span className="font-bold text-[#00BCD4]">
                 {cronConfig?.nextRunAt
-                  ? new Date(cronConfig.nextRunAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                  ? (() => {
+                      const d = new Date(cronConfig.nextRunAt);
+                      return !isNaN(d.getTime())
+                        ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                        : cronConfig.nextRunAt;
+                    })()
                   : 'in 1 hour'}
               </span>
             </div>
