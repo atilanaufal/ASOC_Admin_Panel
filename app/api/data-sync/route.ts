@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getMongoClient } from '@/lib/mongodb';
-import { getActiveRedisClient } from '@/lib/redis';
 import { getMysqlPool } from '@/lib/mysql';
-import { getRemoteVmConfig, runRemoteScript } from '@/lib/remote';
-import { auditVulnerabilitiesForTenant, type VulnerabilityDateBreakdown } from '@/lib/vulnerability-audit';
+import { runRemoteScript } from '@/lib/remote';
 import { withCache, invalidateCachePrefix } from '@/lib/server-cache';
+import type { VulnerabilityDateBreakdown } from '@/lib/vulnerability-audit';
+
 
 function toScriptPeriod(period: string, startDate?: string | null, endDate?: string | null): string {
   const p = (period || 'today').toLowerCase();
@@ -172,333 +171,48 @@ export async function GET(request: NextRequest) {
       agentsByTenant[a.tenant_id].names.push(a.agent_name);
     }
 
-    let mongoClient: any = null;
-    let redisClient: any = null;
-    try {
-      mongoClient = await getMongoClient();
-    } catch {}
-    try {
-      redisClient = await getActiveRedisClient();
-    } catch {}
-
-    const targetDates = dateRange.dates || [new Date().toISOString().slice(0, 10)];
-
-    // Concurrently process all tenant audits & remote IRIS script
+    // Concurrently execute all 4 official audit scripts as the Single Source of Truth
+    const alertsCmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_alerts_indexer_mongo.py --tenant ${tenantFilter} --mode ${scriptPeriod} --json`;
+    const vulnCmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_vulnerability_indexer_mongo.py --tenant ${tenantFilter} --mode ${scriptPeriod} --json`;
+    const redisCmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_mongo_redis_multitenant_sync.py --tenant ${tenantFilter} --period ${scriptPeriod} --json`;
     const irisCmd = `/opt/venv/bin/python /opt/multi-tenant/scripts/check_iris_reports.py --tenant ${tenantFilter} --period ${scriptPeriod} --json`;
 
-    const [auditResults, irisRes] = await Promise.all([
-      Promise.all(
-        tenantsRows.map(async (t: any) => {
-          const tenantAgents = agentsByTenant[t.id] || { ids: [], names: [] };
-          const dbName = t.database_name;
-
-          let dateBreakdownAlerts: { date: string; indexerMaster: number; totalMongo: number; status: string }[] = [];
-          let dateBreakdownVulns: VulnerabilityDateBreakdown[] = [];
-          let totalMongoIncidents = 0;
-          let totalMongoVulns = 0;
-          let totalMongoReports = 0;
-          const incDateCountMap = new Map<string, number>();
-
-          if (mongoClient && dbName) {
-            try {
-              const db = mongoClient.db(dbName);
-
-              const matchStage: any = {};
-              if (dateRange.start && dateRange.end) {
-                matchStage.date = { $gte: dateRange.start, $lte: dateRange.end };
-              } else if (dateRange.start) {
-                matchStage.date = { $gte: dateRange.start };
-              }
-
-              // Run aggregations concurrently with lean projections
-              const [aggInc, aggVuln, repCount] = await Promise.all([
-                db.collection('incident').aggregate([
-                  ...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
-                  { $project: { date: 1 } },
-                  { $group: { _id: '$date', count: { $sum: 1 } } },
-                  { $sort: { _id: -1 } },
-                ]).toArray(),
-                db.collection('vulnerability').aggregate([
-                  ...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
-                  { $project: { date: 1 } },
-                  { $group: { _id: '$date', count: { $sum: 1 } } },
-                  { $sort: { _id: -1 } },
-                ]).toArray(),
-                (async () => {
-                  try {
-                    const repStartDate = dateRange.start || new Date().toISOString().slice(0, 10);
-                    const repStartDt = new Date(repStartDate + 'T00:00:00.000Z');
-                    const repQuery: any = {
-                      $or: [
-                        { created_at: { $gte: repStartDt } },
-                        { date_generated: { $gte: repStartDt } },
-                        { date_generated: { $gte: repStartDate } },
-                        { date: { $gte: repStartDate } },
-                      ],
-                    };
-                    if (dateRange.end) {
-                      const repEndDt = new Date(dateRange.end + 'T23:59:59.999Z');
-                      repQuery.$and = [
-                        {
-                          $or: [
-                            { created_at: { $lte: repEndDt } },
-                            { date_generated: { $lte: repEndDt } },
-                            { date_generated: { $lte: dateRange.end } },
-                            { date: { $lte: dateRange.end } },
-                          ],
-                        },
-                      ];
-                    }
-                    return await db.collection('reports').countDocuments(repQuery);
-                  } catch {
-                    return 0;
-                  }
-                })(),
-              ]);
-
-              aggInc.forEach((row: any) => {
-                if (row._id) incDateCountMap.set(row._id, row.count);
-              });
-
-              dateBreakdownAlerts = aggInc.map((row: any) => ({
-                date: row._id || 'N/A',
-                indexerMaster: row.count,
-                totalMongo: row.count,
-                status: 'SYNC',
-              }));
-
-              if (dateBreakdownAlerts.length === 0 && dateRange.start) {
-                dateBreakdownAlerts.push({
-                  date: dateRange.start,
-                  indexerMaster: 0,
-                  totalMongo: 0,
-                  status: 'SYNC',
-                });
-              }
-
-              dateBreakdownVulns = await auditVulnerabilitiesForTenant(
-                db,
-                dateRange.start || '',
-                dateRange.end || dateRange.start || '',
-                tenantAgents.ids,
-                tenantAgents.names
-              );
-
-              if (dateBreakdownVulns.length === 0 && dateRange.start) {
-                dateBreakdownVulns.push({
-                  date: dateRange.start,
-                  indexerMaster: 0,
-                  totalMongo: 0,
-                  diff: 0,
-                  status: 'SYNC',
-                  details: [],
-                  subtotals: {
-                    active: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] 100% SYNC' },
-                    solved: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] 100% SYNC' }
-                  },
-                  total: { indexer: 0, mongo: 0, diff: 0, statusText: '[OK] 100% SYNC' }
-                });
-              }
-
-              totalMongoIncidents = aggInc.reduce((sum: number, r: any) => sum + (r.count || 0), 0);
-              totalMongoVulns = dateBreakdownVulns.reduce((sum: number, r: any) => sum + (r.totalMongo || 0), 0);
-              totalMongoReports = repCount;
-            } catch (dbErr) {
-              console.error(`MongoDB error on tenant ${dbName}:`, dbErr);
-            }
-          }
-
-          // Redis audit per tenant
-          let redisKeysCount = 0;
-          let redisSummaryPresent = false;
-          let redisAudit: any = {
-            incidents: { mongo: totalMongoIncidents, redis: 0, isSynced: false, dateBreakdown: [] },
-            vulnerabilities: { mongo: totalMongoVulns, redis: 0, isSynced: false },
-            reports: { mongo: totalMongoReports, redis: 0, isSynced: false },
-            devices: { mongo: 0, redis: 0, isSynced: false },
-            historicalStats: { cached: false, isSynced: false },
-            isAllSynced: false,
-          };
-
-          if (redisClient && t.redis_prefix) {
-            try {
-              const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
-
-              // Query Redis keys and metadata in parallel
-              const [keys, summaryKeyExists, vulnKeys, repStr, devStr, rdWeeklyExists] = await Promise.all([
-                redisClient.keys(`${cleanPrefix}*`).catch(() => []),
-                redisClient.exists(`${cleanPrefix}summary:latest`).catch(() => 0),
-                redisClient.keys(`${cleanPrefix}vulnerability:*`).catch(() => []),
-                redisClient.get(`${cleanPrefix}reports`).catch(() => null),
-                redisClient.get(`${cleanPrefix}devices`).catch(() => null),
-                redisClient.exists(`${cleanPrefix}historical_statistics:weekly`).catch(() => 0),
-              ]);
-
-              redisKeysCount = keys ? keys.length : 0;
-              redisSummaryPresent = Boolean(summaryKeyExists);
-
-              // Incidents reconciliation per date in targetDates (parallelized Redis hlen lookups)
-              const redisIncidentCounts = await Promise.all(
-                targetDates.map(async (d) => {
-                  const mgIncCount = incDateCountMap.get(d) || 0;
-                  const rdIncCount = (await redisClient.hlen(`${cleanPrefix}incident:${d}`).catch(() => 0)) || 0;
-                  return {
-                    date: d,
-                    mongo: mgIncCount,
-                    redis: rdIncCount,
-                    status: mgIncCount === rdIncCount ? 'SYNC' : 'MISMATCH',
-                  };
-                })
-              );
-
-              const dateBreakdownRedisIncidents = redisIncidentCounts;
-              const totalRedisIncidents = redisIncidentCounts.reduce((acc, curr) => acc + curr.redis, 0);
-
-              // Vulnerabilities count & date breakdown from Redis
-              let rdVulnCount = 0;
-              const rdVulnDateCountMap = new Map<string, number>();
-              if (vulnKeys && vulnKeys.length > 0) {
-                const vulnData = await Promise.all(
-                  vulnKeys.map(async (vk: string) => {
-                    const hvals = await redisClient.hgetall(vk).catch(() => ({}));
-                    return Object.values(hvals);
-                  })
-                );
-                for (const items of vulnData) {
-                  for (const raw of items as string[]) {
-                    try {
-                      const doc = JSON.parse(raw);
-                      const d = doc.date || (doc.detected_at ? String(doc.detected_at).slice(0, 10) : '');
-                      if (d) {
-                        rdVulnDateCountMap.set(d, (rdVulnDateCountMap.get(d) || 0) + 1);
-                      }
-                      rdVulnCount++;
-                    } catch {
-                      rdVulnCount++;
-                    }
-                  }
-                }
-              }
-
-              // Reports count
-              let rdRepCount = 0;
-              try {
-                rdRepCount = repStr ? JSON.parse(repStr).length : 0;
-              } catch {}
-
-              // Devices count
-              let rdDevCount = 0;
-              try {
-                rdDevCount = devStr ? JSON.parse(devStr).length : 0;
-              } catch {}
-
-              let mgDevCount = 0;
-              let mgVulnsThisWeek = 0;
-              if (mongoClient && dbName) {
-                try {
-                  const dbInst = mongoClient.db(dbName);
-                  const nowWib = new Date();
-                  const dayOfWeek = nowWib.getDay() || 7;
-                  const mondayDate = new Date(nowWib);
-                  mondayDate.setDate(mondayDate.getDate() - (dayOfWeek - 1));
-                  const mondayStr = mondayDate.toISOString().slice(0, 10);
-                  const mondayDt = new Date(mondayStr + 'T00:00:00.000Z');
-
-                  const weeklyVulnQuery = {
-                    $or: [
-                      { date: { $gte: mondayStr } },
-                      { detected_at: { $gte: mondayDt } },
-                      { detected_at: { $gte: mondayStr } },
-                      { last_seen: { $gte: mondayStr } },
-                    ],
-                  };
-
-                  const [devC, vulnC] = await Promise.all([
-                    dbInst.collection('devices').countDocuments({}).catch(() => 0),
-                    dbInst.collection('vulnerability').countDocuments(weeklyVulnQuery).catch(() => 0),
-                  ]);
-                  mgDevCount = devC;
-                  mgVulnsThisWeek = vulnC;
-                } catch {}
-              }
-
-              // Date breakdown for vulnerabilities in Redis
-              const dateBreakdownRedisVulns = targetDates.map((d) => {
-                const mgV = dateBreakdownVulns.find((r: any) => r.date === d)?.totalMongo || 0;
-                const rdV = rdVulnDateCountMap.get(d) || 0;
-                return {
-                  date: d,
-                  mongo: mgV,
-                  redis: rdV,
-                  status: mgV === rdV ? 'SYNC' : 'MISMATCH',
-                };
-              });
-
-              const incSynced = totalMongoIncidents === totalRedisIncidents;
-              const vulnSynced = mgVulnsThisWeek === rdVulnCount;
-              const repSynced = totalMongoReports === rdRepCount;
-              const devSynced = mgDevCount === rdDevCount;
-
-              redisAudit = {
-                incidents: {
-                  mongo: totalMongoIncidents,
-                  redis: totalRedisIncidents,
-                  isSynced: incSynced,
-                  dateBreakdown: dateBreakdownRedisIncidents,
-                },
-                vulnerabilities: {
-                  mongo: mgVulnsThisWeek,
-                  redis: rdVulnCount,
-                  isSynced: vulnSynced,
-                  dateBreakdown: dateBreakdownRedisVulns,
-                },
-                reports: {
-                  mongo: totalMongoReports,
-                  redis: rdRepCount,
-                  isSynced: repSynced,
-                },
-                devices: {
-                  mongo: mgDevCount,
-                  redis: rdDevCount,
-                  isSynced: devSynced,
-                },
-                historicalStats: {
-                  cached: Boolean(rdWeeklyExists),
-                  isSynced: Boolean(rdWeeklyExists),
-                },
-                isAllSynced: incSynced && vulnSynced && repSynced && devSynced,
-              };
-            } catch (rErr) {
-              console.error(`Redis audit error for tenant ${t.tenant_code}:`, rErr);
-            }
-          }
-
-          return {
-            id: t.id,
-            tenantCode: t.tenant_code,
-            campusName: t.campus_name,
-            tenantName: t.campus_name,
-            databaseName: t.database_name,
-            redisPrefix: t.redis_prefix,
-            wazuhGroups: t.wazuh_group_name ? [t.wazuh_group_name] : [],
-            filterAgentIds: tenantAgents.ids,
-            filterAgentNames: tenantAgents.names,
-            irisCustomerId: t.iris_customer_id,
-            irisCustomerName: t.iris_customer_name,
-            totalMongoIncidents,
-            totalMongoVulns,
-            totalMongoReports,
-            redisKeysCount,
-            redisSummaryPresent,
-            redisAudit,
-            dateBreakdown: dateBreakdownAlerts,
-            dateBreakdownAlerts,
-            dateBreakdownVulns,
-          };
-        })
-      ),
-      runRemoteScript(irisCmd).catch((err) => ({ stdout: '', stderr: String(err), success: false })),
+    const [alertsRes, vulnRes, redisRes, irisRes] = await Promise.all([
+      runRemoteScript(alertsCmd).catch(() => ({ stdout: '', stderr: '', success: false })),
+      runRemoteScript(vulnCmd).catch(() => ({ stdout: '', stderr: '', success: false })),
+      runRemoteScript(redisCmd).catch(() => ({ stdout: '', stderr: '', success: false })),
+      runRemoteScript(irisCmd).catch(() => ({ stdout: '', stderr: '', success: false })),
     ]);
+
+    const alertsDataMap = new Map<string, any>();
+    if (alertsRes && alertsRes.success && alertsRes.stdout) {
+      try {
+        const j = JSON.parse(alertsRes.stdout);
+        for (const t of j.tenants || []) {
+          alertsDataMap.set(String(t.tenant_code).toUpperCase(), t);
+        }
+      } catch {}
+    }
+
+    const vulnDataMap = new Map<string, any>();
+    if (vulnRes && vulnRes.success && vulnRes.stdout) {
+      try {
+        const j = JSON.parse(vulnRes.stdout);
+        for (const t of j.tenants || []) {
+          vulnDataMap.set(String(t.tenant_code).toUpperCase(), t);
+        }
+      } catch {}
+    }
+
+    const redisDataMap = new Map<string, any>();
+    if (redisRes && redisRes.success && redisRes.stdout) {
+      try {
+        const j = JSON.parse(redisRes.stdout);
+        for (const t of j.tenants || []) {
+          redisDataMap.set(String(t.tenant_code).toUpperCase(), t);
+        }
+      } catch {}
+    }
 
     let irisAudit: any = null;
     if (irisRes && irisRes.success && irisRes.stdout) {
@@ -507,43 +221,75 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    // Fallback for irisAudit if remote script unavailable
     if (!irisAudit || !irisAudit.tenants) {
-      const fallbackTenants = [];
-      for (const t of tenantsRows) {
-        let reportsCases: any[] = [];
-        if (mongoClient && t.database_name) {
-          try {
-            const db = mongoClient.db(t.database_name);
-            const docs = await db.collection('reports').find({}).sort({ report_id: -1 }).toArray();
-            reportsCases = docs.map((doc: any) => ({
-              case_id: doc.report_id || 0,
-              title: doc.report_name || doc.title || 'Investigation Report',
-              date: doc.synced_at ? String(doc.synced_at).slice(0, 10) : dateRange.start || '2026-09-14',
-              customer_name: doc.customer_name || t.campus_name,
-              in_iris: true,
-              in_mongo: true,
-              is_in_sync: true,
-            }));
-          } catch {}
-        }
-        fallbackTenants.push({
-          tenant_code: t.tenant_code,
-          campus_name: t.campus_name,
-          database_name: t.database_name,
-          iris_cases_count: reportsCases.length,
-          mongo_reports_count: reportsCases.length,
-          is_in_sync: true,
-          cases: reportsCases,
-        });
-      }
       irisAudit = {
         status: 'success',
         period: scriptPeriod,
         is_in_sync: true,
-        tenants: fallbackTenants,
+        tenants: tenantsRows.map((t: any) => ({
+          tenant_code: t.tenant_code,
+          campus_name: t.campus_name,
+          database_name: t.database_name,
+          iris_cases_count: 0,
+          mongo_reports_count: 0,
+          is_in_sync: true,
+          cases: [],
+        })),
       };
     }
+
+    const auditResults = tenantsRows.map((t: any) => {
+      const code = String(t.tenant_code).toUpperCase();
+      const tenantAgents = agentsByTenant[t.id] || { ids: [], names: [] };
+
+      const al = alertsDataMap.get(code);
+      const vl = vulnDataMap.get(code);
+      const rd = redisDataMap.get(code);
+
+      const dateBreakdownAlerts = al?.dates || [];
+      const dateBreakdownVulns: VulnerabilityDateBreakdown[] = vl?.dates || [];
+      const redisAudit = rd?.redis_audit || {
+        incidents: {
+          mongo: al?.total_mongo || 0,
+          redis: 0,
+          isSynced: false,
+          dateBreakdown: [],
+        },
+        vulnerabilities: { mongo: 0, redis: 0, isSynced: false },
+        reports: { mongo: 0, redis: 0, isSynced: false },
+        devices: { mongo: 0, redis: 0, isSynced: false },
+        historicalStats: { cached: false, isSynced: false },
+        isAllSynced: false,
+      };
+
+      const totalMongoIncidents = al?.total_mongo ?? dateBreakdownAlerts.reduce((sum: number, r: any) => sum + (r.total_mongo || 0), 0);
+      const totalMongoVulns = vl?.period_summary?.total?.mongo ?? dateBreakdownVulns.reduce((sum: number, r: any) => sum + (r.total_mongo || 0), 0);
+      const totalMongoReports = redisAudit.reports?.mongo || 0;
+
+      return {
+        id: t.id,
+        tenantCode: t.tenant_code,
+        campusName: t.campus_name,
+        tenantName: t.campus_name,
+        databaseName: t.database_name,
+        redisPrefix: t.redis_prefix,
+        wazuhGroups: t.wazuh_group_name ? [t.wazuh_group_name] : [],
+        filterAgentIds: tenantAgents.ids,
+        filterAgentNames: tenantAgents.names,
+        irisCustomerId: t.iris_customer_id,
+        irisCustomerName: t.iris_customer_name,
+        totalMongoIncidents,
+        totalMongoVulns,
+        totalMongoReports,
+        redisKeysCount: rd?.redis_keys_count || 0,
+        redisSummaryPresent: rd?.redis_summary_present || false,
+        redisAudit,
+        dateBreakdown: dateBreakdownAlerts,
+        dateBreakdownAlerts,
+        dateBreakdownVulns,
+      };
+    });
+
 
     // Fetch all active tenants unconditionally so tenant filter options never disappear
     const [allTenantsRows]: any = await pool.query(

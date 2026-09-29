@@ -3,23 +3,9 @@ import type { NextRequest } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
 import { formatBytes } from '@/lib/tenant-utils';
-import { getRemoteVmConfig } from '@/lib/remote';
+import { runRemoteScript } from '@/lib/remote';
 import { withCache, invalidateCachePrefix } from '@/lib/server-cache';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 
-const execAsync = promisify(exec);
-
-async function runRemoteScript(commandStr: string): Promise<{ stdout: string; stderr: string; success: boolean }> {
-  try {
-    const { host: vmHost, user: vmUser } = getRemoteVmConfig();
-    const remoteCmd = `ssh -o BatchMode=yes -o ConnectTimeout=8 ${vmUser}@${vmHost} "${commandStr.replace(/"/g, '\\"')}"`;
-    const { stdout, stderr } = await execAsync(remoteCmd, { timeout: 60000 });
-    return { stdout: stdout.trim(), stderr: stderr.trim(), success: true };
-  } catch (err: any) {
-    return { stdout: (err.stdout || '').trim(), stderr: (err.stderr || err.message || '').trim(), success: false };
-  }
-}
 
 export async function GET(_request: NextRequest) {
   return withCache('data-retention:status', 30_000, async () => {
