@@ -350,13 +350,30 @@ export async function GET(request: NextRequest) {
               const dateBreakdownRedisIncidents = redisIncidentCounts;
               const totalRedisIncidents = redisIncidentCounts.reduce((acc, curr) => acc + curr.redis, 0);
 
-              // Vulnerabilities count from Redis
+              // Vulnerabilities count & date breakdown from Redis
               let rdVulnCount = 0;
+              const rdVulnDateCountMap = new Map<string, number>();
               if (vulnKeys && vulnKeys.length > 0) {
-                const vulnCounts = await Promise.all(
-                  vulnKeys.map((vk: string) => redisClient.hlen(vk).catch(() => 0))
+                const vulnData = await Promise.all(
+                  vulnKeys.map(async (vk: string) => {
+                    const hvals = await redisClient.hgetall(vk).catch(() => ({}));
+                    return Object.values(hvals);
+                  })
                 );
-                rdVulnCount = vulnCounts.reduce((acc: number, c: number) => acc + (c || 0), 0);
+                for (const items of vulnData) {
+                  for (const raw of items as string[]) {
+                    try {
+                      const doc = JSON.parse(raw);
+                      const d = doc.date || (doc.detected_at ? String(doc.detected_at).slice(0, 10) : '');
+                      if (d) {
+                        rdVulnDateCountMap.set(d, (rdVulnDateCountMap.get(d) || 0) + 1);
+                      }
+                      rdVulnCount++;
+                    } catch {
+                      rdVulnCount++;
+                    }
+                  }
+                }
               }
 
               // Reports count
@@ -401,6 +418,18 @@ export async function GET(request: NextRequest) {
                 } catch {}
               }
 
+              // Date breakdown for vulnerabilities in Redis
+              const dateBreakdownRedisVulns = targetDates.map((d) => {
+                const mgV = dateBreakdownVulns.find((r: any) => r.date === d)?.totalMongo || 0;
+                const rdV = rdVulnDateCountMap.get(d) || 0;
+                return {
+                  date: d,
+                  mongo: mgV,
+                  redis: rdV,
+                  status: mgV === rdV ? 'SYNC' : 'MISMATCH',
+                };
+              });
+
               const incSynced = totalMongoIncidents === totalRedisIncidents;
               const vulnSynced = mgVulnsThisWeek === rdVulnCount;
               const repSynced = totalMongoReports === rdRepCount;
@@ -417,6 +446,7 @@ export async function GET(request: NextRequest) {
                   mongo: mgVulnsThisWeek,
                   redis: rdVulnCount,
                   isSynced: vulnSynced,
+                  dateBreakdown: dateBreakdownRedisVulns,
                 },
                 reports: {
                   mongo: totalMongoReports,
