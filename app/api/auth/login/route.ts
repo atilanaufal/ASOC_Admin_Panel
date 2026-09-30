@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     const user = result.user;
     const sessionRole = user.role === 'superadmin' ? 'superadmin' : 'admin';
 
-    // 3. Prepare cryptographic session payload
+    // 3. Prepare cryptographic session payload (strictly omits database/redis metadata)
     const sessionData = {
       id: user.id,
       username: user.username,
@@ -80,17 +80,17 @@ export async function POST(request: NextRequest) {
       tenantId: user.tenant_id || 0,
       tenantCode: user.tenant_code || (sessionRole === 'superadmin' ? 'MASTER' : 'UNKNOWN'),
       campusName: user.campus_name || 'ASOC Central Management',
-      databaseName: user.database_name || '-',
-      redisPrefix: user.redis_prefix || 'asoc_master',
     };
 
     // 4. Generate Cryptographically Signed Token (HMAC-SHA256)
     const signedToken = await signSessionPayload(sessionData);
 
+    const { serializeSessionUser, safeErrorResponse } = await import('@/lib/api-response');
+
     const response = NextResponse.json({
       success: true,
       message: `${sessionRole === 'superadmin' ? 'Superadmin' : 'Admin'} login successful.`,
-      user: sessionData,
+      user: serializeSessionUser(sessionData as any),
     });
 
     // 5. Set HttpOnly, Secure, SameSite=Lax signed session cookie
@@ -131,10 +131,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error: any) {
-    console.error('Superadmin Login API Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Authentication service temporarily unavailable.' },
-      { status: 500 }
-    );
+    const { safeErrorResponse } = await import('@/lib/api-response');
+    return safeErrorResponse(error, 'Authentication service temporarily unavailable.', 500);
   }
 }

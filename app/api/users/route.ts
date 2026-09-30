@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listUsers, createUser } from '@/lib/users';
 import { requireSession } from '@/lib/session';
+import { serializeUserItem, safeErrorResponse } from '@/lib/api-response';
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,18 +29,17 @@ export async function GET(request: NextRequest) {
       ? users
       : users.filter((u) => u.tenant_id === currentUser.tenantId);
 
+    // Explicit DTO allowlist: strictly omit database_name and redis_prefix
+    const sanitizedUsers = filteredUsers.map(serializeUserItem);
+
     return NextResponse.json({
       success: true,
-      count: filteredUsers.length,
+      count: sanitizedUsers.length,
       isSuperadmin,
-      users: filteredUsers,
+      users: sanitizedUsers,
     });
   } catch (err: any) {
-    console.error('API /api/users GET Error:', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Failed to load users list' },
-      { status: 500 }
-    );
+    return safeErrorResponse(err, 'Failed to load users list');
   }
 }
 
@@ -130,15 +130,11 @@ export async function POST(request: NextRequest) {
       {
         success: true,
         message: `User ${result.user?.username} created successfully.`,
-        user: result.user,
+        user: serializeUserItem(result.user),
       },
       { status: 201 }
     );
   } catch (err: any) {
-    console.error('API /api/users POST Error:', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Failed to create user' },
-      { status: 500 }
-    );
+    return safeErrorResponse(err, 'Failed to create user');
   }
 }

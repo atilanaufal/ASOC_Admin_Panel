@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateUser, resetUserPassword, deleteUser } from '@/lib/users';
 import { requireSession, requireSuperadmin } from '@/lib/session';
+import { safeErrorResponse } from '@/lib/api-response';
 
 export async function PUT(
   request: NextRequest,
@@ -178,11 +179,7 @@ export async function PUT(
       message: result.message,
     });
   } catch (err: any) {
-    console.error('API /api/users/[id] PUT Error:', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Failed to update user' },
-      { status: 500 }
-    );
+    return safeErrorResponse(err, 'Failed to update user');
   }
 }
 
@@ -234,10 +231,6 @@ export async function DELETE(
       message: result.message,
     });
   } catch (err: any) {
-    console.error('API /api/users/[id] DELETE Error:', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Failed to delete user' },
-      { status: 500 }
-    );
+    return safeErrorResponse(err, 'Failed to delete user');
   }
 }

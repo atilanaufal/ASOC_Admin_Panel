@@ -9,8 +9,6 @@ export interface SessionUser {
   tenantId: number;
   tenantCode: string;
   campusName: string;
-  databaseName: string;
-  redisPrefix: string;
   issuedAt: number;
   expiresAt: number;
   sessionId: string;
@@ -68,8 +66,6 @@ export async function signSessionPayload(
     tenantId: Number(user.tenantId) || 0,
     tenantCode: user.tenantCode || (user.role === 'superadmin' ? 'MASTER' : 'UNKNOWN'),
     campusName: user.campusName || 'ASOC Management',
-    databaseName: user.databaseName || '-',
-    redisPrefix: user.redisPrefix || 'asoc_master',
     issuedAt,
     expiresAt,
     sessionId,

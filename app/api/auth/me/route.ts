@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getSessionUser } from '@/lib/session';
+import { serializeSessionUser, safeErrorResponse } from '@/lib/api-response';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,18 +22,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       authenticated: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        tenantId: user.tenantId,
-        tenantCode: user.tenantCode,
-        campusName: user.campusName,
-        databaseName: user.databaseName,
-        redisPrefix: user.redisPrefix,
-      },
+      user: serializeSessionUser(user),
     });
-  } catch {
-    return NextResponse.json({ authenticated: false, user: null }, { status: 401 });
+  } catch (error: any) {
+    return safeErrorResponse(error, 'Authentication service temporarily unavailable.', 500);
   }
 }

@@ -240,10 +240,10 @@ export async function verifySuperadminCredentials(
       },
     };
   } catch (err: any) {
-    console.error('MySQL Database Connection Error:', err.message);
+    console.error(`MySQL Database Connection Error (${getMysqlHost()}:${MYSQL_PORT}):`, err.message);
     return {
       success: false,
-      error: `Failed to connect to MySQL Database (${getMysqlHost()}:${MYSQL_PORT}): ${err.message}`,
+      error: 'Authentication database connection failed. Please contact administrator.',
     };
   } finally {
     if (conn) {

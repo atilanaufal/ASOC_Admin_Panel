@@ -20,7 +20,6 @@ export interface MappedAgentItem {
   assignedTenant: {
     tenantCode: string;
     campusName: string;
-    databaseName: string;
   } | null;
   isMapped: boolean;
 }
@@ -156,7 +155,6 @@ export async function GET(_request: NextRequest) {
             assignedTenant: {
               tenantCode: t.tenant_code,
               campusName: t.campus_name,
-              databaseName: t.database_name,
             },
             isMapped: true,
           });
@@ -181,15 +179,11 @@ export async function GET(_request: NextRequest) {
         id: t.id,
         tenantCode: t.tenant_code,
         campusName: t.campus_name,
-        databaseName: t.database_name,
       })),
     });
   } catch (err: any) {
-    console.error('API /api/wazuh/agents GET Error:', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Failed to load agent inventory from MongoDB' },
-      { status: 500 }
-    );
+    const { safeErrorResponse } = await import('@/lib/api-response');
+    return safeErrorResponse(err, 'Failed to load agent inventory from MongoDB');
   }
 }
 
@@ -251,10 +245,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err: any) {
-    console.error('API /api/wazuh/agents POST Error:', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Failed to execute native sync_wazuh_agents' },
-      { status: 500 }
-    );
+    const { safeErrorResponse } = await import('@/lib/api-response');
+    return safeErrorResponse(err, 'Failed to execute native sync_wazuh_agents');
   }
 }

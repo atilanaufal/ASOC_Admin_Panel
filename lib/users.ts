@@ -10,8 +10,6 @@ export interface UserItem {
   created_at: string | Date;
   tenant_code?: string;
   campus_name?: string;
-  database_name?: string;
-  redis_prefix?: string;
   tenant_is_active?: number | boolean;
 }
 
@@ -43,8 +41,6 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
           created_at,
           '-' AS tenant_code,
           '-' AS campus_name,
-          '-' AS database_name,
-          '-' AS redis_prefix,
           1 AS tenant_is_active
         FROM admin_users
         WHERE 1=1
@@ -81,8 +77,6 @@ export async function listUsers(params: ListUsersParams = {}): Promise<UserItem[
         u.created_at,
         t.tenant_code,
         t.campus_name,
-        t.database_name,
-        t.redis_prefix,
         t.is_active AS tenant_is_active
       FROM users u
       LEFT JOIN tenants t ON u.tenant_id = t.id
@@ -176,7 +170,6 @@ export async function createUser(data: {
           role,
           tenantId: null,
           campusName: '-',
-          databaseName: '-',
         },
       };
     }
@@ -208,7 +201,6 @@ export async function createUser(data: {
         role: 'user',
         tenantId,
         campusName: tenantInfo.campus_name,
-        databaseName: tenantInfo.database_name,
       },
     };
   } catch (err: any) {

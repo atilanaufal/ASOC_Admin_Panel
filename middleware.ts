@@ -9,6 +9,23 @@ import {
   getClientCookieOptions,
 } from '@/lib/session-core';
 
+function attachSecurityHeaders(res: NextResponse): NextResponse {
+  res.headers.set('X-DNS-Prefetch-Control', 'on');
+  res.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  res.headers.set('X-XSS-Protection', '1; mode=block');
+  res.headers.set('X-Frame-Options', 'SAMEORIGIN');
+  res.headers.set('X-Content-Type-Options', 'nosniff');
+  res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), browsing-topics=()');
+  res.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  res.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+  res.headers.set(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests;"
+  );
+  return res;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -35,11 +52,11 @@ export async function middleware(request: NextRequest) {
       res.cookies.delete(CLIENT_USER_COOKIE_NAME);
       res.cookies.delete('asoc_admin_token');
       res.cookies.delete('auth_session');
-      return res;
+      return attachSecurityHeaders(res);
     }
 
     if (hasValidSession && isAdmin) {
-      return NextResponse.redirect(new URL('/database-status', baseUrl));
+      return attachSecurityHeaders(NextResponse.redirect(new URL('/database-status', baseUrl)));
     }
 
     const res = NextResponse.next();
@@ -47,7 +64,7 @@ export async function middleware(request: NextRequest) {
       res.cookies.delete(SESSION_COOKIE_NAME);
       res.cookies.delete(CLIENT_USER_COOKIE_NAME);
     }
-    return res;
+    return attachSecurityHeaders(res);
   }
 
   // 2. Protect admin routes & API
@@ -61,12 +78,14 @@ export async function middleware(request: NextRequest) {
     // API Route Protection
     if (pathname.startsWith('/api/')) {
       if (!hasValidSession || !isAdmin) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Unauthorized. Invalid, tampered, or expired session. Access denied.',
-          },
-          { status: 401 }
+        return attachSecurityHeaders(
+          NextResponse.json(
+            {
+              success: false,
+              error: 'Unauthorized. Invalid, tampered, or expired session. Access denied.',
+            },
+            { status: 401 }
+          )
         );
       }
 
@@ -77,7 +96,7 @@ export async function middleware(request: NextRequest) {
         const cookieOpts = getCookieOptions(request);
         apiRes.cookies.set(SESSION_COOKIE_NAME, refreshedToken, cookieOpts);
       } catch {}
-      return apiRes;
+      return attachSecurityHeaders(apiRes);
     }
 
     // Page Route Protection
@@ -91,7 +110,7 @@ export async function middleware(request: NextRequest) {
       res.cookies.delete(CLIENT_USER_COOKIE_NAME);
       res.cookies.delete('asoc_admin_token');
       res.cookies.delete('auth_session');
-      return res;
+      return attachSecurityHeaders(res);
     }
 
     // Slide session on page navigation
@@ -116,10 +135,10 @@ export async function middleware(request: NextRequest) {
         clientOpts
       );
     } catch {}
-    return nextRes;
+    return attachSecurityHeaders(nextRes);
   }
 
-  return NextResponse.next();
+  return attachSecurityHeaders(NextResponse.next());
 }
 
 export const config = {

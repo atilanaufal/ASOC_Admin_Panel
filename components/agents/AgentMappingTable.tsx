@@ -21,7 +21,6 @@ interface TenantOption {
   id: number;
   tenantCode: string;
   campusName: string;
-  databaseName: string;
 }
 
 interface AgentMappingTableProps {
