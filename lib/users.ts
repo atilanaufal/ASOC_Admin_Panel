@@ -181,22 +181,19 @@ export async function createUser(data: {
       };
     }
 
-    // Tenant User: requires tenant
-    const tenantId = Number(data.tenantId) || 1;
-    let tenantInfo = {
-      tenant_code: 'TNT1',
-      campus_name: 'tenant1',
-      database_name: 'tenant1',
-      redis_prefix: 'tenant1:',
-    };
-
+    // Tenant User: requires valid tenant
+    if (!data.tenantId) {
+      return { success: false, error: 'tenantId is required for regular users' };
+    }
+    const tenantId = Number(data.tenantId);
     const [tenants]: any = await pool.query(
       'SELECT tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE id = ? LIMIT 1',
       [tenantId]
     );
-    if (tenants && tenants.length > 0) {
-      tenantInfo = tenants[0];
+    if (!tenants || tenants.length === 0) {
+      return { success: false, error: 'Selected tenant does not exist' };
     }
+    const tenantInfo = tenants[0];
 
     await pool.query(
       'INSERT INTO users (id, tenant_id, name, password, role) VALUES (?, ?, ?, ?, ?)',

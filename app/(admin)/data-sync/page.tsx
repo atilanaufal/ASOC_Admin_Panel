@@ -215,11 +215,15 @@ export default function DataSyncPage() {
     end = customEndDate,
     force = false
   ) => {
+    let periodToFetch = period;
+    if (tab === "redis" && periodToFetch !== "TODAY" && periodToFetch !== "THIS_WEEK") {
+      periodToFetch = "THIS_WEEK";
+    }
     setLoading(true);
     try {
       const params = new URLSearchParams();
       params.set('tab', tab);
-      params.set('period', period);
+      params.set('period', periodToFetch);
       params.set('tenant', 'all');
       if (period === 'CUSTOM') {
         if (start) params.set('startDate', start);
@@ -285,18 +289,27 @@ export default function DataSyncPage() {
   };
 
   const handleTabChange = (newTab: TabType) => {
+    let periodToUse = selectedPeriod;
+    if (newTab === "redis" && selectedPeriod !== "TODAY" && selectedPeriod !== "THIS_WEEK") {
+      periodToUse = "THIS_WEEK";
+      setSelectedPeriod("THIS_WEEK");
+    }
     setActiveTab(newTab);
-    const cacheKey = getCacheKey(selectedPeriod, customStartDate, customEndDate);
+    const cacheKey = getCacheKey(periodToUse, customStartDate, customEndDate);
     const cached = getClientCache<any>(cacheKey);
     if (!cached?.loadedTabs?.[newTab]) {
-      fetchTabAuditData(newTab, selectedPeriod, customStartDate, customEndDate, false);
+      fetchTabAuditData(newTab, periodToUse, customStartDate, customEndDate, false);
     }
   };
 
   const handlePeriodChange = (newPeriod: string) => {
-    if (newPeriod === selectedPeriod) return;
-    setSelectedPeriod(newPeriod);
-    loadPeriodData(newPeriod, activeTab, customStartDate, customEndDate);
+    let periodToSet = newPeriod;
+    if (activeTab === "redis" && periodToSet !== "TODAY" && periodToSet !== "THIS_WEEK") {
+      periodToSet = "THIS_WEEK";
+    }
+    if (periodToSet === selectedPeriod) return;
+    setSelectedPeriod(periodToSet);
+    loadPeriodData(periodToSet, activeTab, customStartDate, customEndDate);
   };
 
   useEffect(() => {

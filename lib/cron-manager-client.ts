@@ -6,7 +6,7 @@
 
 const getCronManagerConfig = () => {
   const url = process.env.CRON_MANAGER_URL || "http://127.0.0.1:8765";
-  const secret = process.env.CRON_MANAGER_SECRET || "asoc-cron-secret-key-2026";
+  const secret = process.env.CRON_MANAGER_SECRET || "";
   return { url, secret };
 };
 

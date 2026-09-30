@@ -253,11 +253,14 @@ export async function GET(req: NextRequest) {
     }
 
     if (tab === "redis") {
-      const results = await auditRedisNative(tenantsList, dateRange.dates, mongoClient, redisClient);
+      const p = period.toLowerCase();
+      const redisPeriod = p === "today" ? "today" : "this_week";
+      const redisDateRange = parsePeriodToDates(redisPeriod);
+      const results = await auditRedisNative(tenantsList, redisDateRange.dates, mongoClient, redisClient);
       return NextResponse.json({
         success: true,
         tab,
-        period,
+        period: redisPeriod.toUpperCase(),
         allTenants: allTenantsList,
         auditResults: results,
       });
@@ -403,10 +406,13 @@ export async function POST(req: NextRequest) {
       }
 
       if (checkScript === "redis" || checkScript === "check-redis") {
-        const results = await auditRedisNative(targetTenants, dateRange.dates, mongoClient, redisClient);
+        const p = period.toLowerCase();
+        const redisPeriod = p === "today" ? "today" : "this_week";
+        const redisDateRange = parsePeriodToDates(redisPeriod);
+        const results = await auditRedisNative(targetTenants, redisDateRange.dates, mongoClient, redisClient);
         return NextResponse.json({
           success: true,
-          message: `Native audit verification completed for REDIS (${targetTenant.toUpperCase()}, ${period.toUpperCase()}).`,
+          message: `Native audit verification completed for REDIS (${targetTenant.toUpperCase()}, ${redisPeriod.toUpperCase()}).`,
           auditResults: results,
         });
       }
@@ -462,10 +468,13 @@ export async function POST(req: NextRequest) {
       }
 
       if (pipeline === "mongo-redis" || pipeline === "redis") {
-        const res = await syncRedisNative(syncTargets, dateRange.dates, mongoClient);
+        const p = period.toLowerCase();
+        const redisPeriod = p === "today" ? "today" : "this_week";
+        const redisDateRange = parsePeriodToDates(redisPeriod);
+        const res = await syncRedisNative(syncTargets, redisDateRange.dates, mongoClient);
         return NextResponse.json({
           success: true,
-          message: `Native Synchronization [REDIS CACHE] completed for ${targetTenant.toUpperCase()}.`,
+          message: `Native Synchronization [REDIS CACHE] completed for ${targetTenant.toUpperCase()} (${redisPeriod.toUpperCase()}).`,
           details: res.details,
         });
       }

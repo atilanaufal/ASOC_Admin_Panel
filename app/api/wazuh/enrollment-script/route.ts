@@ -1,41 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMysqlPool } from "@/lib/mysql";
+import { getActiveWazuhHost } from "@/lib/cluster-failover";
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const tenantCode = searchParams.get("tenantCode") || "TNT1";
+    const tenantCode = searchParams.get("tenantCode");
     const os = searchParams.get("os") || "linux-deb"; // linux-deb | linux-rpm | windows
+
+    if (!tenantCode || !tenantCode.trim()) {
+      return NextResponse.json(
+        { success: false, error: "tenantCode query parameter is required" },
+        { status: 400 }
+      );
+    }
 
     // Fetch tenant details from MySQL
     const pool = getMysqlPool();
     const [rows]: any = await pool.query(
       "SELECT tenant_code, campus_name, database_name FROM tenants WHERE tenant_code = ? LIMIT 1",
-      [tenantCode.toUpperCase()]
+      [tenantCode.trim().toUpperCase()]
     );
 
-    const tenant = rows && rows.length > 0 ? rows[0] : {
-      tenant_code: tenantCode.toUpperCase(),
-      campus_name: "tenant1",
-      database_name: "tenant1",
-    };
+    if (!rows || rows.length === 0) {
+      return NextResponse.json(
+        { success: false, error: `Tenant with code '${tenantCode}' not found` },
+        { status: 404 }
+      );
+    }
 
-    // Native resolution with cluster failover support (zero Python execution)
-    const resolveWazuhHost = (): string => {
-      if (process.env.WAZUH_MANAGER_HOST) return process.env.WAZUH_MANAGER_HOST;
-      if (process.env.WAZUH_NODE1_HOST) return process.env.WAZUH_NODE1_HOST;
-      if (process.env.WAZUH_NODE1_URL) {
-        try { return new URL(process.env.WAZUH_NODE1_URL).hostname; } catch {}
-      }
-      if (process.env.WAZUH_API_URL) {
-        try { return new URL(process.env.WAZUH_API_URL).hostname; } catch {}
-      }
-      return "10.20.100.131";
-    };
+    const tenant = rows[0];
 
-    const wazuhManagerHost = resolveWazuhHost();
+    // Resolve active healthy Wazuh Manager node dynamically via failover cluster
+    const wazuhManagerHost = await getActiveWazuhHost();
+    if (!wazuhManagerHost) {
+      return NextResponse.json(
+        { success: false, error: "No healthy Wazuh Manager node reachable in cluster" },
+        { status: 503 }
+      );
+    }
+
     const wazuhAgentVersion = process.env.WAZUH_AGENT_VERSION || "4.14.6-1";
-
     const targetGroup = tenant.database_name;
     let command = "";
     let instructions = "";

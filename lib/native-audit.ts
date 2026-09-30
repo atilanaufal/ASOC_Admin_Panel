@@ -379,6 +379,31 @@ export async function auditRedisNative(
 ): Promise<TenantMeta[]> {
   if (!redisClient) return tenants;
 
+  // Strict Redis L1 Cache Cap: Redis strictly caps at THIS WEEK (Monday s/d Today) or TODAY
+  const nowUtc = new Date();
+  const nowWib = new Date(nowUtc.getTime() + 7 * 60 * 60 * 1000);
+  const dayOfWeek = nowWib.getUTCDay() || 7;
+  const mondayDate = new Date(nowWib);
+  mondayDate.setUTCDate(mondayDate.getUTCDate() - (dayOfWeek - 1));
+  const mondayStr = mondayDate.toISOString().slice(0, 10);
+  const todayStr = nowWib.toISOString().slice(0, 10);
+
+  // Generate valid week dates
+  const weekDates: string[] = [];
+  const cur = new Date(mondayDate);
+  while (cur <= nowWib) {
+    weekDates.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+
+  let effectiveDates: string[] = [];
+  if (targetDates && targetDates.length === 1 && targetDates[0] === todayStr) {
+    effectiveDates = [todayStr];
+  } else {
+    const filtered = (targetDates || []).filter(d => d >= mondayStr && d <= todayStr);
+    effectiveDates = filtered.length > 0 ? filtered : weekDates;
+  }
+
   return Promise.all(
     tenants.map(async (t) => {
       const cleanPrefix = (t.redisPrefix || `${t.databaseName}:`).replace(/\*$/, "");
@@ -399,7 +424,7 @@ export async function auditRedisNative(
         let totMgInc = 0;
         let totRdInc = 0;
         const incidentBreakdown = await Promise.all(
-          targetDates.map(async (d) => {
+          effectiveDates.map(async (d) => {
             const rdCount = (await redisClient.hlen(`${cleanPrefix}incident:${d}`).catch(() => 0)) || 0;
             let mgCount = 0;
             if (mongoClient && dbName) {
