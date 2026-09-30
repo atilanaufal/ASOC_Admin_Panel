@@ -1,15 +1,9 @@
 import net from 'net';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { pingMysql } from './mysql';
 import { pingMongo } from './mongodb';
 import { pingRedis, getActiveRedisClient } from './redis';
 import { pingWazuh, getWazuhAgentSummary } from './wazuh';
 import { pingOpenSearch } from './iris';
-
-import { getRemoteVmConfig } from './remote';
-
-const execAsync = promisify(exec);
 
 export interface ServiceHealthItem {
   id: string;
@@ -78,7 +72,7 @@ async function getLiveDaemonTelemetry(): Promise<any> {
 
   return cachedDaemonTelemetry || {
     pumper: { incidents: 54, vulns: 0, devices: 21, reports: 0, durationMs: 125.0 },
-    iris: { cases: 0, durationMs: 46.5, status: 'SUKSES 100%' },
+    iris: { cases: 0, durationMs: 46.5, status: 'SUCCESS 100%' },
     timers: { fullLeft: 'In 45 Minutes', statsLeft: 'In 4 Minutes' },
   };
 }
@@ -128,7 +122,7 @@ export async function auditBackgroundServices(): Promise<{
   } catch {}
 
   const pMetrics = telemetry?.pumper || { incidents: 54, vulns: 0, devices: 21, reports: 0, durationMs: 125.0 };
-  const iMetrics = telemetry?.iris || { cases: 0, durationMs: 46.5, status: 'SUKSES 100%' };
+  const iMetrics = telemetry?.iris || { cases: 0, durationMs: 46.5, status: 'SUCCESS 100%' };
   const tMetrics = telemetry?.timers || { fullLeft: 'In 45 Minutes', statsLeft: 'In 4 Minutes' };
 
   // 3. Assemble 7 background services strictly matching VM 10.20.100.86
@@ -261,7 +255,7 @@ export async function auditBackgroundServices(): Promise<{
 export interface RealRunningServiceItem {
   id: string;
   name: string;
-  pid: number | string;
+  pid: number | string | null;
   cpu: string;
   memory: string;
   swap: string;
@@ -298,12 +292,12 @@ export async function getRealRunningServices(): Promise<RealRunningServiceItem[]
   }
 
   return [
-    { id: 'mongod', name: 'MongoDB Database Server', pid: 290342, cpu: '2.1%', memory: '246.7 MB', swap: '0 B', disk: '30.8 MB', status: 'RUNNING' },
-    { id: 'mysql', name: 'MySQL Community Server', pid: 55820, cpu: '0.7%', memory: '205.8 MB', swap: '0 B', disk: '25.9 MB', status: 'RUNNING' },
-    { id: 'redis-server', name: 'Redis Key-Value Cache Server', pid: 334271, cpu: '0.2%', memory: '14.0 MB', swap: '0 B', disk: '2.9 MB', status: 'RUNNING' },
-    { id: 'mongo-redis-multitenant-pumper', name: 'Multi-Tenant Chain Pumping Service', pid: 124231, cpu: '8.2%', memory: '18.9 MB', swap: '0 B', disk: '3.5 MB', status: 'RUNNING' },
-    { id: 'iris-case-shipper', name: 'DFIR-IRIS Multi-Tenant Case Shipper Daemon', pid: 275354, cpu: '0.0%', memory: '14.4 MB', swap: '0 B', disk: '2.9 MB', status: 'RUNNING' },
-    { id: 'wazuh-agent-full', name: 'Wazuh Agent Multi-Tenant Full Data Fetch', pid: 341522, cpu: '0.1%', memory: '14.2 MB', swap: '0 B', disk: '2.4 MB', status: 'WAITING' },
-    { id: 'wazuh-agent-stats', name: 'Wazuh Agent Multi-Tenant Stats Data Fetch', pid: 341835, cpu: '0.1%', memory: '12.5 MB', swap: '0 B', disk: '1.8 MB', status: 'WAITING' },
+    { id: 'mongod', name: 'MongoDB Database Server', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
+    { id: 'mysql', name: 'MySQL Community Server', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
+    { id: 'redis-server', name: 'Redis Key-Value Cache Server', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
+    { id: 'mongo-redis-multitenant-pumper', name: 'Multi-Tenant Chain Pumping Service', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
+    { id: 'iris-case-shipper', name: 'DFIR-IRIS Multi-Tenant Case Shipper Daemon', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
+    { id: 'wazuh-agent-full', name: 'Wazuh Agent Multi-Tenant Full Data Fetch', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
+    { id: 'wazuh-agent-stats', name: 'Wazuh Agent Multi-Tenant Stats Data Fetch', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
   ];
 }

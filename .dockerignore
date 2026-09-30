@@ -1,0 +1,16 @@
+Dockerfile
+.dockerignore
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env*.local
+.env.development
+.DS_Store
+*.md
+DOCS
+Document

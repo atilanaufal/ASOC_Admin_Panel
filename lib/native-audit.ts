@@ -326,7 +326,7 @@ export async function auditVulnsNative(
               indexer: idxCount,
               mongo: mgCount,
               diff,
-              statusText: diff === 0 ? "[OK] SINKRON" : "[DIFF] TIDAK SINKRON",
+              statusText: diff === 0 ? "[OK] IN SYNC" : "[DIFF] OUT OF SYNC",
             });
           }
         }

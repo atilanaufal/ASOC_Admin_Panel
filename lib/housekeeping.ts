@@ -143,7 +143,7 @@ export async function flushTenantRedisCache(params: {
     repumpedCount: params.autoRepump ? repumpedCount : undefined,
     executionDurationMs: durationMs,
     message: `Successfully cleared ${totalDeleted} cache keys (${params.scope}) for ${tenant.campus_name}.${
-      params.autoRepump ? ` Memompa ulang ${repumpedCount} data segar dari MongoDB.` : ''
+      params.autoRepump ? ` Re-pumped ${repumpedCount} fresh records from MongoDB.` : ''
     }`,
   };
 }

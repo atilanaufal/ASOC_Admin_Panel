@@ -1,7 +1,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+export const execAsync = promisify(exec);
 
 /**
  * Centralized remote VM host configuration for SSH execution and connectivity.

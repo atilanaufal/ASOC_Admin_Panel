@@ -7,7 +7,8 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Retrieve origin from reverse proxy headers
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || '10.20.100.86:3001';
+  const defaultHost = (process.env.HOSTNAME ? `${process.env.HOSTNAME}:${process.env.PORT || '3001'}` : null) || 'localhost:3001';
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || defaultHost;
   const proto = request.headers.get('x-forwarded-proto') || 'https';
   const baseUrl = `${proto}://${host}`;
 

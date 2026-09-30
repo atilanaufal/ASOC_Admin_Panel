@@ -1,134 +1,31 @@
 import './env-loader';
-import https from 'https';
-import http from 'http';
-import { URL } from 'url';
+import { getWazuhTokenWithFailover, queryWazuhApiWithFailover } from './cluster-failover';
 
-function getWazuhConfig() {
-  return {
-    url: process.env.WAZUH_API_URL || '',
-    user: process.env.WAZUH_API_USER || '',
-    password: process.env.WAZUH_API_PASSWORD || process.env.WAZUH_API_PASS || '',
-  };
-}
-
-let cachedToken: string | null = null;
-let tokenExpiresAt = 0;
-
-function httpRequest<T = any>(
-  targetUrl: string,
-  options: {
-    method?: string;
-    headers?: Record<string, string>;
-    body?: any;
-    timeoutMs?: number;
-  } = {}
-): Promise<{ statusCode: number; data: T }> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(targetUrl);
-    const isHttps = parsed.protocol === 'https:';
-    const lib = isHttps ? https : http;
-
-    const reqOptions: https.RequestOptions = {
-      protocol: parsed.protocol,
-      hostname: parsed.hostname,
-      port: parsed.port || (isHttps ? 443 : 80),
-      path: parsed.pathname + parsed.search,
-      method: options.method || 'GET',
-      headers: options.headers || {},
-      rejectUnauthorized: false,
-      timeout: options.timeoutMs || 5000,
-    };
-
-    const req = lib.request(reqOptions, (res) => {
-      let body = '';
-      res.setEncoding('utf-8');
-      res.on('data', (chunk) => {
-        body += chunk;
-      });
-      res.on('end', () => {
-        try {
-          const parsedData = body ? JSON.parse(body) : ({} as any);
-          resolve({ statusCode: res.statusCode || 200, data: parsedData });
-        } catch {
-          resolve({ statusCode: res.statusCode || 200, data: body as any });
-        }
-      });
-    });
-
-    req.on('error', (err) => {
-      reject(err);
-    });
-
-    req.on('timeout', () => {
-      req.destroy(new Error(`Request to ${targetUrl} timed out`));
-    });
-
-    if (options.body) {
-      const payload = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
-      req.write(payload);
-    }
-
-    req.end();
-  });
-}
-
+/**
+ * Retrieves valid Wazuh JWT token with automatic multi-node cluster failover.
+ */
 export async function getWazuhToken(): Promise<string> {
-  const { url, user, password } = getWazuhConfig();
-  if (!url) {
-    throw new Error('WAZUH_API_URL is undefined');
+  const authInfo = await getWazuhTokenWithFailover();
+  if (!authInfo?.token) {
+    throw new Error('All Wazuh nodes authentication failed or no nodes configured');
   }
-
-  const now = Date.now();
-  if (cachedToken && now < tokenExpiresAt - 60000) {
-    return cachedToken;
-  }
-
-  const authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
-  const res = await httpRequest<{ data?: { token?: string }; error?: number }>(
-    `${url}/security/user/authenticate`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json',
-      },
-      timeoutMs: 4000,
-    }
-  );
-
-  if (res.statusCode >= 400) {
-    throw new Error(`Wazuh auth failed: HTTP ${res.statusCode}`);
-  }
-
-  if (res.data?.data?.token) {
-    cachedToken = res.data.data.token;
-    tokenExpiresAt = Date.now() + 14 * 60 * 1000;
-    return cachedToken as string;
-  }
-
-  throw new Error('No token in Wazuh auth response');
+  return authInfo.token;
 }
 
+/**
+ * Unified Wazuh API request router with automatic cluster failover and retries.
+ */
 export async function wazuhRequest<T = any>(endpoint: string, options: { method?: string; body?: any } = {}): Promise<T> {
-  const { url: baseUrl } = getWazuhConfig();
-  const token = await getWazuhToken();
-  const url = `${baseUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
-
-  const res = await httpRequest<T>(url, {
-    method: options.method || 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: options.body,
-    timeoutMs: 5000,
-  });
-
-  if (res.statusCode >= 400) {
-    throw new Error(`Wazuh API request error: HTTP ${res.statusCode}`);
+  const data = await queryWazuhApiWithFailover<T>(
+    endpoint,
+    options.method || 'GET',
+    options.body,
+    8000
+  );
+  if (!data) {
+    throw new Error(`Wazuh API request failed across all nodes for ${endpoint}`);
   }
-
-  return res.data;
+  return data;
 }
 
 export async function pingWazuh(): Promise<{ ok: boolean; latencyMs: number; error?: string; version?: string }> {

@@ -1603,7 +1603,9 @@ export default function DataSyncPage() {
           <div className="bg-[#F8FAFC] border border-slate-200/60 rounded-xl p-3 text-xs space-y-1.5 font-mono text-slate-700">
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-slate-400 font-sans">Target Server:</span>
-              <span className="font-bold text-slate-800">10.20.100.86 (Production Master)</span>
+              <span className="font-bold text-slate-800">
+                {process.env.NEXT_PUBLIC_VM_HOST ? `${process.env.NEXT_PUBLIC_VM_HOST} (Production Master)` : 'Production Master Host'}
+              </span>
             </div>
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-slate-400 font-sans">Last Executed:</span>
