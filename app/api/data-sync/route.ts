@@ -23,6 +23,7 @@ import {
   updateHostCron,
   getHostCronLogs,
 } from "@/lib/cron-manager-client";
+import { requireSession, requireSuperadmin } from "@/lib/session";
 
 function computeNextRun(cronExpr: string): string {
   const now = new Date();
@@ -210,10 +211,18 @@ async function getTenantsData(tenantFilter: string = "all"): Promise<TenantMeta[
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireSession(req);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+    const isSuperadmin = currentUser.role === 'superadmin';
+
     const { searchParams } = new URL(req.url);
     const tab = searchParams.get("tab") || "alerts";
     const period = searchParams.get("period") || "today";
-    const tenant = searchParams.get("tenant") || "all";
+    let tenant = searchParams.get("tenant") || "all";
+    if (!isSuperadmin) {
+      tenant = currentUser.tenantCode;
+    }
     const startDate = searchParams.get("startDate") || undefined;
     const endDate = searchParams.get("endDate") || undefined;
 
@@ -367,9 +376,25 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSession(req);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+    const isSuperadmin = currentUser.role === 'superadmin';
+
     const body = await req.json();
     const { action, pipeline, checkScript, tenant = "all", period = "today", startDate, endDate, enabled, schedule } = body;
-    const targetTenant = tenant === "all" ? "all" : tenant;
+    
+    // BOLA defense: Tenant Admin can only sync/check their own tenant
+    let targetTenant = tenant === "all" ? "all" : tenant;
+    if (!isSuperadmin) {
+      if (tenant !== "all" && tenant.toUpperCase() !== currentUser.tenantCode.toUpperCase()) {
+        return NextResponse.json(
+          { success: false, error: `Forbidden: You do not have permission to sync or audit Tenant '${tenant}'.` },
+          { status: 403 }
+        );
+      }
+      targetTenant = currentUser.tenantCode;
+    }
 
     const dateRange = parsePeriodToDates(period, startDate, endDate);
     const targetTenants = await getTenantsData(targetTenant);
@@ -513,7 +538,24 @@ export async function POST(req: NextRequest) {
     // UPDATE CRON (Tetap gunakan crontab sistem sesuai instruksi user)
     // -----------------------------------------------------------
     if (action === "update-cron") {
-      const sched = schedule || "0 * * * *";
+      if (!isSuperadmin) {
+        return NextResponse.json(
+          { success: false, error: "Access denied: Only Superadmin can modify server crontab schedule." },
+          { status: 403 }
+        );
+      }
+
+      const sched = (schedule || "0 * * * *").trim();
+
+      // Strict Cron Regex Validation to eliminate arbitrary shell/command injection
+      const CRON_REGEX = /^(@(annually|yearly|monthly|weekly|daily|hourly|reboot))|(@every\s+[0-9]+(m|h|d))|((((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*)\s+){4}((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*))$/;
+      if (!CRON_REGEX.test(sched) || /[;&|`$\n\r<>]/.test(sched)) {
+        return NextResponse.json(
+          { success: false, error: "Invalid cron expression format. Format must match standard cron schedule (e.g. '0 * * * *')." },
+          { status: 400 }
+        );
+      }
+
       const isEnabled = Boolean(enabled);
       const pool = getMysqlPool();
 

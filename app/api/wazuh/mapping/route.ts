@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { setAgentGroup } from '@/lib/wazuh';
 import { getMysqlPool } from '@/lib/mysql';
 import { getMongoClient } from '@/lib/mongodb';
+import { requireTenantScope } from '@/lib/session';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,6 +15,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // BOLA defense: Enforce caller ownership of target tenant
+    const auth = await requireTenantScope(request, undefined, tenantCode);
+    if (auth.errorResponse) return auth.errorResponse;
 
     // 1. Fetch tenant detail from MySQL
     const pool = getMysqlPool();

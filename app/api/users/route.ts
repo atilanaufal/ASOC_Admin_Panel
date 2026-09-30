@@ -1,30 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listUsers, createUser } from '@/lib/users';
+import { requireSession } from '@/lib/session';
 
 export async function GET(request: NextRequest) {
   try {
+    // 1. Enforce verified cryptographic session
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+
     const { searchParams } = new URL(request.url);
-    const tenant = searchParams.get('tenant') || 'all';
+    const isSuperadmin = currentUser.role === 'superadmin';
+
+    // BOLA protection: Non-superadmin callers CANNOT query 'all' tenants or other tenants
+    let targetTenant = searchParams.get('tenant') || 'all';
+    if (!isSuperadmin) {
+      targetTenant = currentUser.tenantCode;
+    }
+
     const role = searchParams.get('role') || 'all';
     const search = searchParams.get('search') || '';
 
-    // Check caller role
-    const authSession = (request.cookies.get('asoc_admin_session')?.value || request.cookies.get('auth_session')?.value);
-    let currentUser: any = null;
-    if (authSession) {
-      try {
-        currentUser = JSON.parse(decodeURIComponent(authSession));
-      } catch {}
-    }
-    const isSuperadmin = currentUser?.role === 'superadmin';
+    const users = await listUsers({ tenant: targetTenant, role, search });
 
-    const users = await listUsers({ tenant, role, search });
+    // Filter out platform admin rows for tenant admins
+    const filteredUsers = isSuperadmin
+      ? users
+      : users.filter((u) => u.tenant_id === currentUser.tenantId);
 
     return NextResponse.json({
       success: true,
-      count: users.length,
+      count: filteredUsers.length,
       isSuperadmin,
-      users,
+      users: filteredUsers,
     });
   } catch (err: any) {
     console.error('API /api/users GET Error:', err);
@@ -37,14 +45,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const authSession = (request.cookies.get('asoc_admin_session')?.value || request.cookies.get('auth_session')?.value);
-    let currentUser: any = null;
-    if (authSession) {
-      try {
-        currentUser = JSON.parse(decodeURIComponent(authSession));
-      } catch {}
-    }
-    const isSuperadmin = currentUser?.role === 'superadmin';
+    // 1. Enforce verified cryptographic session
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+
+    const isSuperadmin = currentUser.role === 'superadmin';
 
     const body = await request.json();
     const { username, password, role, tenantId } = body;
@@ -63,21 +69,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (role === 'superadmin' && !isSuperadmin) {
+    // Role Escalation Defense: Only Superadmin can create superadmin or admin accounts
+    if ((role === 'superadmin' || role === 'admin') && !isSuperadmin) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Access denied: Only Superadmin can create Superadmin accounts.',
+          error: 'Access denied: Only Superadmin can create platform administrator accounts.',
         },
         { status: 403 }
       );
     }
 
+    // BOLA Protection: Tenant Admin can only create users inside their own tenant
+    let targetTenantId: number | null = null;
+    if (role === 'admin' || role === 'superadmin') {
+      targetTenantId = null;
+    } else {
+      if (isSuperadmin) {
+        targetTenantId = Number(tenantId) || 1;
+      } else {
+        // Enforce caller's tenant
+        targetTenantId = currentUser.tenantId;
+      }
+    }
+
     const result = await createUser({
-      username,
+      username: username.trim(),
       password,
       role: role || 'user',
-      tenantId: (role === 'admin' || role === 'superadmin') ? null : (Number(tenantId) || 1),
+      tenantId: targetTenantId,
     });
 
     if (!result.success) {
@@ -92,6 +112,8 @@ export async function POST(request: NextRequest) {
       const { logAdminActivity } = await import('@/lib/audit-logger');
       await logAdminActivity({
         req: request,
+        adminId: typeof currentUser.id === 'number' ? currentUser.id : undefined,
+        adminUsername: currentUser.username,
         actionType: 'USER_CREATE',
         targetResource: `user:${result.user?.username}`,
         status: 'SUCCESS',
@@ -107,7 +129,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        message: `User ${result.user?.username} created successfully and synchronized with Better-Auth.`,
+        message: `User ${result.user?.username} created successfully.`,
         user: result.user,
       },
       { status: 201 }

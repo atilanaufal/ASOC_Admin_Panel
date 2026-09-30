@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
 import { getActiveRedisClient } from '@/lib/redis';
+import { requireSession } from '@/lib/session';
 
 function formatBytes(bytes: number, decimals = 2) {
   if (!+bytes) return '0 Bytes';
@@ -14,6 +15,9 @@ function formatBytes(bytes: number, decimals = 2) {
 
 export async function GET(_request: NextRequest) {
   try {
+    const auth = await requireSession(_request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const pool = getMysqlPool();
     const [tenantsRows]: any = await pool.query(
       'SELECT id, tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE is_active = 1 ORDER BY id ASC'
@@ -134,13 +138,29 @@ export async function GET(_request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+    const isSuperadmin = currentUser.role === 'superadmin';
+
     const body = await request.json();
-    const {
+    let {
       tenantId = 'all',
       action,
       mongoTtlDays = 30,
       redisTtlSeconds = 604800,
     } = body;
+
+    // BOLA Defense: Tenant Admin can only configure their own tenant
+    if (!isSuperadmin) {
+      if (tenantId === 'all' || Number(tenantId) !== currentUser.tenantId) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: You can only configure data retention for your own tenant.' },
+          { status: 403 }
+        );
+      }
+      tenantId = currentUser.tenantId;
+    }
 
     const pool = getMysqlPool();
     let query = 'SELECT id, tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE is_active = 1';

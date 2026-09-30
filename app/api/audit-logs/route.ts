@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryAuditLogs } from '@/lib/audit-logger';
+import { requireSuperadmin } from '@/lib/session';
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireSuperadmin(request);
+    if (auth.errorResponse) return auth.errorResponse;
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '25', 10);

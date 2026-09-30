@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateTenant, deleteTenant } from '@/lib/tenants';
+import { requireSession, requireSuperadmin } from '@/lib/session';
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+    const isSuperadmin = currentUser.role === 'superadmin';
+
     const { id } = await params;
     const tenantId = parseInt(id, 10);
 
@@ -16,13 +22,29 @@ export async function PUT(
       );
     }
 
+    // BOLA defense: Tenant Admin can only update their own tenant
+    if (!isSuperadmin && tenantId !== currentUser.tenantId) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: You do not have permission to modify another tenant.' },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { campusName, databaseName, status, picName, picEmail, picPhone } = body;
 
+    // Privilege Escalation Defense: Only Superadmin can change tenant status or database mapping
+    if (!isSuperadmin && (status !== undefined || databaseName !== undefined)) {
+      return NextResponse.json(
+        { success: false, error: 'Access denied: Only Superadmin can change tenant status or database allocation.' },
+        { status: 403 }
+      );
+    }
+
     const result = await updateTenant(tenantId, {
       campusName,
-      databaseName,
-      status,
+      databaseName: isSuperadmin ? databaseName : undefined,
+      status: isSuperadmin ? status : undefined,
       picName,
       picEmail,
       picPhone,
@@ -40,10 +62,12 @@ export async function PUT(
       const { logAdminActivity } = await import('@/lib/audit-logger');
       await logAdminActivity({
         req: request,
+        adminId: typeof currentUser.id === 'number' ? currentUser.id : undefined,
+        adminUsername: currentUser.username,
         actionType: status ? 'TENANT_STATUS_TOGGLE' : 'TENANT_UPDATE',
         targetResource: `tenant:id:${tenantId}`,
         status: 'SUCCESS',
-        details: { tenantId, campusName, databaseName, status },
+        details: { tenantId, campusName, status: isSuperadmin ? status : undefined },
       });
     } catch {}
 
@@ -65,6 +89,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Only Superadmin can delete tenants and databases
+    const auth = await requireSuperadmin(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+
     const { id } = await params;
     const tenantId = parseInt(id, 10);
 
@@ -72,25 +101,6 @@ export async function DELETE(
       return NextResponse.json(
         { success: false, error: 'Invalid Tenant ID.' },
         { status: 400 }
-      );
-    }
-
-    // Role Enforcement: Only Superadmin can delete tenants and databases
-    const authSession = (request.cookies.get('asoc_admin_session')?.value || request.cookies.get('auth_session')?.value);
-    let currentUser: any = null;
-    if (authSession) {
-      try {
-        currentUser = JSON.parse(decodeURIComponent(authSession));
-      } catch {}
-    }
-
-    if (currentUser?.role !== 'superadmin') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Access denied: Only Superadmin has permission to delete tenants and databases.',
-        },
-        { status: 403 }
       );
     }
 
@@ -108,7 +118,8 @@ export async function DELETE(
       const { logAdminActivity } = await import('@/lib/audit-logger');
       await logAdminActivity({
         req: request,
-        adminUsername: currentUser?.username || 'superadmin',
+        adminId: typeof currentUser.id === 'number' ? currentUser.id : undefined,
+        adminUsername: currentUser.username,
         actionType: 'TENANT_DELETE',
         targetResource: `tenant:id:${tenantId}`,
         status: 'SUCCESS',

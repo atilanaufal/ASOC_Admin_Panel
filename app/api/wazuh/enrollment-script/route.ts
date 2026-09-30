@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMysqlPool } from "@/lib/mysql";
 import { getActiveWazuhHost } from "@/lib/cluster-failover";
+import { requireTenantScope } from "@/lib/session";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,6 +15,10 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // BOLA defense: Tenant Admin can only access their own tenant enrollment script
+    const auth = await requireTenantScope(request, undefined, tenantCode);
+    if (auth.errorResponse) return auth.errorResponse;
 
     // Fetch tenant details from MySQL
     const pool = getMysqlPool();

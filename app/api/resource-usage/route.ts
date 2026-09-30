@@ -2,12 +2,16 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getVmResourceMetrics, getDatabaseLatencyMetrics } from '@/lib/resource-stats';
 import { auditBackgroundServices, getRealRunningServices } from '@/lib/services';
+import { requireSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const isRefresh = request.nextUrl.searchParams.get('refresh') === 'true';
     const [metrics, servicesAudit, realServices, databaseLatencies] = await Promise.all([
       getVmResourceMetrics(),

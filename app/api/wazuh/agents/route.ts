@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
 import { syncAgentsNative, SyncTarget } from '@/lib/native-sync';
+import { requireSession } from '@/lib/session';
 
 export interface MappedAgentItem {
   id: string;
@@ -25,6 +26,11 @@ export interface MappedAgentItem {
 }
 
 export async function GET(_request: NextRequest) {
+  const auth = await requireSession(_request);
+  if (auth.errorResponse) return auth.errorResponse;
+  const { user: currentUser } = auth;
+  const isSuperadmin = currentUser.role === 'superadmin';
+
   const shouldSync = _request.nextUrl.searchParams.get('sync') === 'true';
   let syncResult: any = null;
 
@@ -45,7 +51,10 @@ export async function GET(_request: NextRequest) {
     // If sync requested via query param (?sync=true)
     if (shouldSync) {
       const syncStartTime = Date.now();
-      const tenantParam = _request.nextUrl.searchParams.get('tenant') || 'all';
+      let tenantParam = _request.nextUrl.searchParams.get('tenant') || 'all';
+      if (!isSuperadmin) {
+        tenantParam = currentUser.tenantCode;
+      }
       const targetList = tenantParam === 'all' 
         ? tenants 
         : tenants.filter((t: any) => t.tenant_code.toLowerCase() === tenantParam.toLowerCase());
@@ -187,8 +196,16 @@ export async function GET(_request: NextRequest) {
 export async function POST(request: NextRequest) {
   const syncStartTime = Date.now();
   try {
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+    const isSuperadmin = currentUser.role === 'superadmin';
+
     const body = await request.json().catch(() => ({}));
-    const tenantParam = body.tenant || 'all';
+    let tenantParam = body.tenant || 'all';
+    if (!isSuperadmin) {
+      tenantParam = currentUser.tenantCode;
+    }
 
     const pool = getMysqlPool();
     const [tenantsRows]: any = await pool.query(`

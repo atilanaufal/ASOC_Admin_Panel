@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { pingMysql, getMysqlPool } from '@/lib/mysql';
 import { pingMongo, getMongoClient } from '@/lib/mongodb';
 import { pingRedis, getActiveRedisClient } from '@/lib/redis';
+import { requireSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,8 +28,16 @@ function formatStartedAt(seconds?: number): string {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth.errorResponse) return auth.errorResponse;
+  const { user: currentUser } = auth;
+  const isSuperadmin = currentUser.role === 'superadmin';
+
   const searchParams = request.nextUrl.searchParams;
-  const targetTenantParam = searchParams.get('tenant') || 'all';
+  let targetTenantParam = searchParams.get('tenant') || 'all';
+  if (!isSuperadmin) {
+    targetTenantParam = currentUser.tenantCode;
+  }
 
   try {
     // Health checks on core 3 databases only

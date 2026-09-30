@@ -3,9 +3,23 @@ import type { NextRequest } from 'next/server';
 import { getActiveRedisClient } from '@/lib/redis';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
+import { requireSuperadmin } from '@/lib/session';
+import { checkRateLimit } from '@/lib/rate-limiter';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSuperadmin(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
+    // Rate limit benchmark runs to prevent server resource exhaustion
+    const rateCheck = await checkRateLimit('benchmark:cluster', 2, 60);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Benchmark rate limit exceeded. Please wait 60 seconds before triggering another cluster benchmark.' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const iterations = Math.min(Math.max(body.iterations || 100, 10), 500);
 

@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listTenantsWithStorageMetrics, provisionTenant } from '@/lib/tenants';
+import { requireSession, requireSuperadmin } from '@/lib/session';
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const tenants = await listTenantsWithStorageMetrics();
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+
+    const allTenants = await listTenantsWithStorageMetrics();
+
+    // BOLA defense: Tenant Admin only sees their own tenant
+    const tenants = currentUser.role === 'superadmin'
+      ? allTenants
+      : allTenants.filter((t) => t.id === currentUser.tenantId);
 
     // Summary calculations
     const totalTenants = tenants.length;
@@ -38,6 +48,11 @@ export async function GET(_request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Only Superadmin can provision new tenants and allocate databases
+    const auth = await requireSuperadmin(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+
     const body = await request.json();
     const {
       tenantCode,
@@ -85,21 +100,19 @@ export async function POST(request: NextRequest) {
       const { logAdminActivity } = await import('@/lib/audit-logger');
       await logAdminActivity({
         req: request,
-        actionType: 'TENANT_CREATE',
-        targetResource: `tenant:${result.tenant?.tenantCode}`,
+        adminId: typeof currentUser.id === 'number' ? currentUser.id : undefined,
+        adminUsername: currentUser.username,
+        actionType: 'TENANT_PROVISION',
+        targetResource: `tenant:${tenantCode}`,
         status: 'SUCCESS',
-        details: {
-          tenantCode: result.tenant?.tenantCode,
-          campusName: result.tenant?.campusName,
-          databaseName: result.tenant?.databaseName,
-        },
+        details: { tenantCode, campusName },
       });
     } catch {}
 
     return NextResponse.json(
       {
         success: true,
-        message: `Tenant ${result.tenant?.campusName} dan database fisik '${result.tenant?.databaseName}' successfully provisioned 100%.`,
+        message: `Tenant ${campusName} (${tenantCode}) provisioned successfully.`,
         tenant: result.tenant,
       },
       { status: 201 }
@@ -107,7 +120,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/tenants POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Failed to process automated provisioning' },
+      { success: false, error: err.message || 'Failed to provision tenant' },
       { status: 500 }
     );
   }

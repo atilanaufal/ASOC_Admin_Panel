@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMysqlPool } from "@/lib/mysql";
 import { queryIrisSingle } from "@/lib/cluster-failover";
+import { requireSession, requireSuperadmin } from "@/lib/session";
 
 export async function GET(_request: NextRequest) {
   try {
+    const auth = await requireSession(_request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const pool = getMysqlPool();
 
     // 1. Fetch tenants
@@ -86,6 +90,9 @@ export async function GET(_request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSuperadmin(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const pool = getMysqlPool();
     const body = await request.json();
     const { tenantId, irisCustomerId, irisCustomerName, irisCustomerDesc } = body;

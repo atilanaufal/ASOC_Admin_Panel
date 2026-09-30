@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import {
+  SESSION_COOKIE_NAME,
+  CLIENT_USER_COOKIE_NAME,
+  verifySessionToken,
+  signSessionPayload,
+  getCookieOptions,
+  getClientCookieOptions,
+} from '@/lib/session-core';
 
-const MAX_SESSION_IDLE_MS = 30 * 60 * 1000; // 30 minutes inactivity timeout
-
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Retrieve origin from reverse proxy headers
@@ -12,56 +18,21 @@ export function middleware(request: NextRequest) {
   const proto = request.headers.get('x-forwarded-proto') || 'https';
   const baseUrl = `${proto}://${host}`;
 
-  // Dedicated Admin Panel cookies to prevent collision with Tenant Portal (port 3000)
-  const adminSessionCookie =
-    request.cookies.get('asoc_admin_session')?.value ||
-    request.cookies.get('auth_session')?.value;
-  const adminToken =
-    request.cookies.get('asoc_admin_token')?.value ||
-    request.cookies.get('better-auth.session_token')?.value ||
-    request.cookies.get('__Secure-better-auth.session_token')?.value;
+  // Dedicated Admin Panel cryptographically signed cookie
+  const adminSessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
 
-  let isAdmin = false;
-  let hasValidSession = false;
-  let sessionExpired = false;
-  let parsedUser: any = null;
-
-  if (adminSessionCookie) {
-    try {
-      const decoded = decodeURIComponent(adminSessionCookie);
-      parsedUser = JSON.parse(decoded);
-      const uRole = String(parsedUser?.role || '').trim().toLowerCase();
-      if (parsedUser && (uRole === 'admin' || uRole === 'superadmin')) {
-        const now = Date.now();
-        const lastActive = parsedUser.lastActive || parsedUser.loginTime || 0;
-        if (now - lastActive > MAX_SESSION_IDLE_MS) {
-          sessionExpired = true;
-          hasValidSession = false;
-          isAdmin = false;
-        } else {
-          isAdmin = true;
-          hasValidSession = true;
-        }
-      } else {
-        // Not an admin/superadmin (e.g. tenant session from port 3000)
-        hasValidSession = false;
-        isAdmin = false;
-        parsedUser = null;
-      }
-    } catch {
-      hasValidSession = false;
-    }
-  } else if (adminToken) {
-    hasValidSession = true;
-    isAdmin = true;
-  }
+  // Verify cryptographic signature (HMAC-SHA256)
+  const sessionUser = await verifySessionToken(adminSessionCookie);
+  const hasValidSession = Boolean(sessionUser);
+  const isAdmin = Boolean(sessionUser && (sessionUser.role === 'superadmin' || sessionUser.role === 'admin'));
 
   // 1. If accessing login route
   if (pathname === '/login') {
     const errorParam = request.nextUrl.searchParams.get('error');
     if (errorParam) {
       const res = NextResponse.next();
-      res.cookies.delete('asoc_admin_session');
+      res.cookies.delete(SESSION_COOKIE_NAME);
+      res.cookies.delete(CLIENT_USER_COOKIE_NAME);
       res.cookies.delete('asoc_admin_token');
       res.cookies.delete('auth_session');
       return res;
@@ -70,9 +41,11 @@ export function middleware(request: NextRequest) {
     if (hasValidSession && isAdmin) {
       return NextResponse.redirect(new URL('/database-status', baseUrl));
     }
+
     const res = NextResponse.next();
-    if (adminSessionCookie && !isAdmin) {
-      res.cookies.delete('asoc_admin_session');
+    if (adminSessionCookie && !hasValidSession) {
+      res.cookies.delete(SESSION_COOKIE_NAME);
+      res.cookies.delete(CLIENT_USER_COOKIE_NAME);
     }
     return res;
   }
@@ -85,75 +58,65 @@ export function middleware(request: NextRequest) {
     pathname.match(/\.(png|jpg|jpeg|gif|webp)$/);
 
   if (!isAuthRoute && !isPublicAsset) {
+    // API Route Protection
     if (pathname.startsWith('/api/')) {
       if (!hasValidSession || !isAdmin) {
         return NextResponse.json(
           {
             success: false,
-            error: sessionExpired
-              ? 'Session expired. Your session has ended due to inactivity.'
-              : 'Unauthorized. Access denied.',
-            sessionExpired,
+            error: 'Unauthorized. Invalid, tampered, or expired session. Access denied.',
           },
           { status: 401 }
         );
       }
 
+      // Slide session on active API usage
       const apiRes = NextResponse.next();
-      if (parsedUser) {
-        try {
-          parsedUser.lastActive = Date.now();
-          const isSecure = process.env.COOKIE_SECURE === 'true' || (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false' && (request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https'));
-          apiRes.cookies.set('asoc_admin_session', encodeURIComponent(JSON.stringify(parsedUser)), {
-            path: '/',
-            httpOnly: false,
-            secure: isSecure,
-            sameSite: 'lax',
-            maxAge: 1800,
-          });
-        } catch {}
-      }
+      try {
+        const refreshedToken = await signSessionPayload(sessionUser!);
+        const cookieOpts = getCookieOptions(request);
+        apiRes.cookies.set(SESSION_COOKIE_NAME, refreshedToken, cookieOpts);
+      } catch {}
       return apiRes;
     }
 
+    // Page Route Protection
     if (!hasValidSession || !isAdmin) {
       const loginUrl = new URL('/login', baseUrl);
-      if (sessionExpired) {
-        loginUrl.searchParams.set('error', 'session_expired');
-      } else {
-        loginUrl.searchParams.set('from', pathname);
-      }
+      loginUrl.searchParams.set('error', 'unauthorized');
+      loginUrl.searchParams.set('from', pathname);
 
       const res = NextResponse.redirect(loginUrl);
-      res.cookies.delete('asoc_admin_session');
+      res.cookies.delete(SESSION_COOKIE_NAME);
+      res.cookies.delete(CLIENT_USER_COOKIE_NAME);
       res.cookies.delete('asoc_admin_token');
+      res.cookies.delete('auth_session');
       return res;
     }
 
-    if (parsedUser) {
-      try {
-        parsedUser.lastActive = Date.now();
-        const isSecure = process.env.COOKIE_SECURE === 'true' || (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false' && (request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https'));
-        const nextRes = NextResponse.next();
-        nextRes.cookies.set('asoc_admin_session', encodeURIComponent(JSON.stringify(parsedUser)), {
-          path: '/',
-          httpOnly: false,
-          secure: isSecure,
-          sameSite: 'lax',
-          maxAge: 1800,
-        });
-        if (adminToken) {
-          nextRes.cookies.set('asoc_admin_token', adminToken, {
-            path: '/',
-            httpOnly: false,
-            secure: isSecure,
-            sameSite: 'lax',
-            maxAge: 1800,
-          });
-        }
-        return nextRes;
-      } catch {}
-    }
+    // Slide session on page navigation
+    const nextRes = NextResponse.next();
+    try {
+      const refreshedToken = await signSessionPayload(sessionUser!);
+      const cookieOpts = getCookieOptions(request);
+      nextRes.cookies.set(SESSION_COOKIE_NAME, refreshedToken, cookieOpts);
+
+      // Also refresh safe client cookie for UI display
+      const clientOpts = getClientCookieOptions(request);
+      nextRes.cookies.set(
+        CLIENT_USER_COOKIE_NAME,
+        encodeURIComponent(
+          JSON.stringify({
+            username: sessionUser!.username,
+            role: sessionUser!.role,
+            campusName: sessionUser!.campusName,
+            tenantCode: sessionUser!.tenantCode,
+          })
+        ),
+        clientOpts
+      );
+    } catch {}
+    return nextRes;
   }
 
   return NextResponse.next();

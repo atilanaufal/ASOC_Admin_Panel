@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { flushTenantRedisCache } from '@/lib/housekeeping';
 import { logAdminActivity } from '@/lib/audit-logger';
+import { requireTenantScope } from '@/lib/session';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,6 +15,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // BOLA defense: Enforce tenant ownership (Superadmin can flush any; Tenant Admin only their own)
+    const auth = await requireTenantScope(request, undefined, tenantCode);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+
     const result = await flushTenantRedisCache({
       tenantCode,
       scope: scope || 'all',
@@ -23,6 +29,8 @@ export async function POST(request: NextRequest) {
     // Record audit log
     await logAdminActivity({
       req: request,
+      adminId: typeof currentUser.id === 'number' ? currentUser.id : undefined,
+      adminUsername: currentUser.username,
       actionType: 'REDIS_CACHE_FLUSH',
       targetResource: `redis:${result.databaseName}:${result.scope}`,
       status: 'SUCCESS',

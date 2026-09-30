@@ -3,6 +3,7 @@ import { betterAuth } from 'better-auth';
 import { username } from 'better-auth/plugins';
 import mysql from 'mysql2/promise';
 import { verifySuperadminCredentials } from './mysql';
+import { getSessionSecret } from './session';
 
 const MYSQL_HOST = process.env.MYSQL_HOST || '';
 const MYSQL_PORT = Number(process.env.MYSQL_PORT) || 3306;
@@ -23,7 +24,7 @@ export const authDbPool = mysql.createPool({
 
 export const auth = betterAuth({
   database: authDbPool,
-  secret: process.env.BETTER_AUTH_SECRET || 'a8f9c42b10d7e6f3a1b5c9d2e4f7a8b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6',
+  secret: getSessionSecret(),
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3001',
   emailAndPassword: {
     enabled: true,
