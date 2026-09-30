@@ -6,12 +6,13 @@ import { auditBackgroundServices, getRealRunningServices } from '@/lib/services'
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
+    const isRefresh = request.nextUrl.searchParams.get('refresh') === 'true';
     const [metrics, servicesAudit, realServices, databaseLatencies] = await Promise.all([
       getVmResourceMetrics(),
       auditBackgroundServices().catch(() => ({ services: [], systemHealth: 'HEALTHY' as const })),
-      getRealRunningServices().catch(() => []),
+      getRealRunningServices(isRefresh).catch(() => []),
       getDatabaseLatencyMetrics().catch((err) => {
         console.warn('Database latency metric error:', err);
         return null;

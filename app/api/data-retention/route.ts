@@ -87,10 +87,34 @@ export async function GET(_request: NextRequest) {
       });
     }
 
+    // Dynamically calculate effective TTL policy from active tenant databases
+    let effectiveMongoTtl = 30;
+    let effectiveRedisTtl = 7;
+    if (tenantRetentionList.length > 0) {
+      const mongoFreq: Record<number, number> = {};
+      const redisFreq: Record<number, number> = {};
+      for (const t of tenantRetentionList) {
+        if (t.mongoTtlDays) {
+          mongoFreq[t.mongoTtlDays] = (mongoFreq[t.mongoTtlDays] || 0) + 1;
+        }
+        if (t.redisTtlDays) {
+          redisFreq[t.redisTtlDays] = (redisFreq[t.redisTtlDays] || 0) + 1;
+        }
+      }
+      const mongoKeys = Object.keys(mongoFreq);
+      if (mongoKeys.length > 0) {
+        effectiveMongoTtl = Number(mongoKeys.reduce((a, b) => (mongoFreq[Number(a)] >= mongoFreq[Number(b)] ? a : b)));
+      }
+      const redisKeys = Object.keys(redisFreq);
+      if (redisKeys.length > 0) {
+        effectiveRedisTtl = Number(redisKeys.reduce((a, b) => (redisFreq[Number(a)] >= redisFreq[Number(b)] ? a : b)));
+      }
+    }
+
     const globalPolicy = {
-      mongoTtlDays: 30,
-      redisTtlDays: 7,
-      redisTtlSeconds: 604800,
+      mongoTtlDays: effectiveMongoTtl,
+      redisTtlDays: effectiveRedisTtl,
+      redisTtlSeconds: effectiveRedisTtl * 86400,
       targetCollections: ['incident', 'vulnerability', 'reports', 'historical_statistics'],
     };
 

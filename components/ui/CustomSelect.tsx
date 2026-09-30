@@ -9,6 +9,7 @@ export interface SelectOption {
   subLabel?: string;
   badge?: string;
   icon?: React.ReactNode;
+  disabled?: boolean;
 }
 
 interface CustomSelectProps {
@@ -141,11 +142,14 @@ export default function CustomSelect({
                   <button
                     key={String(opt.value)}
                     type="button"
-                    onClick={() => handleSelect(opt.value)}
-                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-left transition-colors cursor-pointer ${
-                      isSelected
-                        ? 'bg-cyan-50/80 text-[#00838F] font-bold'
-                        : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                    disabled={opt.disabled}
+                    onClick={() => !opt.disabled && handleSelect(opt.value)}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-left transition-colors ${
+                      opt.disabled
+                        ? 'opacity-40 bg-slate-50/80 text-slate-400 cursor-not-allowed select-none'
+                        : isSelected
+                        ? 'bg-cyan-50/80 text-[#00838F] font-bold cursor-pointer'
+                        : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate">

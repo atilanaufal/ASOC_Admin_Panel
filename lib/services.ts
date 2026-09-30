@@ -266,9 +266,9 @@ export interface RealRunningServiceItem {
 let cachedRealServices: RealRunningServiceItem[] | null = null;
 let lastRealServicesFetch = 0;
 
-export async function getRealRunningServices(): Promise<RealRunningServiceItem[]> {
+export async function getRealRunningServices(forceRefresh = false): Promise<RealRunningServiceItem[]> {
   const now = Date.now();
-  if (cachedRealServices && now - lastRealServicesFetch < 8000) {
+  if (!forceRefresh && cachedRealServices && now - lastRealServicesFetch < 8000) {
     return cachedRealServices;
   }
   try {

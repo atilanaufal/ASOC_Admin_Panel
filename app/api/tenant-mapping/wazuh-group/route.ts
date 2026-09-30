@@ -125,6 +125,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Enforce 1-to-1 mapping policy: a Wazuh group cannot be mapped to multiple tenants
+    const [conflictRows]: any = await pool.query(
+      `SELECT twg.tenant_id, t.tenant_code, t.campus_name
+       FROM tenant_wazuh_groups twg
+       JOIN tenants t ON twg.tenant_id = t.id
+       WHERE twg.wazuh_group_name = ? AND twg.tenant_id != ?`,
+      [wazuhGroupName, tenantId]
+    );
+
+    if (conflictRows && conflictRows.length > 0) {
+      const conflict = conflictRows[0];
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Group "${wazuhGroupName}" is already mapped to tenant "${conflict.tenant_code}" (${conflict.campus_name}). Each Wazuh group can only be mapped to one tenant.`,
+        },
+        { status: 400 }
+      );
+    }
+
     // INSERT or UPDATE
     await pool.query(
       `INSERT INTO tenant_wazuh_groups (tenant_id, wazuh_group_name, created_at)

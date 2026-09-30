@@ -148,7 +148,7 @@ export default function DataRetentionPage() {
 
       showToast(data.message || 'Retention policy applied successfully.');
       setSelectedTenant(null);
-      fetchData();
+      fetchData(true);
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
@@ -168,7 +168,7 @@ export default function DataRetentionPage() {
       const data = await res.json();
       if (data.success) {
         showToast(data.message || 'Reset to defaults successful.');
-        fetchData();
+        fetchData(true);
       } else {
         throw new Error(data.error || 'Failed to reset defaults');
       }

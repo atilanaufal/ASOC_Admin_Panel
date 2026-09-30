@@ -34,6 +34,7 @@ export function ResetPasswordModal({
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -41,6 +42,7 @@ export function ResetPasswordModal({
       generateStrongPassword();
       setError(null);
       setCopied(false);
+      setIsSuccess(false);
     }
   }, [isOpen]);
 
@@ -86,14 +88,79 @@ export function ResetPasswordModal({
         throw new Error(json.error || 'Failed to reset password');
       }
 
+      setIsSuccess(true);
       onSuccess(`Password for @${user.username} has been successfully reset.`);
-      onClose();
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  if (isSuccess) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden p-6 space-y-5 animate-in zoom-in-95 duration-200">
+          <div className="flex flex-col items-center text-center space-y-2 pt-2">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center shadow-xs">
+              <Check className="w-7 h-7 stroke-[2.5]" />
+            </div>
+            <h3 className="font-extrabold text-lg text-slate-900">
+              Password Reset Successful!
+            </h3>
+            <p className="text-xs text-slate-500 max-w-xs">
+              The password for account <strong className="text-slate-800">@{user.username}</strong> has been updated, and all active sessions were terminated.
+            </p>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400 font-medium">Username:</span>
+              <span className="font-mono font-bold text-slate-800">@{user.username}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400 font-medium">New Password:</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60">
+                  {newPassword}
+                </span>
+                <button
+                  type="button"
+                  onClick={copyToClipboard}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-200/80 transition cursor-pointer"
+                  title="Copy new password"
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            {copied && (
+              <p className="text-[11px] text-emerald-600 font-semibold text-right">
+                ✓ Copied to clipboard
+              </p>
+            )}
+          </div>
+
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <span>
+              <strong>Important:</strong> All sessions for this account are now invalidated. Make sure to share these temporary credentials securely with the user.
+            </span>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            >
+              Done & Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">

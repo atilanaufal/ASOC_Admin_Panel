@@ -122,6 +122,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Enforce 1-to-1 mapping policy: an IRIS customer cannot be mapped to multiple tenants
+    const [conflictRows]: any = await pool.query(
+      `SELECT tic.tenant_id, t.tenant_code, t.campus_name 
+       FROM tenant_iris_customers tic 
+       JOIN tenants t ON tic.tenant_id = t.id 
+       WHERE tic.iris_customer_id = ? AND tic.tenant_id != ?`,
+      [irisCustomerId, tenantId]
+    );
+
+    if (conflictRows && conflictRows.length > 0) {
+      const conflict = conflictRows[0];
+      return NextResponse.json(
+        {
+          success: false,
+          error: `IRIS Customer #${irisCustomerId} (${irisCustomerName || 'Customer'}) is already mapped to tenant "${conflict.tenant_code}" (${conflict.campus_name}). Each customer can only be mapped to one tenant.`,
+        },
+        { status: 400 }
+      );
+    }
+
     // INSERT or UPDATE
     await pool.query(
       `INSERT INTO tenant_iris_customers (tenant_id, iris_customer_id, iris_customer_name, iris_customer_desc, created_at)
