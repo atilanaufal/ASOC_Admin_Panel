@@ -41,17 +41,17 @@ export default function AgentStatusPage() {
             const timeSec = ((json.syncResult.durationMs || 0) / 1000).toFixed(1);
             setToast({
               type: 'success',
-              message: `Sinkronisasi berhasil! Script sync_wazuh_agents selesai dieksekusi dalam ${timeSec} detik.`,
+              message: `Synchronization successful! Agent inventory synchronized in ${timeSec}s.`,
             });
           } else if (json.syncResult && !json.syncResult.success) {
             setToast({
               type: 'error',
-              message: `Sinkronisasi gagal: ${json.syncResult.error || json.syncResult.message || 'Eksekusi script error'}`,
+              message: `Synchronization failed: ${json.syncResult.error || json.syncResult.message || 'Agent synchronization failed'}`,
             });
           } else {
             setToast({
               type: 'success',
-              message: 'Data agent status berhasil diperbarui dari MongoDB & Wazuh.',
+              message: 'Agent inventory successfully refreshed from MongoDB & Wazuh.',
             });
           }
         }
@@ -59,7 +59,7 @@ export default function AgentStatusPage() {
         if (isManual) {
           setToast({
             type: 'error',
-            message: 'Gagal menghubungi server untuk memperbarui agent status.',
+            message: 'Failed to communicate with server to update agent status.',
           });
         }
       }
@@ -68,7 +68,7 @@ export default function AgentStatusPage() {
       if (isManual) {
         setToast({
           type: 'error',
-          message: `Terjadi kesalahan: ${err.message || 'Gagal sinkronisasi'}`,
+          message: `An error occurred: ${err.message || 'Failed to update agent status'}`,
         });
       }
     } finally {
@@ -177,7 +177,7 @@ export default function AgentStatusPage() {
         <button
           onClick={() => fetchAgents(true)}
           disabled={refreshing}
-          title="Jalankan script sync_wazuh_agents dan perbarui status"
+          title="Synchronize Wazuh agents and update inventory"
           className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200/80 text-slate-700 text-xs font-semibold rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
@@ -188,10 +188,10 @@ export default function AgentStatusPage() {
       {/* Toast Notification */}
       {toast && (
         <div
-          className={`p-3.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in duration-200 ${
+          className={`fixed top-6 right-6 z-50 flex items-center justify-between gap-3 px-4 py-3 rounded-xl shadow-2xl border text-xs font-semibold transform transition-all duration-300 ease-out animate-in slide-in-from-right-8 fade-in ${
             toast.type === 'success'
-              ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-700'
-              : 'bg-rose-500/10 border border-rose-500/20 text-rose-700'
+              ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200'
+              : 'bg-rose-50 text-rose-900 border-rose-300 ring-1 ring-rose-200'
           }`}
         >
           <div className="flex items-center gap-2">

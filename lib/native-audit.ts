@@ -396,9 +396,18 @@ export async function auditRedisNative(
     cur.setUTCDate(cur.getUTCDate() + 1);
   }
 
+  const yesterdayDate = new Date(nowWib.getTime() - 86400000);
+  const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
+
   let effectiveDates: string[] = [];
-  if (targetDates && targetDates.length === 1 && targetDates[0] === todayStr) {
-    effectiveDates = [todayStr];
+  if (targetDates && targetDates.length === 1) {
+    if (targetDates[0] === todayStr) {
+      effectiveDates = [todayStr];
+    } else if (targetDates[0] === yesterdayStr) {
+      effectiveDates = [yesterdayStr];
+    } else {
+      effectiveDates = [todayStr];
+    }
   } else {
     const filtered = (targetDates || []).filter(d => d >= mondayStr && d <= todayStr);
     effectiveDates = filtered.length > 0 ? filtered : weekDates;

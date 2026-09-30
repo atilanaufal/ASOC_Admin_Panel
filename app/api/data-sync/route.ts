@@ -254,7 +254,7 @@ export async function GET(req: NextRequest) {
 
     if (tab === "redis") {
       const p = period.toLowerCase();
-      const redisPeriod = p === "today" ? "today" : "this_week";
+      const redisPeriod = (p === "today" || p === "yesterday") ? p : "this_week";
       const redisDateRange = parsePeriodToDates(redisPeriod);
       const results = await auditRedisNative(tenantsList, redisDateRange.dates, mongoClient, redisClient);
       return NextResponse.json({
@@ -407,7 +407,7 @@ export async function POST(req: NextRequest) {
 
       if (checkScript === "redis" || checkScript === "check-redis") {
         const p = period.toLowerCase();
-        const redisPeriod = p === "today" ? "today" : "this_week";
+        const redisPeriod = (p === "today" || p === "yesterday") ? p : "this_week";
         const redisDateRange = parsePeriodToDates(redisPeriod);
         const results = await auditRedisNative(targetTenants, redisDateRange.dates, mongoClient, redisClient);
         return NextResponse.json({
@@ -426,7 +426,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      return NextResponse.json({ success: false, error: `Unknown check script: ${checkScript}` }, { status: 400 });
+      return NextResponse.json({ success: false, error: `Unknown verification target: ${checkScript}` }, { status: 400 });
     }
 
     // -----------------------------------------------------------
@@ -469,7 +469,7 @@ export async function POST(req: NextRequest) {
 
       if (pipeline === "mongo-redis" || pipeline === "redis") {
         const p = period.toLowerCase();
-        const redisPeriod = p === "today" ? "today" : "this_week";
+        const redisPeriod = (p === "today" || p === "yesterday") ? p : "this_week";
         const redisDateRange = parsePeriodToDates(redisPeriod);
         const res = await syncRedisNative(syncTargets, redisDateRange.dates, mongoClient);
         return NextResponse.json({

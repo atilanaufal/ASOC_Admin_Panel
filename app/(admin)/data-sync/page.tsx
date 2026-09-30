@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Play, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
+import { RefreshCw, Play, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, ChevronRight, X } from 'lucide-react';
 import CustomSelect from '@/components/ui/CustomSelect';
 import { getClientCache, setClientCache, clearClientCache } from '@/lib/client-cache';
 
@@ -138,7 +138,7 @@ export default function DataSyncPage() {
   const [activeTab, setActiveTab] = useState<TabType>('alerts');
   const [loadedTabs, setLoadedTabs] = useState<Record<string, boolean>>({});
 
-  // Script Action States
+  // Action States
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [expandedVulnDates, setExpandedVulnDates] = useState<Record<string, boolean>>({});
   const [expandedRedisCollections, setExpandedRedisCollections] = useState<Record<string, boolean>>({});
@@ -216,7 +216,7 @@ export default function DataSyncPage() {
     force = false
   ) => {
     let periodToFetch = period;
-    if (tab === "redis" && periodToFetch !== "TODAY" && periodToFetch !== "THIS_WEEK") {
+    if (tab === "redis" && periodToFetch !== "TODAY" && periodToFetch !== "YESTERDAY" && periodToFetch !== "THIS_WEEK") {
       periodToFetch = "THIS_WEEK";
     }
     setLoading(true);
@@ -290,7 +290,7 @@ export default function DataSyncPage() {
 
   const handleTabChange = (newTab: TabType) => {
     let periodToUse = selectedPeriod;
-    if (newTab === "redis" && selectedPeriod !== "TODAY" && selectedPeriod !== "THIS_WEEK") {
+    if (newTab === "redis" && selectedPeriod !== "TODAY" && selectedPeriod !== "YESTERDAY" && selectedPeriod !== "THIS_WEEK") {
       periodToUse = "THIS_WEEK";
       setSelectedPeriod("THIS_WEEK");
     }
@@ -304,7 +304,7 @@ export default function DataSyncPage() {
 
   const handlePeriodChange = (newPeriod: string) => {
     let periodToSet = newPeriod;
-    if (activeTab === "redis" && periodToSet !== "TODAY" && periodToSet !== "THIS_WEEK") {
+    if (activeTab === "redis" && periodToSet !== "TODAY" && periodToSet !== "YESTERDAY" && periodToSet !== "THIS_WEEK") {
       periodToSet = "THIS_WEEK";
     }
     if (periodToSet === selectedPeriod) return;
@@ -313,7 +313,7 @@ export default function DataSyncPage() {
   };
 
   useEffect(() => {
-    if (activeTab === 'redis' && selectedPeriod !== 'TODAY' && selectedPeriod !== 'THIS_WEEK') {
+    if (activeTab === 'redis' && selectedPeriod !== 'TODAY' && selectedPeriod !== 'YESTERDAY' && selectedPeriod !== 'THIS_WEEK') {
       setSelectedPeriod('THIS_WEEK');
       loadPeriodData('THIS_WEEK', 'redis', customStartDate, customEndDate);
     }
@@ -448,21 +448,29 @@ export default function DataSyncPage() {
 
   return (
     <div className="space-y-5 animate-in fade-in duration-200">
-      {/* Toast Notification */}
+      {/* Slide-in Toast Notification from Right */}
       {toast && (
         <div
-          className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold animate-in fade-in slide-in-from-top-3 duration-300 ${
+          className={`fixed top-6 right-6 z-50 flex items-center justify-between gap-3 px-4 py-3 rounded-xl shadow-2xl border text-xs font-semibold transform transition-all duration-300 ease-out animate-in slide-in-from-right-8 fade-in ${
             toast.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              : 'bg-rose-50 text-rose-800 border-rose-200'
+              ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200'
+              : 'bg-rose-50 text-rose-900 border-rose-300 ring-1 ring-rose-200'
           }`}
         >
-          {toast.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          ) : (
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          )}
-          <span>{toast.message}</span>
+          <div className="flex items-center gap-2.5">
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+          <button
+            onClick={() => setToast(null)}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 transition-colors cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
@@ -488,6 +496,7 @@ export default function DataSyncPage() {
             {(activeTab === 'redis'
               ? [
                   { id: 'TODAY', label: 'Today' },
+                  { id: 'YESTERDAY', label: 'Yesterday' },
                   { id: 'THIS_WEEK', label: 'This Week' },
                 ]
               : [
