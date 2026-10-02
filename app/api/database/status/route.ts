@@ -85,13 +85,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (tenantsList.length === 0) {
-      tenantsList = [
-        { id: 1, tenant_code: 'UI', campus_name: 'Universitas Indonesia', database_name: 'universitas_indonesia', redis_prefix: 'universitas_indonesia' },
-        { id: 2, tenant_code: 'UPJ', campus_name: 'Universitas Pembangunan Jaya', database_name: 'universitas_pembangunan_jaya', redis_prefix: 'universitas_pembangunan_jaya' },
-        { id: 3, tenant_code: 'ITB', campus_name: 'Institut Teknologi Bandung', database_name: 'institut_teknologi_bandung', redis_prefix: 'institut_teknologi_bandung' },
-      ];
-    }
+    // No mock fallback — if MySQL has no tenants, return empty list.
 
     const targetTenants = targetTenantParam === 'all'
       ? tenantsList
