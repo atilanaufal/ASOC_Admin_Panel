@@ -1,6 +1,7 @@
 export const SESSION_COOKIE_NAME = 'asoc_admin_session';
 export const CLIENT_USER_COOKIE_NAME = 'asoc_admin_user';
 export const MAX_SESSION_IDLE_MS = 30 * 60 * 1000; // 30 minutes inactivity timeout
+export const MAX_SESSION_ABSOLUTE_MS = 12 * 60 * 60 * 1000; // 12 hours absolute maximum lifetime
 
 export interface SessionUser {
   id: number | string;
@@ -10,19 +11,22 @@ export interface SessionUser {
   tenantCode: string;
   campusName: string;
   issuedAt: number;
+  lastActive?: number;
   expiresAt: number;
   sessionId: string;
 }
 
 /**
  * Returns the cryptographic HMAC secret.
- * Enforces production safety.
+ * Enforces production safety: fails closed if secret is missing or too short.
  */
 export function getSessionSecret(): string {
   const secret = process.env.BETTER_AUTH_SECRET || process.env.SESSION_SECRET;
-  if (!secret) {
+  if (!secret || secret.length < 32) {
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('FATAL SECURITY ERROR: BETTER_AUTH_SECRET or SESSION_SECRET must be set in production.');
+      throw new Error(
+        'FATAL SECURITY ERROR: BETTER_AUTH_SECRET or SESSION_SECRET must be set with at least 32 characters in production.'
+      );
     }
     return 'insecure-development-secret-key-32-chars-long!';
   }
@@ -52,12 +56,18 @@ async function computeHmacSha256(payloadBase64: string, secretKey: string): Prom
  */
 export async function signSessionPayload(
   user: Omit<SessionUser, 'issuedAt' | 'expiresAt' | 'sessionId'> &
-    Partial<Pick<SessionUser, 'issuedAt' | 'expiresAt' | 'sessionId'>>
+    Partial<Pick<SessionUser, 'issuedAt' | 'expiresAt' | 'sessionId' | 'lastActive'>>
 ): Promise<string> {
   const now = Date.now();
   const issuedAt = user.issuedAt || now;
-  const expiresAt = user.expiresAt || (now + MAX_SESSION_IDLE_MS);
-  const sessionId = user.sessionId || (typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${now}-${Math.random()}`);
+  const lastActive = user.lastActive || now;
+  const maxAbsoluteExpires = issuedAt + MAX_SESSION_ABSOLUTE_MS;
+  const requestedExpires = user.expiresAt || (now + MAX_SESSION_IDLE_MS);
+  const expiresAt = Math.min(requestedExpires, maxAbsoluteExpires);
+
+  const sessionId =
+    user.sessionId ||
+    (typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${now}-${Math.random()}`);
 
   const payload: SessionUser = {
     id: user.id,
@@ -67,6 +77,7 @@ export async function signSessionPayload(
     tenantCode: user.tenantCode || (user.role === 'superadmin' ? 'MASTER' : 'UNKNOWN'),
     campusName: user.campusName || 'ASOC Management',
     issuedAt,
+    lastActive,
     expiresAt,
     sessionId,
   };
@@ -77,10 +88,12 @@ export async function signSessionPayload(
 }
 
 /**
- * Verifies a token string using constant-time comparison and expiration check.
+ * Verifies a token string using constant-time comparison and expiration checks.
  * Edge-runtime safe (does not require Redis).
  */
-export async function verifySessionToken(tokenString: string | undefined | null): Promise<SessionUser | null> {
+export async function verifySessionToken(
+  tokenString: string | undefined | null
+): Promise<SessionUser | null> {
   if (!tokenString || typeof tokenString !== 'string') return null;
 
   const parts = tokenString.split('.');
@@ -91,7 +104,7 @@ export async function verifySessionToken(tokenString: string | undefined | null)
 
   try {
     const expectedSig = await computeHmacSha256(payloadBase64, getSessionSecret());
-    
+
     // Constant-time comparison
     if (providedSig.length !== expectedSig.length) return null;
     let mismatch = 0;
@@ -103,12 +116,29 @@ export async function verifySessionToken(tokenString: string | undefined | null)
     const jsonStr = Buffer.from(payloadBase64, 'base64url').toString('utf8');
     const payload: SessionUser = JSON.parse(jsonStr);
 
-    if (!payload.id || !payload.username || !payload.role || !payload.expiresAt || !payload.sessionId) {
+    if (
+      !payload.id ||
+      !payload.username ||
+      !payload.role ||
+      !payload.expiresAt ||
+      !payload.sessionId
+    ) {
       return null;
     }
 
     const now = Date.now();
+
+    // 1. Inactivity timeout check (if lastActive is present)
+    if (payload.lastActive && now - payload.lastActive > MAX_SESSION_IDLE_MS) {
+      return null;
+    }
+
+    // 2. Absolute expiration check (12 hours)
     if (now > payload.expiresAt) {
+      return null;
+    }
+
+    if (payload.issuedAt && now - payload.issuedAt > MAX_SESSION_ABSOLUTE_MS) {
       return null;
     }
 
@@ -120,21 +150,17 @@ export async function verifySessionToken(tokenString: string | undefined | null)
 
 /**
  * Standard cookie configuration for HttpOnly session cookie.
+ * Hardcodes secure: true in production, never allowing spoofable headers to degrade it.
  */
 export function getCookieOptions(request?: any) {
   const isProd = process.env.NODE_ENV === 'production';
-  const cookieSecureEnv = process.env.COOKIE_SECURE;
-  
-  let isSecure = isProd;
-  if (cookieSecureEnv === 'true') isSecure = true;
-  if (cookieSecureEnv === 'false') isSecure = false;
 
   return {
     path: '/',
     httpOnly: true,
-    secure: isSecure,
+    secure: isProd,
     sameSite: 'lax' as const,
-    maxAge: 1800, // 30 minutes
+    maxAge: 1800, // 30 minutes idle
   };
 }
 
@@ -143,16 +169,11 @@ export function getCookieOptions(request?: any) {
  */
 export function getClientCookieOptions(request?: any) {
   const isProd = process.env.NODE_ENV === 'production';
-  const cookieSecureEnv = process.env.COOKIE_SECURE;
-  
-  let isSecure = isProd;
-  if (cookieSecureEnv === 'true') isSecure = true;
-  if (cookieSecureEnv === 'false') isSecure = false;
 
   return {
     path: '/',
     httpOnly: false, // Visible to JS for instant UI display
-    secure: isSecure,
+    secure: isProd,
     sameSite: 'lax' as const,
     maxAge: 1800,
   };

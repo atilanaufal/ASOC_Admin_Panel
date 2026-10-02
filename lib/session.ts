@@ -3,6 +3,7 @@ import {
   SESSION_COOKIE_NAME,
   CLIENT_USER_COOKIE_NAME,
   MAX_SESSION_IDLE_MS,
+  MAX_SESSION_ABSOLUTE_MS,
   SessionUser,
   getSessionSecret,
   signSessionPayload,
@@ -10,24 +11,36 @@ import {
   getCookieOptions,
   getClientCookieOptions,
 } from './session-core';
+import {
+  createAdminServerSession,
+  getAdminServerSession,
+  touchAdminServerSession,
+  deleteAdminServerSession,
+} from './admin-session-store';
 
 export {
   SESSION_COOKIE_NAME,
   CLIENT_USER_COOKIE_NAME,
   MAX_SESSION_IDLE_MS,
+  MAX_SESSION_ABSOLUTE_MS,
   getSessionSecret,
   signSessionPayload,
   verifySessionToken,
   getCookieOptions,
   getClientCookieOptions,
+  createAdminServerSession,
+  getAdminServerSession,
+  touchAdminServerSession,
+  deleteAdminServerSession,
 };
 export type { SessionUser };
 
 /**
- * Revokes a session ID in Redis.
+ * Revokes a session ID in Redis and server session store.
  */
 export async function revokeSession(sessionId: string, expiresAt: number): Promise<void> {
   try {
+    await deleteAdminServerSession(sessionId);
     const { getActiveRedisClient } = await import('./redis');
     const redis = await getActiveRedisClient();
     if (redis) {
@@ -41,14 +54,17 @@ export async function revokeSession(sessionId: string, expiresAt: number): Promi
 
 /**
  * Extracts and verifies the current session user from an HTTP request.
- * Also checks Redis revocation.
+ * - Cryptographically verifies HMAC token.
+ * - Enforces server-side session registry liveness (Redis).
+ * - Enforces 30-min idle timeout and 12-hour absolute ceiling.
+ * - Enforces role is authoritative admin/superadmin.
  */
 export async function getSessionUser(request: NextRequest): Promise<SessionUser | null> {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const user = await verifySessionToken(token);
   if (!user) return null;
 
-  // Check Redis revocation
+  // Check Redis revocation list
   try {
     const { getActiveRedisClient } = await import('./redis');
     const redis = await getActiveRedisClient();
@@ -58,7 +74,29 @@ export async function getSessionUser(request: NextRequest): Promise<SessionUser 
     }
   } catch {}
 
-  return user;
+  // Check authoritative server-side session store
+  const serverSession = await getAdminServerSession(user.sessionId);
+  if (!serverSession) {
+    // Session expired or revoked in server-side registry
+    return null;
+  }
+
+  // Refresh server-side session activity timestamp
+  touchAdminServerSession(user.sessionId).catch(() => {});
+
+  // Server-side authoritative role must be admin or superadmin
+  if (serverSession.role !== 'superadmin' && serverSession.role !== 'admin') {
+    return null;
+  }
+
+  return {
+    ...user,
+    role: serverSession.role,
+    tenantId: serverSession.tenantId,
+    tenantCode: serverSession.tenantCode,
+    campusName: serverSession.campusName,
+    expiresAt: serverSession.expiresAt || user.expiresAt,
+  };
 }
 
 /**

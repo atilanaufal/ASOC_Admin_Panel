@@ -1,49 +1,83 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import crypto from 'crypto';
 import { syncSuperadminToBetterAuth } from '@/lib/auth';
 import {
   signSessionPayload,
   SESSION_COOKIE_NAME,
   CLIENT_USER_COOKIE_NAME,
-  getCookieOptions,
-  getClientCookieOptions,
+  MAX_SESSION_IDLE_MS,
+  MAX_SESSION_ABSOLUTE_MS,
+  createAdminServerSession,
 } from '@/lib/session';
-import { checkRateLimit, resetRateLimit } from '@/lib/rate-limiter';
+import { checkDualLoginRateLimit, resetLoginRateLimit } from '@/lib/rate-limiter';
 import { extractClientIp } from '@/lib/audit-logger';
 
 export async function POST(request: NextRequest) {
   const clientIp = extractClientIp(request);
 
   try {
-    const body = await request.json();
-    const { username, password } = body;
-
-    if (!username || !password) {
+    // 1. Safe JSON Body Parsing (400 on malformed input)
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
       return NextResponse.json(
-        { success: false, error: 'Username and Password are required.' },
+        { success: false, error: 'Format permintaan tidak valid.' },
+        { status: 400 }
+      );
+    }
+
+    const { username, password } = body || {};
+
+    // 2. Strict Type and Presence Validation
+    if (
+      typeof username !== 'string' ||
+      typeof password !== 'string' ||
+      !username.trim() ||
+      !password
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'Username dan password wajib diisi.' },
         { status: 400 }
       );
     }
 
     const cleanUsername = username.trim();
 
-    // 1. Rate Limiting Protection (Brute Force Defense)
-    const rateLimitKey = `login:${clientIp}:${cleanUsername}`;
-    const rateCheck = await checkRateLimit(rateLimitKey, 5, 300); // 5 attempts per 5 mins
+    // 3. Length Capping (Anti CPU DoS on hashing algorithms)
+    if (cleanUsername.length > 128 || password.length > 256) {
+      return NextResponse.json(
+        { success: false, error: 'Panjang input melebihi batas maksimum.' },
+        { status: 400 }
+      );
+    }
+
+    // 4. Dual-Bucket Rate Limiting (IP bucket 30/15m, user hash bucket 10/15m)
+    const rateCheck = await checkDualLoginRateLimit(clientIp, cleanUsername, {
+      ipLimit: 30,
+      userLimit: 10,
+      windowSeconds: 15 * 60,
+    });
+
     if (!rateCheck.allowed) {
+      const retryAfter = rateCheck.retryAfterSeconds || 900;
       return NextResponse.json(
         {
           success: false,
-          error: `Too many failed login attempts. Account temporarily locked for security. Please try again in ${rateCheck.retryAfterSec || 300} seconds.`,
+          error: `Terlalu banyak percobaan login yang gagal. Akun/IP dibatasi sementara demi keamanan. Silakan coba lagi dalam ${retryAfter} detik.`,
         },
         {
           status: 429,
-          headers: { 'Retry-After': String(rateCheck.retryAfterSec || 300) },
+          headers: {
+            'Retry-After': String(retryAfter),
+          },
         }
       );
     }
 
-    // 2. Verify superadmin / admin credentials against MySQL
+    // 5. Verify superadmin / admin credentials against MySQL
+    // Non-admin roles and nonexistent users are rejected with identical uniform 401
     const result = await syncSuperadminToBetterAuth(cleanUsername, password);
 
     if (!result.success || !result.user) {
@@ -56,36 +90,61 @@ export async function POST(request: NextRequest) {
           actionType: 'AUTH_LOGIN',
           targetResource: 'portal:auth',
           status: 'FAILED',
-          details: { reason: result.error || 'Invalid credentials' },
+          details: { reason: 'Invalid credentials or unauthorized role' },
         });
       } catch {}
 
       return NextResponse.json(
-        { success: false, error: 'Invalid username or password.' },
+        { success: false, error: 'Username atau password tidak valid.' },
         { status: 401 }
       );
     }
 
-    // Reset rate limit on successful credentials
-    await resetRateLimit(rateLimitKey);
+    // Reset user rate limit bucket on successful credentials
+    await resetLoginRateLimit(cleanUsername);
 
     const user = result.user;
-    const sessionRole = user.role === 'superadmin' ? 'superadmin' : 'admin';
+    const sessionRole = (user.role === 'superadmin' ? 'superadmin' : 'admin') as 'superadmin' | 'admin';
 
-    // 3. Prepare cryptographic session payload (strictly omits database/redis metadata)
+    const now = Date.now();
+    const sessionId = crypto.randomUUID();
+    const expiresAt = now + MAX_SESSION_ABSOLUTE_MS; // 12-hour absolute lifetime ceiling
+
+    // 6. Create authoritative server-side session in Redis (30-min idle TTL, 12-hr absolute ceiling)
+    await createAdminServerSession(
+      sessionId,
+      {
+        sessionId,
+        userId: user.id,
+        username: user.username,
+        role: sessionRole,
+        tenantId: user.tenant_id || 0,
+        tenantCode: user.tenant_code || (sessionRole === 'superadmin' ? 'MASTER' : 'UNKNOWN'),
+        campusName: user.campus_name || 'ASOC Central Management',
+        createdAt: now,
+        lastActive: now,
+        expiresAt: expiresAt,
+      },
+      Math.floor(MAX_SESSION_IDLE_MS / 1000)
+    );
+
+    // 7. Generate Cryptographically Signed Token (HMAC-SHA256)
     const sessionData = {
       id: user.id,
       username: user.username,
-      role: sessionRole as 'superadmin' | 'admin',
+      role: sessionRole,
       tenantId: user.tenant_id || 0,
       tenantCode: user.tenant_code || (sessionRole === 'superadmin' ? 'MASTER' : 'UNKNOWN'),
       campusName: user.campus_name || 'ASOC Central Management',
+      issuedAt: now,
+      lastActive: now,
+      expiresAt: expiresAt,
+      sessionId,
     };
 
-    // 4. Generate Cryptographically Signed Token (HMAC-SHA256)
     const signedToken = await signSessionPayload(sessionData);
 
-    const { serializeSessionUser, safeErrorResponse } = await import('@/lib/api-response');
+    const { serializeSessionUser } = await import('@/lib/api-response');
 
     const response = NextResponse.json({
       success: true,
@@ -93,12 +152,25 @@ export async function POST(request: NextRequest) {
       user: serializeSessionUser(sessionData as any),
     });
 
-    // 5. Set HttpOnly, Secure, SameSite=Lax signed session cookie
-    const cookieOpts = getCookieOptions(request);
+    // 8. Deterministic Secure flag in production (never spoofable)
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOpts = {
+      path: '/',
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax' as const,
+      maxAge: 1800, // 30 minutes
+    };
     response.cookies.set(SESSION_COOKIE_NAME, signedToken, cookieOpts);
 
-    // 6. Set companion safe non-sensitive cookie for client UI hydration
-    const clientOpts = getClientCookieOptions(request);
+    // Companion safe non-sensitive cookie for client UI display
+    const clientOpts = {
+      path: '/',
+      httpOnly: false,
+      secure: isProduction,
+      sameSite: 'lax' as const,
+      maxAge: 1800,
+    };
     response.cookies.set(
       CLIENT_USER_COOKIE_NAME,
       encodeURIComponent(
@@ -116,7 +188,11 @@ export async function POST(request: NextRequest) {
     response.cookies.delete('asoc_admin_token');
     response.cookies.delete('auth_session');
 
-    // 7. Record success audit log
+    // 9. Security headers
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+
+    // 10. Record success audit log
     try {
       const { logAdminActivity } = await import('@/lib/audit-logger');
       await logAdminActivity({

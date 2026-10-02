@@ -185,8 +185,14 @@ export async function verifySuperadminCredentials(
       }
     }
 
+// Dummy Argon2id hash for constant-time dummy verification (prevents timing attacks)
+const DUMMY_ARGON2_HASH =
+  '$argon2id$v=19$m=65536,t=3,p=4$anVzdGFkdW1teXNhbHQ$c29tZWR1bW15aGFzaHZhbHVlZm9yY29uc3RhbnR0aW1lY2hlY2s';
+
     if (!user) {
-      return { success: false, error: 'Username or email not found in ASOC system.' };
+      // Execute dummy Argon2id verification to equalize response timing and prevent user enumeration
+      await verifyPasswordArgon2id(passwordInput, DUMMY_ARGON2_HASH).catch(() => false);
+      return { success: false, error: 'Username atau password tidak valid.' };
     }
 
     const storedHash = user.password_hash;
@@ -214,15 +220,16 @@ export async function verifySuperadminCredentials(
     }
 
     if (!isMatch) {
-      return { success: false, error: 'Incorrect password.' };
+      return { success: false, error: 'Username atau password tidak valid.' };
     }
 
     const userRole = (user.role || (user.username === 'superadmin' ? 'superadmin' : user.username === 'admin' ? 'admin' : 'tenant')).toLowerCase();
 
     if (userRole !== 'superadmin' && userRole !== 'admin') {
+      // Reject non-admin role with identical uniform error to prevent credential confirmation oracle
       return {
         success: false,
-        error: 'Access Denied. This portal is restricted to Administrators.',
+        error: 'Username atau password tidak valid.',
       };
     }
 

@@ -59,12 +59,15 @@ export async function ensureAuditTable(): Promise<void> {
 export function extractClientIp(req?: NextRequest | Request | null): string {
   if (!req) return '127.0.0.1';
   try {
+    const realIp = req.headers.get('x-real-ip');
+    if (realIp && realIp.trim()) {
+      return realIp.trim().replace(/[^a-fA-F0-9.:]/g, '');
+    }
     const forwarded = req.headers.get('x-forwarded-for');
     if (forwarded) {
-      return forwarded.split(',')[0].trim();
+      const first = forwarded.split(',')[0].trim();
+      if (first) return first.replace(/[^a-fA-F0-9.:]/g, '');
     }
-    const realIp = req.headers.get('x-real-ip');
-    if (realIp) return realIp.trim();
   } catch {}
   return '127.0.0.1';
 }
