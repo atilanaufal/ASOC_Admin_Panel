@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listTenantsWithStorageMetrics, provisionTenant } from '@/lib/tenants';
-import { requireSession, requireSuperadmin } from '@/lib/session';
+import { requireSession, requireSuperadmin, isPlatformAdmin } from '@/lib/session';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,8 +10,8 @@ export async function GET(request: NextRequest) {
 
     const allTenants = await listTenantsWithStorageMetrics();
 
-    // BOLA defense: Tenant Admin only sees their own tenant
-    const tenants = currentUser.role === 'superadmin'
+    // BOLA defense: Platform admins see all tenants; tenant-confined users only see their own tenant
+    const tenants = isPlatformAdmin(currentUser)
       ? allTenants
       : allTenants.filter((t) => t.id === currentUser.tenantId);
 

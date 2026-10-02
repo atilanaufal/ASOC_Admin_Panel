@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { pingMysql, getMysqlPool } from '@/lib/mysql';
 import { pingMongo, getMongoClient } from '@/lib/mongodb';
 import { pingRedis, getActiveRedisClient } from '@/lib/redis';
-import { requireSession } from '@/lib/session';
+import { requireSession, isPlatformAdmin } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
   let targetTenantParam = searchParams.get('tenant') || 'all';
-  if (!isSuperadmin) {
+  if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
     targetTenantParam = currentUser.tenantCode;
   }
 

@@ -23,7 +23,7 @@ import {
   updateHostCron,
   getHostCronLogs,
 } from "@/lib/cron-manager-client";
-import { requireSession, requireSuperadmin } from "@/lib/session";
+import { requireSession, requireSuperadmin, isPlatformAdmin } from "@/lib/session";
 
 function computeNextRun(cronExpr: string): string {
   const now = new Date();
@@ -220,7 +220,7 @@ export async function GET(req: NextRequest) {
     const tab = searchParams.get("tab") || "alerts";
     const period = searchParams.get("period") || "today";
     let tenant = searchParams.get("tenant") || "all";
-    if (!isSuperadmin) {
+    if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
       tenant = currentUser.tenantCode;
     }
     const startDate = searchParams.get("startDate") || undefined;
@@ -384,9 +384,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action, pipeline, checkScript, tenant = "all", period = "today", startDate, endDate, enabled, schedule } = body;
     
-    // BOLA defense: Tenant Admin can only sync/check their own tenant
+    // BOLA defense: Tenant-confined user can only sync/check their own tenant
     let targetTenant = tenant === "all" ? "all" : tenant;
-    if (!isSuperadmin) {
+    if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
       if (tenant !== "all" && tenant.toUpperCase() !== currentUser.tenantCode.toUpperCase()) {
         return NextResponse.json(
           { success: false, error: `Forbidden: You do not have permission to sync or audit Tenant '${tenant}'.` },

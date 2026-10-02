@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
 import { syncAgentsNative, SyncTarget } from '@/lib/native-sync';
-import { requireSession } from '@/lib/session';
+import { requireSession, isPlatformAdmin } from '@/lib/session';
 
 export interface MappedAgentItem {
   id: string;
@@ -51,7 +51,7 @@ export async function GET(_request: NextRequest) {
     if (shouldSync) {
       const syncStartTime = Date.now();
       let tenantParam = _request.nextUrl.searchParams.get('tenant') || 'all';
-      if (!isSuperadmin) {
+      if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
         tenantParam = currentUser.tenantCode;
       }
       const targetList = tenantParam === 'all' 
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     let tenantParam = body.tenant || 'all';
-    if (!isSuperadmin) {
+    if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
       tenantParam = currentUser.tenantCode;
     }
 

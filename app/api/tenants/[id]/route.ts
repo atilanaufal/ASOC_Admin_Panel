@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateTenant, deleteTenant } from '@/lib/tenants';
-import { requireSession, requireSuperadmin } from '@/lib/session';
+import { requireSession, requireSuperadmin, isPlatformAdmin } from '@/lib/session';
 
 export async function PUT(
   request: NextRequest,
@@ -22,8 +22,8 @@ export async function PUT(
       );
     }
 
-    // BOLA defense: Tenant Admin can only update their own tenant
-    if (!isSuperadmin && tenantId !== currentUser.tenantId) {
+    // BOLA defense: Platform admins can manage all tenants; tenant-confined users can only update their own
+    if (!isPlatformAdmin(currentUser) && tenantId !== currentUser.tenantId) {
       return NextResponse.json(
         { success: false, error: 'Forbidden: You do not have permission to modify another tenant.' },
         { status: 403 }

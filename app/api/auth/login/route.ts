@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
       username: user.username,
       role: sessionRole as 'superadmin' | 'admin',
       tenantId: user.tenant_id || 0,
-      tenantCode: user.tenant_code || (sessionRole === 'superadmin' ? 'MASTER' : 'UNKNOWN'),
+      tenantCode: user.tenant_code || (sessionRole === 'superadmin' || sessionRole === 'admin' || !user.tenant_id ? 'MASTER' : 'UNKNOWN'),
       campusName: user.campus_name || 'ASOC Central Management',
     };
 

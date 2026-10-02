@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateUser, resetUserPassword, deleteUser } from '@/lib/users';
-import { requireSession, requireSuperadmin } from '@/lib/session';
+import { requireSession, requireSuperadmin, isPlatformAdmin } from '@/lib/session';
 import { safeErrorResponse } from '@/lib/api-response';
 
 export async function PUT(
@@ -59,9 +59,11 @@ export async function PUT(
       );
     }
 
+    const isPlatformAdminCaller = isPlatformAdmin(currentUser);
+
     // 3. Strict BOLA & Privilege Escalation Checks
     if (!isSuperadmin) {
-      // Tenant Admin CANNOT touch platform admins
+      // Non-superadmin CANNOT touch platform admins (superadmin or admin)
       if (targetType === 'admin') {
         return NextResponse.json(
           {
@@ -72,8 +74,8 @@ export async function PUT(
         );
       }
 
-      // Tenant Admin CANNOT touch users of other tenants (IDOR / BOLA Prevention)
-      if (targetUser.tenant_id !== currentUser.tenantId) {
+      // Tenant-confined user CANNOT touch users of other tenants
+      if (!isPlatformAdminCaller && targetUser.tenant_id !== currentUser.tenantId) {
         return NextResponse.json(
           {
             success: false,
@@ -83,7 +85,7 @@ export async function PUT(
         );
       }
 
-      // Tenant Admin CANNOT grant admin or superadmin roles
+      // Non-superadmin CANNOT grant admin or superadmin roles
       if (role && role !== 'user') {
         return NextResponse.json(
           {
@@ -94,8 +96,8 @@ export async function PUT(
         );
       }
 
-      // Tenant Admin CANNOT move users to another tenant
-      if (tenantId !== undefined && Number(tenantId) !== currentUser.tenantId) {
+      // Tenant-confined user CANNOT move users to another tenant
+      if (!isPlatformAdminCaller && tenantId !== undefined && Number(tenantId) !== currentUser.tenantId) {
         return NextResponse.json(
           {
             success: false,
@@ -144,7 +146,7 @@ export async function PUT(
     }
 
     // 5. Action: Update User Profile
-    const finalTenantId = isSuperadmin
+    const finalTenantId = isPlatformAdminCaller
       ? (tenantId !== undefined ? Number(tenantId) : undefined)
       : currentUser.tenantId;
 

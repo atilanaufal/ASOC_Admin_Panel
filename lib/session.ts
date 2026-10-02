@@ -9,6 +9,7 @@ import {
   verifySessionToken,
   getCookieOptions,
   getClientCookieOptions,
+  isPlatformAdmin,
 } from './session-core';
 
 export {
@@ -20,6 +21,7 @@ export {
   verifySessionToken,
   getCookieOptions,
   getClientCookieOptions,
+  isPlatformAdmin,
 };
 export type { SessionUser };
 
@@ -107,11 +109,12 @@ export async function requireTenantScope(
   if (auth.errorResponse) return auth;
 
   const { user } = auth;
-  if (user.role === 'superadmin') {
+  // Platform administrators (superadmin, admin, or master tenantId 0) have global visibility
+  if (isPlatformAdmin(user)) {
     return { user };
   }
 
-  // Tenant Admin boundary checks
+  // Tenant-confined user boundary checks
   if (targetTenantId !== undefined && targetTenantId !== null) {
     const numericTarget = Number(targetTenantId);
     if (!isNaN(numericTarget) && numericTarget > 0 && numericTarget !== user.tenantId) {

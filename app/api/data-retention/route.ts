@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
 import { getActiveRedisClient } from '@/lib/redis';
-import { requireSession } from '@/lib/session';
+import { requireSession, isPlatformAdmin } from '@/lib/session';
 
 function formatBytes(bytes: number, decimals = 2) {
   if (!+bytes) return '0 Bytes';
@@ -151,8 +151,8 @@ export async function POST(request: NextRequest) {
       redisTtlSeconds = 604800,
     } = body;
 
-    // BOLA Defense: Tenant Admin can only configure their own tenant
-    if (!isSuperadmin) {
+    // BOLA Defense: Platform admins can configure all tenants; tenant-confined users only their own
+    if (!isPlatformAdmin(currentUser)) {
       if (tenantId === 'all' || Number(tenantId) !== currentUser.tenantId) {
         return NextResponse.json(
           { success: false, error: 'Forbidden: You can only configure data retention for your own tenant.' },

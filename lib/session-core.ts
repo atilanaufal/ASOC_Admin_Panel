@@ -15,6 +15,21 @@ export interface SessionUser {
 }
 
 /**
+ * Checks if the user is a platform-level administrator (superadmin or admin)
+ * with visibility across all tenants.
+ */
+export function isPlatformAdmin(user: SessionUser | null | undefined): boolean {
+  if (!user) return false;
+  return (
+    user.role === 'superadmin' ||
+    user.role === 'admin' ||
+    user.tenantId === 0 ||
+    user.tenantCode === 'MASTER' ||
+    user.tenantCode === '-'
+  );
+}
+
+/**
  * Returns the cryptographic HMAC secret.
  * Enforces production safety.
  */
@@ -67,7 +82,7 @@ export async function signSessionPayload(
     username: user.username,
     role: user.role === 'superadmin' ? 'superadmin' : 'admin',
     tenantId: Number(user.tenantId) || 0,
-    tenantCode: user.tenantCode || (user.role === 'superadmin' ? 'MASTER' : 'UNKNOWN'),
+    tenantCode: user.tenantCode || (user.role === 'superadmin' || user.role === 'admin' || user.tenantId === 0 ? 'MASTER' : 'UNKNOWN'),
     campusName: user.campusName || 'ASOC Management',
     issuedAt,
     expiresAt,

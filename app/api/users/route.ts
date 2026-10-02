@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listUsers, createUser } from '@/lib/users';
-import { requireSession } from '@/lib/session';
+import { requireSession, isPlatformAdmin } from '@/lib/session';
 import { serializeUserItem, safeErrorResponse } from '@/lib/api-response';
 
 export async function GET(request: NextRequest) {
@@ -13,9 +13,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const isSuperadmin = currentUser.role === 'superadmin';
 
-    // BOLA protection: Non-superadmin callers CANNOT query 'all' tenants or other tenants
+    // BOLA protection: Non-platform admins CANNOT query 'all' tenants or other tenants
     let targetTenant = searchParams.get('tenant') || 'all';
-    if (!isSuperadmin) {
+    if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
       targetTenant = currentUser.tenantCode;
     }
 
@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
 
     const users = await listUsers({ tenant: targetTenant, role, search });
 
-    // Filter out platform admin rows for tenant admins
-    const filteredUsers = isSuperadmin
+    // Platform admins see all queried users; tenant-confined users only see their own tenant users
+    const filteredUsers = isPlatformAdmin(currentUser)
       ? users
       : users.filter((u) => u.tenant_id === currentUser.tenantId);
 
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     if (role === 'admin' || role === 'superadmin') {
       targetTenantId = null;
     } else {
-      if (isSuperadmin) {
+      if (isPlatformAdmin(currentUser)) {
         targetTenantId = Number(tenantId) || 1;
       } else {
         // Enforce caller's tenant

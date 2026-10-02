@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMysqlPool } from "@/lib/mysql";
 import { queryIrisSingle } from "@/lib/cluster-failover";
-import { requireSession, requireSuperadmin } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 
 export async function GET(_request: NextRequest) {
   try {
@@ -90,7 +90,7 @@ export async function GET(_request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireSuperadmin(request);
+    const auth = await requireSession(request);
     if (auth.errorResponse) return auth.errorResponse;
 
     const pool = getMysqlPool();
