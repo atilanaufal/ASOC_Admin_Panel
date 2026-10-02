@@ -24,11 +24,23 @@ export const authDbPool = mysql.createPool({
 
 export const auth = betterAuth({
   database: authDbPool,
-  secret: getSessionSecret(),
+  secret: process.env.BETTER_AUTH_SECRET || getSessionSecret(),
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3001',
+  trustedOrigins: async () => {
+    const isProd = process.env.NODE_ENV === 'production';
+    const origins: string[] = [];
+    if (!isProd) {
+      origins.push('http://localhost:3001', 'http://127.0.0.1:3001');
+    }
+    if (process.env.BETTER_AUTH_URL) origins.push(process.env.BETTER_AUTH_URL);
+    if (process.env.NEXT_PUBLIC_APP_URL) origins.push(process.env.NEXT_PUBLIC_APP_URL);
+    if (process.env.BETTER_AUTH_TRUSTED_ORIGINS) {
+      origins.push(...process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(',').map((s) => s.trim()));
+    }
+    return Array.from(new Set(origins.filter(Boolean)));
+  },
   emailAndPassword: {
-    enabled: true,
-    autoSignIn: true,
+    enabled: false, // Disabled: all admin logins must traverse custom hardened login route
   },
   user: {
     additionalFields: {

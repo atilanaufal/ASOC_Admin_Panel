@@ -21,16 +21,16 @@ export interface SessionUser {
  * Enforces production safety: fails closed if secret is missing or too short.
  */
 export function getSessionSecret(): string {
-  const secret = process.env.BETTER_AUTH_SECRET || process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) {
-    if (process.env.NODE_ENV === 'production') {
+  const secret = process.env.SESSION_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    if (!secret || secret.length < 32) {
       throw new Error(
-        'FATAL SECURITY ERROR: BETTER_AUTH_SECRET or SESSION_SECRET must be set with at least 32 characters in production.'
+        'FATAL SECURITY ERROR: SESSION_SECRET must be set with at least 32 characters in production for HMAC token signing.'
       );
     }
-    return 'insecure-development-secret-key-32-chars-long!';
+    return secret;
   }
-  return secret;
+  return secret || process.env.BETTER_AUTH_SECRET || 'insecure-development-secret-key-32-chars-long!';
 }
 
 /**

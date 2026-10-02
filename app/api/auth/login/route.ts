@@ -13,7 +13,51 @@ import {
 import { checkDualLoginRateLimit, resetLoginRateLimit } from '@/lib/rate-limiter';
 import { extractClientIp } from '@/lib/audit-logger';
 
+function isOriginAllowed(req: NextRequest): boolean {
+  const origin = req.headers.get('origin');
+  if (!origin) {
+    const referer = req.headers.get('referer');
+    if (!referer) return true; // Direct non-browser calls
+    try {
+      return checkOriginMatch(new URL(referer).origin, req);
+    } catch {
+      return false;
+    }
+  }
+  return checkOriginMatch(origin, req);
+}
+
+function checkOriginMatch(origin: string, req: NextRequest): boolean {
+  const host = req.headers.get('host') || req.headers.get('x-forwarded-host');
+  if (host && (origin === `http://${host}` || origin === `https://${host}`)) {
+    return true;
+  }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL;
+  if (appUrl) {
+    try {
+      if (new URL(appUrl).origin === origin) return true;
+    } catch {}
+  }
+  const trusted = process.env.BETTER_AUTH_TRUSTED_ORIGINS;
+  if (trusted) {
+    const list = trusted.split(',').map((s) => s.trim());
+    if (list.includes(origin)) return true;
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    if (origin === 'http://localhost:3001' || origin === 'http://127.0.0.1:3001') return true;
+  }
+  return false;
+}
+
 export async function POST(request: NextRequest) {
+  // 0. CSRF / Origin Validation
+  if (!isOriginAllowed(request)) {
+    return NextResponse.json(
+      { success: false, error: 'Akses ditolak: origin request tidak valid.' },
+      { status: 403 }
+    );
+  }
+
   const clientIp = extractClientIp(request);
 
   try {
