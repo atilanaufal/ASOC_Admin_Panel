@@ -89,20 +89,28 @@ export async function middleware(request: NextRequest) {
         );
       }
 
-      // Slide session on active API usage
+      // Only slide session on explicit user actions (mutations, heartbeat, or active signal)
+      // Passive GET polling (agent status, db status, resource usage) must NOT extend inactivity session!
+      const isMutation = request.method !== 'GET';
+      const isExplicitActivity =
+        request.headers.get('x-user-active') === 'true' || pathname === '/api/auth/refresh';
+
       const apiRes = NextResponse.next();
-      try {
-        const refreshedToken = await signSessionPayload(sessionUser!);
-        const cookieOpts = getCookieOptions(request);
-        apiRes.cookies.set(SESSION_COOKIE_NAME, refreshedToken, cookieOpts);
-      } catch {}
+      if (isMutation || isExplicitActivity) {
+        try {
+          const refreshedToken = await signSessionPayload(sessionUser!);
+          const cookieOpts = getCookieOptions(request);
+          apiRes.cookies.set(SESSION_COOKIE_NAME, refreshedToken, cookieOpts);
+        } catch {}
+      }
       return attachSecurityHeaders(apiRes);
     }
 
     // Page Route Protection
     if (!hasValidSession || !isAdmin) {
       const loginUrl = new URL('/login', baseUrl);
-      loginUrl.searchParams.set('error', 'unauthorized');
+      const isExpired = Boolean(adminSessionCookie && !hasValidSession);
+      loginUrl.searchParams.set('error', isExpired ? 'session_expired' : 'unauthorized');
       loginUrl.searchParams.set('from', pathname);
 
       const res = NextResponse.redirect(loginUrl);

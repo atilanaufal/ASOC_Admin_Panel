@@ -67,6 +67,7 @@ function LoginForm() {
 
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('asoc_browser_session', Date.now().toString());
+        localStorage.setItem('asoc_admin_last_active', Date.now().toString());
       }
       setSuccessMessage('Sign in successful! Redirecting to dashboard...');
       setTimeout(() => {

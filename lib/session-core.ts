@@ -1,6 +1,6 @@
 export const SESSION_COOKIE_NAME = 'asoc_admin_session';
 export const CLIENT_USER_COOKIE_NAME = 'asoc_admin_user';
-export const MAX_SESSION_IDLE_MS = 30 * 60 * 1000; // 30 minutes inactivity timeout
+export const MAX_SESSION_IDLE_MS = 15 * 60 * 1000; // 15 minutes inactivity timeout
 
 export interface SessionUser {
   id: number | string;
@@ -152,7 +152,7 @@ export function getCookieOptions(request?: any) {
     httpOnly: true,
     secure: isSecure,
     sameSite: 'lax' as const,
-    maxAge: 1800, // 30 minutes
+    // Omit maxAge so cookie is destroyed when browser is closed
   };
 }
 
@@ -172,6 +172,6 @@ export function getClientCookieOptions(request?: any) {
     httpOnly: false, // Visible to JS for instant UI display
     secure: isSecure,
     sameSite: 'lax' as const,
-    maxAge: 1800,
+    // Omit maxAge so cookie is destroyed when browser is closed
   };
 }

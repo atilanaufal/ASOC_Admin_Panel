@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Radio,
@@ -31,19 +31,28 @@ export function FlushCacheModal({
   tenants,
 }: FlushCacheModalProps) {
   const [selectedTenant, setSelectedTenant] = useState<string>(
-    tenants[0]?.tenantCode || 'TNTA'
+    tenants[0]?.tenantCode || ''
   );
   const [scope, setScope] = useState<'all' | 'incidents' | 'vulnerabilities' | 'devices' | 'reports'>('all');
   const [autoRepump, setAutoRepump] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      if (!selectedTenant && tenants.length > 0) {
+        setSelectedTenant(tenants[0]?.tenantCode || '');
+      }
+    }
+  }, [isOpen, tenants, selectedTenant]);
+
   if (!isOpen) return null;
 
   const currentTenant = tenants.find((t) => t.tenantCode === selectedTenant);
-  const prefix = currentTenant?.databaseName || 'tenant_db';
+  const prefix = currentTenant?.databaseName || currentTenant?.tenantCode?.toLowerCase() || '';
 
   const getScopePattern = () => {
+    if (!prefix) return '*';
     switch (scope) {
       case 'incidents':
         return `${prefix}:incident:*`;
@@ -60,6 +69,10 @@ export function FlushCacheModal({
   };
 
   const handleFlush = async () => {
+    if (!selectedTenant) {
+      setError('Please select a target tenant.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -133,11 +146,15 @@ export function FlushCacheModal({
               onChange={(e) => setSelectedTenant(e.target.value)}
               className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer transition-all"
             >
-              {tenants.map((t) => (
-                <option key={t.id} value={t.tenantCode}>
-                  {t.campusName} ({t.tenantCode})
-                </option>
-              ))}
+              {tenants.length === 0 ? (
+                <option value="">No tenants available</option>
+              ) : (
+                tenants.map((t) => (
+                  <option key={t.id} value={t.tenantCode}>
+                    {t.campusName} ({t.tenantCode})
+                  </option>
+                ))
+              )}
             </select>
           </div>
 

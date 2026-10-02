@@ -31,9 +31,11 @@ export function EnrollmentScriptModal({
   isOpen,
   onClose,
   tenants,
-  defaultTenantCode = 'UI',
+  defaultTenantCode = '',
 }: EnrollmentScriptModalProps) {
-  const [selectedTenant, setSelectedTenant] = useState(defaultTenantCode);
+  const [selectedTenant, setSelectedTenant] = useState(
+    defaultTenantCode || (tenants.length > 0 ? tenants[0]?.tenantCode : '')
+  );
   const [selectedOs, setSelectedOs] = useState<'linux-deb' | 'linux-rpm' | 'windows'>('linux-deb');
   const [scriptData, setScriptData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -42,7 +44,13 @@ export function EnrollmentScriptModal({
 
   useEffect(() => {
     if (isOpen) {
-      if (defaultTenantCode) setSelectedTenant(defaultTenantCode);
+      const initial = defaultTenantCode || (tenants.length > 0 ? tenants[0]?.tenantCode : '');
+      setSelectedTenant(initial);
+    }
+  }, [isOpen, defaultTenantCode, tenants]);
+
+  useEffect(() => {
+    if (isOpen && selectedTenant) {
       fetchEnrollmentScript();
     }
   }, [isOpen, selectedTenant, selectedOs]);
@@ -50,6 +58,10 @@ export function EnrollmentScriptModal({
   if (!isOpen) return null;
 
   const fetchEnrollmentScript = async () => {
+    if (!selectedTenant) {
+      setScriptData(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -123,11 +135,15 @@ export function EnrollmentScriptModal({
                 onChange={(e) => setSelectedTenant(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer transition-all"
               >
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.tenantCode}>
-                    {t.campusName} ({t.tenantCode})
-                  </option>
-                ))}
+                {tenants.length === 0 ? (
+                  <option value="">No tenants available</option>
+                ) : (
+                  tenants.map((t) => (
+                    <option key={t.id} value={t.tenantCode}>
+                      {t.campusName} ({t.tenantCode})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 

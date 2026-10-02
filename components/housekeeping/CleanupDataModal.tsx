@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Trash2,
@@ -33,11 +33,19 @@ export function CleanupDataModal({
   tenants,
 }: CleanupDataModalProps) {
   const [selectedTenant, setSelectedTenant] = useState<string>(
-    tenants[0]?.tenantCode || 'TNTA'
+    tenants[0]?.tenantCode || ''
   );
   const [collection, setCollection] = useState<'all' | 'incident' | 'vulnerability'>('all');
   const [olderThanDays, setOlderThanDays] = useState<number>(90);
   const [confirmKeyword, setConfirmKeyword] = useState<string>('');
+
+  useEffect(() => {
+    if (isOpen) {
+      if (!selectedTenant && tenants.length > 0) {
+        setSelectedTenant(tenants[0]?.tenantCode || '');
+      }
+    }
+  }, [isOpen, tenants, selectedTenant]);
 
   const [simulating, setSimulating] = useState(false);
   const [dryRunResult, setDryRunResult] = useState<{
@@ -53,6 +61,10 @@ export function CleanupDataModal({
   const currentTenant = tenants.find((t) => t.tenantCode === selectedTenant);
 
   const handleSimulateDryRun = async () => {
+    if (!selectedTenant) {
+      setError('Please select a target tenant database.');
+      return;
+    }
     setSimulating(true);
     setError(null);
     try {
@@ -84,6 +96,10 @@ export function CleanupDataModal({
   };
 
   const handleExecutePurge = async () => {
+    if (!selectedTenant) {
+      setError('Please select a target tenant database.');
+      return;
+    }
     setPurging(true);
     setError(null);
     try {
@@ -167,11 +183,15 @@ export function CleanupDataModal({
               }}
               className="w-full px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 cursor-pointer transition-all"
             >
-              {tenants.map((t) => (
-                <option key={t.id} value={t.tenantCode}>
-                  {t.campusName} ({t.tenantCode})
-                </option>
-              ))}
+              {tenants.length === 0 ? (
+                <option value="">No tenants available</option>
+              ) : (
+                tenants.map((t) => (
+                  <option key={t.id} value={t.tenantCode}>
+                    {t.campusName} ({t.tenantCode})
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
