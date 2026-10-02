@@ -366,19 +366,56 @@ export async function syncRedisNative(
     }
 
     // 3. Clear and sync vulnerabilities
-    const oldVulnKeys = await redis.keys(`${cleanPrefix}:vulnerability:*`).catch(() => []);
-    if (oldVulnKeys.length > 0) {
-      await redis.del(...oldVulnKeys).catch(() => {});
+    const isWeeklySync = dates.length > 1 && dates[0] <= mondayStr;
+    const targetDatesSet = new Set(dates);
+    const startStr = dates[0] || todayUtcStr;
+    const endStr = dates[dates.length - 1] || todayUtcStr;
+    const startDt = new Date(`${startStr}T00:00:00.000Z`);
+    const endDt = new Date(`${endStr}T23:59:59.999Z`);
+
+    if (isWeeklySync) {
+      const oldVulnKeys = await redis.keys(`${cleanPrefix}:vulnerability:*`).catch(() => []);
+      if (oldVulnKeys.length > 0) {
+        await redis.del(...oldVulnKeys).catch(() => {});
+      }
+    } else {
+      const existingVulnKeys = await redis.keys(`${cleanPrefix}:vulnerability:*`).catch(() => []);
+      for (const vk of existingVulnKeys) {
+        const hvals = await redis.hgetall(vk).catch(() => ({}));
+        const toDel: string[] = [];
+        for (const [fId, raw] of Object.entries(hvals)) {
+          try {
+            const dDoc = JSON.parse(raw as string);
+            const dStr = dDoc.date || (dDoc.detected_at ? String(dDoc.detected_at).slice(0, 10) : null);
+            if (dStr && targetDatesSet.has(dStr)) {
+              toDel.push(fId);
+            }
+          } catch {}
+        }
+        if (toDel.length > 0) {
+          await redis.hdel(vk, ...toDel).catch(() => {});
+        }
+      }
     }
 
-    const vulnQuery = {
-      $or: [
-        { date: { $gte: mondayStr } },
-        { detected_at: { $gte: mondayDt } },
-        { detected_at: { $gte: mondayStr } },
-        { last_seen: { $gte: mondayStr } },
-      ],
-    };
+    const vulnQuery = isWeeklySync
+      ? {
+          $or: [
+            { date: { $gte: mondayStr } },
+            { detected_at: { $gte: mondayDt } },
+            { detected_at: { $gte: mondayStr } },
+            { last_seen: { $gte: mondayStr } },
+          ],
+        }
+      : {
+          $or: [
+            { date: { $in: dates } },
+            { detected_at: { $gte: startDt, $lte: endDt } },
+            { detected_at: { $gte: startStr, $lte: `${endStr}T23:59:59.999Z` } },
+            { last_seen: { $gte: startStr, $lte: `${endStr}T23:59:59.999Z` } },
+          ],
+        };
+
     const vulnDocs = await db.collection("vulnerability").find(vulnQuery).toArray();
     if (vulnDocs.length > 0) {
       const pipeline = redis.pipeline();
@@ -408,17 +445,45 @@ export async function syncRedisNative(
     }
 
     // 5. Sync reports
-    const repDocs = await db.collection("reports").find({
-      $or: [
-        { created_at: { $gte: mondayDt } },
-        { date_generated: { $gte: mondayDt } },
-        { date_generated: { $gte: mondayStr } },
-        { date: { $gte: mondayStr } },
-      ],
-    }).toArray();
+    const repQuery = isWeeklySync
+      ? {
+          $or: [
+            { created_at: { $gte: mondayDt } },
+            { date_generated: { $gte: mondayDt } },
+            { date_generated: { $gte: mondayStr } },
+            { date: { $gte: mondayStr } },
+          ],
+        }
+      : {
+          $or: [
+            { created_at: { $gte: startDt, $lte: endDt } },
+            { date_generated: { $gte: startDt, $lte: endDt } },
+            { date_generated: { $gte: startStr, $lte: `${endStr}T23:59:59.999Z` } },
+            { date: { $in: dates } },
+          ],
+        };
+
+    const repDocs = await db.collection("reports").find(repQuery).toArray();
     const cleanReps = repDocs.map(cleanDoc);
-    await redis.set(`${prefix}:reports`, JSON.stringify(cleanReps), "EX", REDIS_TTL_SECONDS);
-    await redis.set(`${prefix}:reports:list`, JSON.stringify(cleanReps), "EX", REDIS_TTL_SECONDS);
+    let finalReps = cleanReps;
+    if (!isWeeklySync) {
+      const repRaw = await redis.get(`${prefix}:reports`).catch(() => null);
+      let existingReps: any[] = [];
+      if (repRaw) {
+        try {
+          const parsed = JSON.parse(repRaw);
+          if (Array.isArray(parsed)) {
+            existingReps = parsed.filter((rp: any) => {
+              const rpD = (rp.date_generated || rp.created_at || rp.date || "").slice(0, 10);
+              return !targetDatesSet.has(rpD);
+            });
+          }
+        } catch {}
+      }
+      finalReps = [...existingReps, ...cleanReps];
+    }
+    await redis.set(`${prefix}:reports`, JSON.stringify(finalReps), "EX", REDIS_TTL_SECONDS);
+    await redis.set(`${prefix}:reports:list`, JSON.stringify(finalReps), "EX", REDIS_TTL_SECONDS);
 
     // 6. Sync weekly historical statistics
     const cutoff14d = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);

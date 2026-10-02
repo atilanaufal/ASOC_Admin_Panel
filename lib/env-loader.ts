@@ -6,8 +6,6 @@ export function loadMultiTenantEnv() {
     path.resolve(process.cwd(), '.env.production'),
     path.resolve(process.cwd(), '.env'),
     '/opt/asoc_admin_panel/.env.production',
-    '/opt/multi-tenant/.env',
-    '/opt/multi-tenant/scripts2/.env.wazuh2'
   ];
 
   for (const envPath of envFiles) {

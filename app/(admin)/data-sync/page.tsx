@@ -52,6 +52,7 @@ interface RedisAuditItem {
     mongo: number;
     redis: number;
     isSynced: boolean;
+    dateBreakdown?: { date: string; mongo: number; redis: number; status: string }[];
   };
   devices: {
     mongo: number;
@@ -1335,24 +1336,28 @@ export default function DataSyncPage() {
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
                                                   {(() => {
-                                                    const datesList = (ra?.incidents?.dateBreakdown || []).map((r: any) => r.date);
-                                                    const targetList = datesList.length > 0 ? datesList : [new Date().toISOString().slice(0, 10)];
-                                                    return targetList.map((dStr: string, dIdx: number) => {
-                                                      const rowMongo = dIdx === 0 ? item.mongo : 0;
-                                                      const rowRedis = dIdx === 0 ? item.redis : 0;
-                                                      const isRowSynced = rowMongo === rowRedis;
+                                                    const reportBreakdown = ra?.reports?.dateBreakdown && ra.reports.dateBreakdown.length > 0
+                                                      ? ra.reports.dateBreakdown
+                                                      : (ra?.incidents?.dateBreakdown || []).map((ib: any) => ({
+                                                          date: ib.date,
+                                                          mongo: 0,
+                                                          redis: 0,
+                                                          status: 'SYNC',
+                                                        }));
+                                                    return reportBreakdown.map((row: any, rIdx: number) => {
+                                                      const isRowSynced = row.status === 'SYNC' || row.mongo === row.redis;
                                                       return (
-                                                        <tr key={dIdx} className="hover:bg-slate-50/60">
-                                                          <td className="py-2 px-3 font-semibold text-slate-900">{dStr}</td>
-                                                          <td className="py-2 px-3 font-semibold text-slate-800">{rowMongo}</td>
-                                                          <td className="py-2 px-3 font-semibold text-indigo-700">{rowRedis}</td>
+                                                        <tr key={rIdx} className="hover:bg-slate-50/60">
+                                                          <td className="py-2 px-3 font-semibold text-slate-900">{row.date}</td>
+                                                          <td className="py-2 px-3 font-semibold text-slate-800">{row.mongo}</td>
+                                                          <td className="py-2 px-3 font-semibold text-indigo-700">{row.redis}</td>
                                                           <td className="py-2 px-3 text-right font-sans">
                                                             <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                                                               isRowSynced
                                                                 ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/60'
                                                                 : 'text-rose-700 bg-rose-50 border border-rose-200/60'
                                                             }`}>
-                                                              {isRowSynced ? (rowMongo === 0 ? 'SYNCED (0)' : 'SYNC') : 'MISMATCH'}
+                                                              {isRowSynced ? (row.mongo === 0 ? 'SYNCED (0)' : 'SYNC') : 'MISMATCH'}
                                                             </span>
                                                           </td>
                                                         </tr>

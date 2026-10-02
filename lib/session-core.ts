@@ -19,8 +19,11 @@ export interface SessionUser {
  * Enforces production safety.
  */
 export function getSessionSecret(): string {
-  const secret = process.env.BETTER_AUTH_SECRET || process.env.SESSION_SECRET;
+  const secret = process.env.SESSION_SECRET || process.env.BETTER_AUTH_SECRET;
   if (!secret) {
+    if (process.env.NEXT_PHASE === 'phase-production-build') {
+      return 'asoc_default_secure_hmac_secret_key_32_bytes_min_2026!';
+    }
     if (process.env.NODE_ENV === 'production') {
       throw new Error('FATAL SECURITY ERROR: BETTER_AUTH_SECRET or SESSION_SECRET must be set in production.');
     }

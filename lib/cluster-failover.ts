@@ -12,9 +12,9 @@ export interface ClusterNodeConfig {
 const httpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
 
 function getIndexerNodes(): ClusterNodeConfig[] {
-  const n1Host = process.env.INDEXER_NODE1_HOST || process.env.INDEXER_HOST || process.env.OPENSEARCH_URL || "";
-  const n1User = process.env.INDEXER_NODE1_USER || process.env.INDEXER_USER || "";
-  const n1Pass = process.env.INDEXER_NODE1_PASS || process.env.INDEXER_PASS || "";
+  const n1Host = process.env.INDEXER_HOST || process.env.OPENSEARCH_URL || process.env.INDEXER_NODE1_HOST || "";
+  const n1User = process.env.INDEXER_USER || process.env.INDEXER_NODE1_USER || "";
+  const n1Pass = process.env.INDEXER_PASS || process.env.INDEXER_NODE1_PASS || "";
 
   const n2Host = process.env.INDEXER_NODE2_HOST || "";
   const n2User = process.env.INDEXER_NODE2_USER || n1User;

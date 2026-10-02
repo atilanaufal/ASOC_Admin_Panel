@@ -452,12 +452,32 @@ export async function auditRedisNative(
           })
         );
 
-        // 2. Vulnerabilities
+        // 2. Vulnerabilities from Redis (filtered by effectiveDates)
         const vulnKeys = await redisClient.keys(`${cleanPrefix}vulnerability:*`).catch(() => []);
         let rdVulnCount = 0;
-        for (const vk of vulnKeys) {
-          const cnt = (await redisClient.hlen(vk).catch(() => 0)) || 0;
-          rdVulnCount += cnt;
+        const effectiveDatesSet = new Set(effectiveDates);
+        const rdVulnDateCountMap = new Map<string, number>();
+        if (vulnKeys && vulnKeys.length > 0) {
+          const vulnData = await Promise.all(
+            vulnKeys.map(async (vk: string) => {
+              const hvals = await redisClient.hgetall(vk).catch(() => ({}));
+              return Object.values(hvals);
+            })
+          );
+          for (const items of vulnData) {
+            for (const raw of items as string[]) {
+              try {
+                const doc = JSON.parse(raw);
+                const d = doc.date || (doc.detected_at ? String(doc.detected_at).slice(0, 10) : "");
+                if (d) {
+                  rdVulnDateCountMap.set(d, (rdVulnDateCountMap.get(d) || 0) + 1);
+                  if (effectiveDatesSet.has(d)) {
+                    rdVulnCount++;
+                  }
+                }
+              } catch {}
+            }
+          }
         }
 
         // 3. Devices (check both ${prefix}:devices and ${prefix}:devices:all)
@@ -471,60 +491,105 @@ export async function auditRedisNative(
           } catch {}
         }
 
-        // 4. Reports (check ${prefix}:reports, ${prefix}:reports:latest, ${prefix}:reports:list)
+        // 4. Reports (filtered by effectiveDates)
         let rdRepCount = 0;
+        const rdRepDateCountMap = new Map<string, number>();
         const repRaw = (await redisClient.get(`${prefix}:reports`).catch(() => null)) ||
                        (await redisClient.get(`${prefix}:reports:latest`).catch(() => null)) ||
                        (await redisClient.get(`${prefix}:reports:list`).catch(() => null));
         if (repRaw) {
           try {
             const parsed = JSON.parse(repRaw);
-            rdRepCount = Array.isArray(parsed) ? parsed.length : 0;
+            if (Array.isArray(parsed)) {
+              for (const rep of parsed) {
+                const d = (rep.date_generated || rep.created_at || rep.date || "").slice(0, 10);
+                if (d) {
+                  rdRepDateCountMap.set(d, (rdRepDateCountMap.get(d) || 0) + 1);
+                  if (effectiveDatesSet.has(d)) {
+                    rdRepCount++;
+                  }
+                }
+              }
+            }
           } catch {}
         }
 
         let mgVulnCount = 0;
         let mgDevCount = 0;
         let mgRepCount = 0;
+        const mgVulnDateCountMap = new Map<string, number>();
+        const mgRepDateCountMap = new Map<string, number>();
 
         if (mongoClient && dbName) {
           try {
             const db = mongoClient.db(dbName);
-            const nowWib = new Date();
-            const dayOfWeek = nowWib.getDay() || 7;
-            const mondayDate = new Date(nowWib);
-            mondayDate.setDate(mondayDate.getDate() - (dayOfWeek - 1));
-            const mondayStr = mondayDate.toISOString().slice(0, 10);
-            const mondayDt = new Date(`${mondayStr}T00:00:00.000Z`);
+            const startStr = effectiveDates[0];
+            const endStr = effectiveDates[effectiveDates.length - 1];
+            const startDt = new Date(`${startStr}T00:00:00.000Z`);
+            const endDt = new Date(`${endStr}T23:59:59.999Z`);
 
             const vulnQuery = {
               $or: [
-                { date: { $gte: mondayStr } },
-                { detected_at: { $gte: mondayDt } },
-                { detected_at: { $gte: mondayStr } },
-                { last_seen: { $gte: mondayStr } },
+                { date: { $in: effectiveDates } },
+                { detected_at: { $gte: startDt, $lte: endDt } },
+                { detected_at: { $gte: startStr, $lte: `${endStr}T23:59:59.999Z` } },
+                { last_seen: { $gte: startStr, $lte: `${endStr}T23:59:59.999Z` } },
               ],
             };
 
             const repQuery = {
               $or: [
-                { created_at: { $gte: mondayDt } },
-                { date_generated: { $gte: mondayDt } },
-                { date_generated: { $gte: mondayStr } },
-                { date: { $gte: mondayStr } },
+                { created_at: { $gte: startDt, $lte: endDt } },
+                { date_generated: { $gte: startDt, $lte: endDt } },
+                { date_generated: { $gte: startStr, $lte: `${endStr}T23:59:59.999Z` } },
+                { date: { $in: effectiveDates } },
               ],
             };
 
-            const [devC, vulnC, repC] = await Promise.all([
+            const [devC, vulnC, repDocs, aggV] = await Promise.all([
               db.collection("devices").countDocuments({}).catch(() => 0),
               db.collection("vulnerability").countDocuments(vulnQuery).catch(() => 0),
-              db.collection("reports").countDocuments(repQuery).catch(() => 0),
+              db.collection("reports").find(repQuery, { projection: { date_generated: 1, created_at: 1, date: 1 } }).toArray().catch(() => []),
+              db.collection("vulnerability").aggregate([
+                { $match: { date: { $in: effectiveDates } } },
+                { $group: { _id: "$date", count: { $sum: 1 } } },
+              ]).toArray().catch(() => []),
             ]);
             mgDevCount = devC;
             mgVulnCount = vulnC;
-            mgRepCount = repC;
+            mgRepCount = repDocs.length;
+
+            for (const r of aggV) {
+              if (r._id) mgVulnDateCountMap.set(r._id, r.count);
+            }
+            for (const r of repDocs) {
+              const dStr = (r.date_generated ? new Date(r.date_generated).toISOString().slice(0, 10) : (r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : (r.date || ""))).slice(0, 10);
+              if (dStr) mgRepDateCountMap.set(dStr, (mgRepDateCountMap.get(dStr) || 0) + 1);
+            }
           } catch {}
         }
+
+        const vulnBreakdown = effectiveDates.map((d) => {
+          const mgV = mgVulnDateCountMap.get(d) || 0;
+          const rdV = rdVulnDateCountMap.get(d) || 0;
+          return {
+            date: d,
+            mongo: mgV,
+            redis: rdV,
+            status: mgV === rdV ? "SYNC" : "MISMATCH",
+          };
+        });
+
+        const repBreakdown = effectiveDates.map((d) => {
+          const mgR = mgRepDateCountMap.get(d) || 0;
+          const rdR = rdRepDateCountMap.get(d) || 0;
+          return {
+            date: d,
+            mongo: mgR,
+            redis: rdR,
+            status: mgR === rdR ? "SYNC" : "MISMATCH",
+          };
+        });
 
         const incSynced = totMgInc === totRdInc;
         const vulnSynced = mgVulnCount === rdVulnCount;
@@ -542,11 +607,13 @@ export async function auditRedisNative(
             mongo: mgVulnCount,
             redis: rdVulnCount,
             isSynced: vulnSynced,
+            dateBreakdown: vulnBreakdown,
           },
           reports: {
             mongo: mgRepCount,
             redis: rdRepCount,
             isSynced: repSynced,
+            dateBreakdown: repBreakdown,
           },
           devices: {
             mongo: mgDevCount,
