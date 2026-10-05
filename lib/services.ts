@@ -71,9 +71,9 @@ async function getLiveDaemonTelemetry(): Promise<any> {
   }
 
   return cachedDaemonTelemetry || {
-    pumper: { incidents: 54, vulns: 0, devices: 21, reports: 0, durationMs: 125.0 },
-    iris: { cases: 0, durationMs: 46.5, status: 'SUCCESS 100%' },
-    timers: { fullLeft: 'In 45 Minutes', statsLeft: 'In 4 Minutes' },
+    pumper: { incidents: 0, vulns: 0, devices: 0, reports: 0, durationMs: 0 },
+    iris: { cases: 0, durationMs: 0, status: 'IDLE' },
+    timers: { fullLeft: 'Scheduled', statsLeft: 'Scheduled' },
   };
 }
 
@@ -121,11 +121,11 @@ export async function auditBackgroundServices(): Promise<{
     }
   } catch {}
 
-  const pMetrics = telemetry?.pumper || { incidents: 54, vulns: 0, devices: 21, reports: 0, durationMs: 125.0 };
-  const iMetrics = telemetry?.iris || { cases: 0, durationMs: 46.5, status: 'SUCCESS 100%' };
-  const tMetrics = telemetry?.timers || { fullLeft: 'In 45 Minutes', statsLeft: 'In 4 Minutes' };
+  const pMetrics = telemetry?.pumper || { incidents: 0, vulns: 0, devices: 0, reports: 0, durationMs: 0 };
+  const iMetrics = telemetry?.iris || { cases: 0, durationMs: 0, status: 'IDLE' };
+  const tMetrics = telemetry?.timers || { fullLeft: 'Scheduled', statsLeft: 'Scheduled' };
 
-  // 3. Assemble 7 background services strictly matching VM 10.20.100.86
+  // 3. Assemble background services
   const services: ServiceHealthItem[] = [];
 
   // Service 1: mongo-redis-multitenant-pumper
@@ -139,13 +139,13 @@ export async function auditBackgroundServices(): Promise<{
     description: 'Streaming delta from MongoDB to Redis via Go gRPC Stream',
     latencyMs: grpcPumperPortOpen ? 12 : undefined,
     lastRunMetrics: {
-      incidentsPumped: pMetrics.incidents ?? 54,
+      incidentsPumped: pMetrics.incidents ?? 0,
       vulnsPumped: pMetrics.vulns ?? 0,
-      devicesPumped: pMetrics.devices ?? 21,
+      devicesPumped: pMetrics.devices ?? 0,
       reportsPumped: pMetrics.reports ?? 0,
-      durationMs: pMetrics.durationMs ?? 125.0,
+      durationMs: pMetrics.durationMs ?? 0,
       timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
-      statusText: 'Batch Parity 100% OK',
+      statusText: (mongoRes.ok && redisRes.ok) ? 'Sync Healthy' : 'Disconnected',
     },
   });
 
@@ -163,8 +163,8 @@ export async function auditBackgroundServices(): Promise<{
       pollingInterval: '10 Minutes',
       operatingHours: '08:00 - 18:00 WIB',
       casesShipped: iMetrics.cases ?? 0,
-      durationMs: iMetrics.durationMs ?? 46.5,
-      statusText: iMetrics.status || '100% Synced',
+      durationMs: iMetrics.durationMs ?? 0,
+      statusText: iMetrics.status || ((mongoRes.ok) ? 'Sync Healthy' : 'Disconnected'),
       timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + ' WIB',
     },
   });
