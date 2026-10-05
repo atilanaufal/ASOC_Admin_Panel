@@ -75,7 +75,7 @@ export function AuditDetailModal({
               <span className="font-bold text-blue-500 text-xs">{log.ipAddress}</span>
             </div>
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400 text-[10px] block font-sans">Tipe Aksi</span>
+              <span className="text-slate-400 text-[10px] block font-sans">Action Type</span>
               <span className="font-bold text-indigo-500 text-xs">{log.actionType}</span>
             </div>
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/60">

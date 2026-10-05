@@ -103,9 +103,9 @@ export function AuditLogTable({
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
-              <th className="py-3 px-4 rounded-l-xl">Waktu & ID</th>
+              <th className="py-3 px-4 rounded-l-xl">Time & ID</th>
               <th className="py-3 px-4">Admin & IP Address</th>
-              <th className="py-3 px-4">Tipe Aksi</th>
+              <th className="py-3 px-4">Action Type</th>
               <th className="py-3 px-4">Target Resource</th>
               <th className="py-3 px-4">Status</th>
               <th className="py-3 px-4 rounded-r-xl text-right">Detail</th>

@@ -83,7 +83,7 @@ export function DaemonDetailModal({
           {/* Description */}
           <div>
             <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] block mb-1">
-              Peran & Deskripsi Alur Data:
+              Role & Data Flow Description:
             </span>
             <p className="text-slate-700 leading-relaxed font-medium">
               {service.description}

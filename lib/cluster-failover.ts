@@ -9,6 +9,15 @@ export interface ClusterNodeConfig {
   token?: string;
 }
 
+type NodeCircuitState = "HEALTHY" | "UNHEALTHY" | "HALF_OPEN";
+
+interface CircuitStateInfo {
+  state: NodeCircuitState;
+  nextProbeAt: number;
+  consecutiveSuccesses: number;
+  lastFailureReason?: string;
+}
+
 const httpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
 
 function getIndexerNodes(): ClusterNodeConfig[] {
@@ -57,7 +66,72 @@ function getWazuhNodes(): ClusterNodeConfig[] {
 
 let activeIndexerIndex = 0;
 let activeWazuhIndex = 0;
-let cachedWazuhToken: { token: string; expiresAt: number; nodeUrl: string } | null = null;
+let cachedWazuhToken: { token: string; expiresAt: number; nodeUrl: string; nodeIndex: number } | null = null;
+
+const circuitRegistry: Record<string, CircuitStateInfo> = {};
+const COOLDOWN_MS = 15000;
+const REQUIRED_PROBE_SUCCESSES = 2;
+
+function getCircuit(url: string): CircuitStateInfo {
+  if (!circuitRegistry[url]) {
+    circuitRegistry[url] = {
+      state: "HEALTHY",
+      nextProbeAt: 0,
+      consecutiveSuccesses: 0,
+    };
+  }
+  return circuitRegistry[url];
+}
+
+function isNodeAvailable(url: string, isPrimary: boolean): boolean {
+  const info = getCircuit(url);
+  const now = Date.now();
+
+  if (info.state === "HEALTHY") return true;
+
+  if (info.state === "UNHEALTHY") {
+    if (now >= info.nextProbeAt) {
+      info.state = "HALF_OPEN";
+      console.log(`[CIRCUIT-BREAKER] Node ${url} transitioned UNHEALTHY -> HALF_OPEN (probing recovery)`);
+      return true;
+    }
+    return false;
+  }
+
+  // HALF_OPEN: allow probe
+  return true;
+}
+
+function markNodeSuccess(url: string, nodeIndex: number) {
+  const info = getCircuit(url);
+  if (info.state === "HALF_OPEN") {
+    info.consecutiveSuccesses += 1;
+    console.log(`[FAILBACK-PROBE] Node ${url} probe ${info.consecutiveSuccesses}/${REQUIRED_PROBE_SUCCESSES} success`);
+    if (info.consecutiveSuccesses >= REQUIRED_PROBE_SUCCESSES) {
+      info.state = "HEALTHY";
+      info.consecutiveSuccesses = 0;
+      delete info.lastFailureReason;
+      console.log(`[FAILBACK-SUCCESS] Node ${url} (Priority Node ${nodeIndex + 1}) recovered and marked HEALTHY`);
+    }
+  } else {
+    info.state = "HEALTHY";
+    info.consecutiveSuccesses = 0;
+  }
+}
+
+function markNodeFailure(url: string, reason: string, nodeIndex: number) {
+  const info = getCircuit(url);
+  info.state = "UNHEALTHY";
+  info.nextProbeAt = Date.now() + COOLDOWN_MS;
+  info.consecutiveSuccesses = 0;
+  info.lastFailureReason = reason;
+  console.warn(`[FAILOVER] Node ${url} (Priority Node ${nodeIndex + 1}) marked UNHEALTHY. Reason: ${reason}. Cooldown ${COOLDOWN_MS}ms.`);
+}
+
+function isNetworkOrServerCrash(status: number): boolean {
+  // 502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout, 408 Request Timeout
+  return status === 502 || status === 503 || status === 504 || status === 408 || status >= 500;
+}
 
 export async function queryIndexerWithFailover<T = any>(
   path: string,
@@ -71,9 +145,11 @@ export async function queryIndexerWithFailover<T = any>(
     return null;
   }
 
-  for (let attempt = 0; attempt < nodes.length; attempt++) {
-    const idx = (activeIndexerIndex + attempt) % nodes.length;
+  for (let idx = 0; idx < nodes.length; idx++) {
     const node = nodes[idx];
+    if (!isNodeAvailable(node.url, idx === 0)) {
+      continue;
+    }
 
     try {
       const parsed = new URL(node.url);
@@ -112,12 +188,21 @@ export async function queryIndexerWithFailover<T = any>(
 
       if (res.status >= 200 && res.status < 300) {
         activeIndexerIndex = idx;
+        markNodeSuccess(node.url, idx);
         return JSON.parse(res.data) as T;
-      } else {
-        console.warn(`[Failover] Indexer node ${node.url} returned HTTP ${res.status}. Trying next node...`);
+      }
+
+      // If auth failure 401/403, don't trigger failover, log critical config error
+      if (res.status === 401 || res.status === 403) {
+        console.error(`[Indexer Auth Error] Node ${node.url} returned HTTP ${res.status}. Verify INDEXER_USER / INDEXER_PASS credentials.`);
+        return null;
+      }
+
+      if (isNetworkOrServerCrash(res.status)) {
+        markNodeFailure(node.url, `HTTP ${res.status}`, idx);
       }
     } catch (err: any) {
-      console.warn(`[Failover] Indexer node ${node.url} failed: ${err.message}. Trying next node...`);
+      markNodeFailure(node.url, err.message || "Network Error", idx);
     }
   }
 
@@ -127,19 +212,33 @@ export async function queryIndexerWithFailover<T = any>(
 
 export async function getWazuhTokenWithFailover(forceRefresh = false): Promise<{ token: string; baseUrl: string } | null> {
   const now = Date.now();
-  if (!forceRefresh && cachedWazuhToken && cachedWazuhToken.expiresAt > now + 60000) {
-    return { token: cachedWazuhToken.token, baseUrl: cachedWazuhToken.nodeUrl };
-  }
-
   const nodes = getWazuhNodes();
   if (nodes.length === 0) {
     console.error("[Failover] No Wazuh nodes configured in environment.");
     return null;
   }
 
-  for (let attempt = 0; attempt < nodes.length; attempt++) {
-    const idx = (activeWazuhIndex + attempt) % nodes.length;
+  // Token valid on Node 1 (Highest Priority)
+  if (!forceRefresh && cachedWazuhToken && cachedWazuhToken.nodeIndex === 0 && cachedWazuhToken.expiresAt > now + 60000) {
+    return { token: cachedWazuhToken.token, baseUrl: cachedWazuhToken.nodeUrl };
+  }
+
+  // If using secondary/tertiary, check if Node 1 circuit is ready to probe
+  if (!forceRefresh && cachedWazuhToken && cachedWazuhToken.nodeIndex > 0) {
+    const node1 = nodes[0];
+    const node1Circuit = getCircuit(node1.url);
+    const node1CanProbe = node1Circuit.state === "HEALTHY" || (node1Circuit.state === "UNHEALTHY" && now >= node1Circuit.nextProbeAt);
+    if (!node1CanProbe && cachedWazuhToken.expiresAt > now + 60000) {
+      return { token: cachedWazuhToken.token, baseUrl: cachedWazuhToken.nodeUrl };
+    }
+  }
+
+  // Strict priority traversal: Node 1 -> Node 2 -> Node 3
+  for (let idx = 0; idx < nodes.length; idx++) {
     const node = nodes[idx];
+    if (!isNodeAvailable(node.url, idx === 0)) {
+      continue;
+    }
 
     try {
       const parsed = new URL(node.url);
@@ -157,7 +256,7 @@ export async function getWazuhTokenWithFailover(forceRefresh = false): Promise<{
           headers: { "Authorization": authHeader },
           rejectUnauthorized: false,
           agent: isHttps ? httpsAgent : undefined,
-          timeout: 5000,
+          timeout: 4000,
         }, (res) => {
           let chunks = "";
           res.setEncoding("utf-8");
@@ -166,7 +265,7 @@ export async function getWazuhTokenWithFailover(forceRefresh = false): Promise<{
         });
 
         req.on("error", reject);
-        req.on("timeout", () => req.destroy(new Error("Timeout")));
+        req.on("timeout", () => req.destroy(new Error("Timeout after 4000ms")));
         req.end();
       });
 
@@ -175,14 +274,23 @@ export async function getWazuhTokenWithFailover(forceRefresh = false): Promise<{
         const token = json.data?.token;
         if (token) {
           activeWazuhIndex = idx;
-          cachedWazuhToken = { token, expiresAt: now + 14 * 60 * 1000, nodeUrl: node.url };
+          markNodeSuccess(node.url, idx);
+          cachedWazuhToken = { token, expiresAt: now + 14 * 60 * 1000, nodeUrl: node.url, nodeIndex: idx };
           return { token, baseUrl: node.url };
         }
-      } else {
-        console.warn(`[Failover] Wazuh node ${node.url} auth rejected with HTTP ${res.status}.`);
+      }
+
+      // Hard stop on 401/403 credentials error (do not failover)
+      if (res.status === 401 || res.status === 403) {
+        console.error(`[Wazuh Auth Error] Node ${node.url} rejected credentials (HTTP ${res.status}). Check WAZUH_NODE${idx + 1}_USER/PASS in .env.`);
+        return null;
+      }
+
+      if (isNetworkOrServerCrash(res.status)) {
+        markNodeFailure(node.url, `HTTP ${res.status}`, idx);
       }
     } catch (err: any) {
-      console.warn(`[Failover] Wazuh node ${node.url} auth failed: ${err.message}. Trying next node...`);
+      markNodeFailure(node.url, err.message || "Network Error", idx);
     }
   }
 
@@ -233,7 +341,7 @@ export async function queryWazuhApiWithFailover<T = any>(
         });
 
         req.on("error", reject);
-        req.on("timeout", () => req.destroy(new Error("Timeout")));
+        req.on("timeout", () => req.destroy(new Error(`Timeout after ${timeoutMs}ms`)));
         if (postData) req.write(postData);
         req.end();
       });
@@ -242,13 +350,19 @@ export async function queryWazuhApiWithFailover<T = any>(
         return JSON.parse(res.data) as T;
       }
 
-      console.warn(`[Failover] Wazuh node ${authInfo.baseUrl} returned HTTP ${res.status}. Invalidating token and failing over...`);
-      cachedWazuhToken = null;
-      activeWazuhIndex = (activeWazuhIndex + 1) % nodes.length;
+      if (res.status === 401) {
+        console.warn(`[Failover] Token expired on ${authInfo.baseUrl}. Refreshing...`);
+        cachedWazuhToken = null;
+        continue;
+      }
+
+      if (isNetworkOrServerCrash(res.status)) {
+        markNodeFailure(authInfo.baseUrl, `HTTP ${res.status}`, activeWazuhIndex);
+        cachedWazuhToken = null;
+      }
     } catch (err: any) {
-      console.warn(`[Failover] Wazuh API request to ${authInfo.baseUrl} failed: ${err.message}. Failing over...`);
+      markNodeFailure(authInfo.baseUrl, err.message || "Network Error", activeWazuhIndex);
       cachedWazuhToken = null;
-      activeWazuhIndex = (activeWazuhIndex + 1) % nodes.length;
     }
   }
 
@@ -256,12 +370,10 @@ export async function queryWazuhApiWithFailover<T = any>(
 }
 
 export async function getActiveWazuhHost(): Promise<string | null> {
-  // If explicitly configured manager host override
   if (process.env.WAZUH_MANAGER_HOST && process.env.WAZUH_MANAGER_HOST.trim()) {
     return process.env.WAZUH_MANAGER_HOST.trim();
   }
 
-  // Live active node discovery from cluster failover
   const auth = await getWazuhTokenWithFailover();
   if (auth && auth.baseUrl) {
     try {
@@ -269,7 +381,6 @@ export async function getActiveWazuhHost(): Promise<string | null> {
     } catch {}
   }
 
-  // Fallback to first configured node URL hostname
   const nodes = getWazuhNodes();
   for (const node of nodes) {
     try {
@@ -280,7 +391,6 @@ export async function getActiveWazuhHost(): Promise<string | null> {
   return null;
 }
 
-// Single Dedicated IRIS Server (Dedicated Host) - No Failover Needed
 export async function queryIrisSingle<T = any>(
   path: string,
   params?: Record<string, any>,
