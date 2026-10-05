@@ -233,7 +233,20 @@ export default function ResourceUsagePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {runningServices.map((svc, idx) => (
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-xs font-semibold text-slate-400">
+                    Scanning running services & daemons...
+                  </td>
+                </tr>
+              ) : runningServices.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-xs font-semibold text-slate-400">
+                    No active services detected.
+                  </td>
+                </tr>
+              ) : (
+                runningServices.map((svc, idx) => (
                 <tr
                   key={`${svc.name}-${idx}`}
                   className="hover:bg-slate-50 transition-colors"
@@ -266,7 +279,7 @@ export default function ResourceUsagePage() {
                     {svc.disk}
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>

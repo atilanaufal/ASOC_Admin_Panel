@@ -291,13 +291,5 @@ export async function getRealRunningServices(forceRefresh = false): Promise<Real
     console.warn('Real process metric query error, using live server fallback:', err.message);
   }
 
-  return [
-    { id: 'mongod', name: 'MongoDB Database Server', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
-    { id: 'mysql', name: 'MySQL Community Server', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
-    { id: 'redis-server', name: 'Redis Key-Value Cache Server', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
-    { id: 'mongo-redis-multitenant-pumper', name: 'Multi-Tenant Chain Pumping Service', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
-    { id: 'iris-case-shipper', name: 'DFIR-IRIS Multi-Tenant Case Shipper Daemon', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
-    { id: 'wazuh-agent-full', name: 'Wazuh Agent Multi-Tenant Full Data Fetch', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
-    { id: 'wazuh-agent-stats', name: 'Wazuh Agent Multi-Tenant Stats Data Fetch', pid: null, cpu: '0.0%', memory: '0 MB', swap: '0 B', disk: '0 MB', status: 'WAITING' },
-  ];
+  return [];
 }

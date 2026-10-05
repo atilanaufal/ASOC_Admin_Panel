@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
         avgUtilization: metrics.avgUtilization,
       },
       components: metrics.services,
-      runningServices: realServices.length > 0 ? realServices : servicesAudit.services,
+      runningServices: realServices,
       databaseLatencies,
     });
   } catch (err: any) {
