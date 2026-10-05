@@ -244,11 +244,9 @@ export default function ResourceUsagePage() {
                       className={`w-2.5 h-4 rounded-full inline-block flex-shrink-0 ${
                         svc.status === 'RUNNING'
                           ? 'bg-emerald-500'
-                          : svc.status === 'WAITING'
-                          ? 'bg-amber-400'
                           : 'bg-rose-500'
                       }`}
-                      title={svc.status || 'RUNNING'}
+                      title={svc.status === 'RUNNING' ? 'Active / Running' : 'Stopped / Inactive'}
                     />
                     <span className="text-slate-900 font-semibold">{svc.name}</span>
                   </td>

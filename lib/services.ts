@@ -52,7 +52,7 @@ async function getLiveDaemonTelemetry(): Promise<any> {
   }
   try {
     const agentUrl = process.env.CRON_MANAGER_URL || "http://127.0.0.1:8765";
-    const agentSecret = process.env.CRON_MANAGER_SECRET || "";
+    const agentSecret = process.env.CRON_MANAGER_SECRET || "asoc-cron-secret-key-2026";
     const res = await fetch(`${agentUrl}/telemetry`, {
       method: "GET",
       headers: { "X-ASOC-Secret": agentSecret },
@@ -273,7 +273,7 @@ export async function getRealRunningServices(forceRefresh = false): Promise<Real
   }
   try {
     const agentUrl = process.env.CRON_MANAGER_URL || "http://127.0.0.1:8765";
-    const agentSecret = process.env.CRON_MANAGER_SECRET || "";
+    const agentSecret = process.env.CRON_MANAGER_SECRET || "asoc-cron-secret-key-2026";
     const res = await fetch(`${agentUrl}/services`, {
       method: "GET",
       headers: { "X-ASOC-Secret": agentSecret },

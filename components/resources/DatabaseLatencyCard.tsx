@@ -66,7 +66,7 @@ function getSmoothAreaPath(points: { x: number; y: number }[], bottomY: number):
 }
 
 export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCardProps) {
-  const [metricFilter, setMetricFilter] = useState<'all' | 'read' | 'write'>('all');
+  const [metricFilter, setMetricFilter] = useState<'read' | 'write'>('read');
   const [selectedEngine, setSelectedEngine] = useState<'all' | 'mongo' | 'redis'>('all');
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
@@ -190,16 +190,6 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
         {/* Metric filter buttons */}
         <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
           <button
-            onClick={() => setMetricFilter('all')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              metricFilter === 'all'
-                ? 'bg-white text-slate-800 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Read & Write
-          </button>
-          <button
             onClick={() => setMetricFilter('read')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
               metricFilter === 'read'
@@ -207,7 +197,7 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            Read Only
+            Read
           </button>
           <button
             onClick={() => setMetricFilter('write')}
@@ -217,7 +207,7 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            Write Only
+            Write
           </button>
         </div>
       </div>
