@@ -478,7 +478,7 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
                 textAnchor="middle"
                 className="fill-slate-400 text-[10px] font-semibold tracking-wider uppercase"
               >
-                Check Time (WIB)
+                Check Time
               </text>
             </svg>
 
@@ -495,7 +495,7 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
               >
                 <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 text-slate-500 font-mono text-[11px]">
                   <span className="font-semibold">Time</span>
-                  <span className="font-bold text-slate-700">{history[hoverIndex].time} WIB</span>
+                  <span className="font-bold text-slate-700">{history[hoverIndex].time}</span>
                 </div>
 
                 {selectedEngine === 'all' ? (

@@ -335,7 +335,7 @@ export async function getDatabaseLatencyMetrics(): Promise<DatabaseLatencyReport
 
   if (latencyHistoryRingBuffer.length === 0) {
     for (let i = 10; i >= 1; i--) {
-      const past = new Date(now.getTime() - i * 5 * 60 * 1000);
+      const past = new Date(now.getTime() - i * 10 * 60 * 1000);
       const jitter = (val: number, variancePercent: number) => {
         const delta = (Math.sin(i * 1.5) * variancePercent) * val;
         return Math.max(0.1, Math.round((val + delta) * 100) / 100);
