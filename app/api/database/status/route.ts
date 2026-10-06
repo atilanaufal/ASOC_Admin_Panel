@@ -445,9 +445,9 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    let redisUptime = 'Online';
+    let redisUptime = redisHealth.ok ? 'Online' : 'Offline';
     let redisStartedAt = '-';
-    if (redisClient) {
+    if (redisClient && redisHealth.ok) {
       try {
         const info = await redisClient.info('server');
         const m = info.match(/uptime_in_seconds:(\d+)/);

@@ -86,7 +86,7 @@ export default function DatabaseStatusPage() {
       role: 'Frequent Access Data Cache',
       ok: data?.nodes?.find((n: any) => n.id === 'redis')?.ok ?? false,
       latencyMs: data?.nodes?.find((n: any) => n.id === 'redis')?.latencyMs,
-      uptime: data?.nodes?.find((n: any) => n.id === 'redis')?.uptime || 'Online',
+      uptime: data?.nodes?.find((n: any) => n.id === 'redis')?.uptime || (data?.nodes?.find((n: any) => n.id === 'redis')?.ok ? 'Online' : 'Offline'),
       startedAt: data?.nodes?.find((n: any) => n.id === 'redis')?.startedAt || '-',
       lastSeen: data?.nodes?.find((n: any) => n.id === 'redis')?.lastSeen || (data?.nodes?.find((n: any) => n.id === 'redis')?.ok ? 'Online' : 'Disconnected'),
       logoSrc: '/redis.png',
