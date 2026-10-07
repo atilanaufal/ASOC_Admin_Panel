@@ -526,6 +526,63 @@ export async function syncRedisNative(
   return { success: true, details };
 }
 
+const RE_REC_HEADING = /^[ \t]*(?:#{1,6}\s*(?:\*{1,2})?|\*{2}\s*)(?:[0-9]+[.)\\]*\s*)?[^\n]*(?:rekomendasi|recommended\s*action).*$/im;
+const RE_NEXT_HEADING = /\n[ \t]*(?:#{1,6}\s+|(?:\*{1,2})?\s*[0-9]+[.)\\]*\s*(?:\*{1,2})?[A-Z]{2,}|\*{1,2}[0-9.]*\s*[A-Z\s0-9]{2,}\*{1,2}|—\s*end of document)/m;
+const RE_TABLE_SEP = /^\|(?:\s*:?-+:?\s*\|)+$/;
+const RE_ROW_2COL = /^\|\s*(\d+)[.)]?\s*\|\s*(.*)\|\s*$/;
+const RE_ROW_3COL = /^\|\s*(\d+)[.)]?\s*\|\s*([^|]+)\s*\|\s*(.*)\|\s*$/;
+
+export function extractRecommendedAction(description?: string): string | null {
+  if (!description) return null;
+  const m = RE_REC_HEADING.exec(description);
+  if (!m) return null;
+
+  const rest = description.slice(m.index + m[0].length);
+  const nextM = RE_NEXT_HEADING.exec(rest);
+  const section = (nextM ? rest.slice(0, nextM.index) : rest).trim();
+  if (!section) return null;
+
+  const lines = section.split('\n').map((l) => l.trim()).filter(Boolean);
+  const tableLines = lines.filter((l) => l.startsWith('|') && l.endsWith('|'));
+
+  if (tableLines.length >= 2) {
+    const hLine = tableLines[0].toLowerCase();
+    const hasTeam = hLine.includes('tim') || hLine.includes('team');
+    const items: string[] = [];
+
+    for (const l of tableLines.slice(1)) {
+      if (RE_TABLE_SEP.test(l)) continue;
+      if (hasTeam) {
+        const rowM = RE_ROW_3COL.exec(l);
+        if (rowM) {
+          const num = rowM[1].trim();
+          const team = rowM[2].trim();
+          const action = rowM[3].trim();
+          if (team && action) items.push(`${num}. ${team} - ${action}`);
+          else if (action) items.push(`${num}. ${action}`);
+          else if (team) items.push(`${num}. ${team}`);
+        } else {
+          const rowM2 = RE_ROW_2COL.exec(l);
+          if (rowM2) {
+            items.push(`${rowM2[1].trim()}. ${rowM2[2].trim()}`);
+          }
+        }
+      } else {
+        const rowM = RE_ROW_2COL.exec(l);
+        if (rowM) {
+          items.push(`${rowM[1].trim()}. ${rowM[2].trim()}`);
+        }
+      }
+    }
+
+    if (items.length > 0) {
+      return items.join('\n');
+    }
+  }
+
+  return section;
+}
+
 // -------------------------------------------------------------
 // 4. NATIVE SYNC IRIS REPORTS (IRIS HTTP -> MongoDB)
 // -------------------------------------------------------------
@@ -580,6 +637,7 @@ export async function syncIrisNative(
         severity: sev,
         date_generated: dtGen,
         summary: c.description || "",
+        recommended_action: extractRecommendedAction(c.description || ""),
         synced_at: nowIso,
       };
 
