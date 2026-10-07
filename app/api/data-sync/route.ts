@@ -323,14 +323,21 @@ export async function GET(req: NextRequest) {
             lastRunAt = hostCron.lastRun;
           }
         } else {
-          // Fallback to direct shell check if Agent is not reachable
-          const crontabRes = await runRemoteScript("sudo crontab -l", 5000);
+          // Fallback to direct Docker container check if Agent is not reachable
+          const crontabRes = await runRemoteScript("docker exec asoc_daemons cat /etc/cron.d/asoc-sync-cron 2>/dev/null || sudo crontab -l", 5000);
           if (crontabRes.success && crontabRes.stdout) {
-            const hasCron = crontabRes.stdout.split("\n").some((l: string) =>
-              !l.trim().startsWith("#") && l.includes("cron_hourly_sync.sh")
-            );
-            status = hasCron ? "Active" : "Disabled";
-            if (!hasCron) enabled = false;
+            const lines = crontabRes.stdout.split("\n");
+            const cronLine = lines.find((l: string) => l.includes("cron_hourly_sync.sh"));
+            if (cronLine) {
+              const isActive = !cronLine.trim().startsWith("#");
+              status = isActive ? "Active" : "Disabled";
+              enabled = isActive;
+              const clean = cronLine.replace(/^#\s*/, "").trim();
+              const parts = clean.split(/\s+/);
+              if (parts.length >= 5) {
+                schedule = parts.slice(0, 5).join(" ");
+              }
+            }
           }
         }
 
@@ -565,21 +572,28 @@ export async function POST(req: NextRequest) {
       // Update via Host Cron Manager (Agent API)
       const agentRes = await updateHostCron(sched, isEnabled);
       if (!agentRes.success) {
-        // Fallback to direct shell crontab if Agent not reachable
-        const readCron = await runRemoteScript("sudo crontab -l 2>/dev/null || true", 10000);
-        const lines = (readCron.stdout || "")
-          .split("\n")
-          .filter((l: string) => !l.includes("cron_hourly_sync.sh") && l.trim().length > 0);
-
-        const cronEntry = isEnabled
-          ? `${sched} /opt/multi-tenant/scripts/cron_hourly_sync.sh`
-          : `# ${sched} /opt/multi-tenant/scripts/cron_hourly_sync.sh`;
-        lines.push(cronEntry);
-
-        const newCrontabContent = lines.join("\n") + "\n";
-        const writeCron = await runRemoteScript(`echo -e ${JSON.stringify(newCrontabContent)} | sudo crontab -`, 10000);
+        // Fallback: update Docker container cron directly if Agent not reachable
+        const readCron = await runRemoteScript("docker exec asoc_daemons cat /etc/cron.d/asoc-sync-cron 2>/dev/null || true", 10000);
+        let lines = (readCron.stdout || "").split("\n").filter((l: string) => l.trim().length > 0);
+        const newEntry = isEnabled
+          ? `${sched} root /opt/multi-tenant/scripts/cron_hourly_sync.sh today all >> /var/log/cron_hourly_sync.log 2>&1`
+          : `# ${sched} root /opt/multi-tenant/scripts/cron_hourly_sync.sh today all >> /var/log/cron_hourly_sync.log 2>&1`;
+        let found = false;
+        lines = lines.map((l: string) => {
+          if (l.includes("cron_hourly_sync.sh")) {
+            found = true;
+            return newEntry;
+          }
+          return l;
+        });
+        if (!found) lines.push(newEntry);
+        const newContent = lines.join("\n") + "\n";
+        const writeCron = await runRemoteScript(
+          `echo -e ${JSON.stringify(newContent)} | docker exec -i asoc_daemons sh -c "cat > /etc/cron.d/asoc-sync-cron && chmod 0644 /etc/cron.d/asoc-sync-cron"`,
+          10000
+        );
         if (!writeCron.success) {
-          return NextResponse.json({ success: false, error: agentRes.error || writeCron.stderr || "Failed to update system crontab" }, { status: 500 });
+          return NextResponse.json({ success: false, error: agentRes.error || writeCron.stderr || "Failed to update Docker crontab" }, { status: 500 });
         }
       }
 
