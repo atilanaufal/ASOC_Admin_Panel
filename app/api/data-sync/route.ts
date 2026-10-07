@@ -558,7 +558,8 @@ export async function POST(req: NextRequest) {
       const sched = (schedule || "0 * * * *").trim();
 
       // Strict Cron Regex Validation to eliminate arbitrary shell/command injection
-      const CRON_REGEX = /^(@(annually|yearly|monthly|weekly|daily|hourly|reboot))|(@every\s+[0-9]+(m|h|d))|((((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*)\s+){4}((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*))$/;
+      const CRON_PART = "(?:\\*|[0-9]+(?:-[0-9]+)?)(?:/[0-9]+)?(?:,(?:\\*|[0-9]+(?:-[0-9]+)?)(?:/[0-9]+)?)*";
+      const CRON_REGEX = new RegExp(`^(?:@(?:annually|yearly|monthly|weekly|daily|hourly|reboot)|(?:${CRON_PART}\\s+){4}${CRON_PART})$`);
       if (!CRON_REGEX.test(sched) || /[;&|`$\n\r<>]/.test(sched)) {
         return NextResponse.json(
           { success: false, error: "Invalid cron expression format. Format must match standard cron schedule (e.g. '0 * * * *')." },
