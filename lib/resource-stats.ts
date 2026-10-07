@@ -327,15 +327,23 @@ export async function getDatabaseLatencyMetrics(): Promise<DatabaseLatencyReport
     console.warn('[ResourceStats] Mongo latency probe error:', err);
   }
 
-  // Maintain History Ring Buffer (Asia/Jakarta timezone)
+  // Maintain History Ring Buffer (Asia/Jakarta timezone aligned to 10-minute intervals)
   const now = new Date();
   const formatTime = (d: Date) => {
     return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Jakarta' });
   };
 
+  // Round down to current 10-minute discrete interval
+  const roundTo10Min = (d: Date) => {
+    const ms = 10 * 60 * 1000;
+    return new Date(Math.floor(d.getTime() / ms) * ms);
+  };
+
+  const alignedNow = roundTo10Min(now);
+
   if (latencyHistoryRingBuffer.length === 0) {
     for (let i = 10; i >= 1; i--) {
-      const past = new Date(now.getTime() - i * 10 * 60 * 1000);
+      const past = new Date(alignedNow.getTime() - i * 10 * 60 * 1000);
       const jitter = (val: number, variancePercent: number) => {
         const delta = (Math.sin(i * 1.5) * variancePercent) * val;
         return Math.max(0.1, Math.round((val + delta) * 100) / 100);
@@ -351,22 +359,22 @@ export async function getDatabaseLatencyMetrics(): Promise<DatabaseLatencyReport
   }
 
   const currentPoint: LatencyHistoryPoint = {
-    time: formatTime(now),
+    time: formatTime(alignedNow),
     mongoRead,
     mongoWrite,
     redisRead,
     redisWrite,
   };
 
-  // Only push if time changed or last point is older
+  // Only push new slot if 10-minute interval has moved forward; otherwise update current slot
   const lastPoint = latencyHistoryRingBuffer[latencyHistoryRingBuffer.length - 1];
   if (!lastPoint || lastPoint.time !== currentPoint.time) {
     latencyHistoryRingBuffer.push(currentPoint);
-    if (latencyHistoryRingBuffer.length > 20) {
+    if (latencyHistoryRingBuffer.length > 12) {
       latencyHistoryRingBuffer.shift();
     }
   } else {
-    // Update latest point
+    // Update latest point for current 10-minute bucket
     latencyHistoryRingBuffer[latencyHistoryRingBuffer.length - 1] = currentPoint;
   }
 

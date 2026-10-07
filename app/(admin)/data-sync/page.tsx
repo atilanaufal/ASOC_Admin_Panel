@@ -1607,9 +1607,16 @@ export default function DataSyncPage() {
           {/* Schedule Info */}
           <div className="bg-[#F8FAFC] border border-slate-200/60 rounded-xl p-3 text-xs space-y-1.5 font-mono text-slate-700">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-400 font-sans">Target Server:</span>
-              <span className="font-bold text-slate-800">
-                {process.env.NEXT_PUBLIC_VM_HOST ? `${process.env.NEXT_PUBLIC_VM_HOST} (Production Master)` : 'Production Master Host'}
+              <span className="text-slate-400 font-sans">Execution Runner:</span>
+              <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                Docker Stack (asoc_daemons)
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-400 font-sans">Target Pipeline:</span>
+              <span className="font-bold text-slate-700">
+                cron_hourly_sync.sh
               </span>
             </div>
             <div className="flex items-center justify-between text-[11px]">
@@ -1618,11 +1625,18 @@ export default function DataSyncPage() {
                 {cronConfig?.lastRunAt
                   ? (() => {
                       const d = new Date(cronConfig.lastRunAt);
-                      return !isNaN(d.getTime())
-                        ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                        : cronConfig.lastRunAt;
+                      if (isNaN(d.getTime())) return cronConfig.lastRunAt;
+                      const now = new Date();
+                      const isToday = d.toDateString() === now.toDateString();
+                      const yesterday = new Date(now);
+                      yesterday.setDate(yesterday.getDate() - 1);
+                      const isYesterday = d.toDateString() === yesterday.toDateString();
+                      const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                      if (isToday) return `Today, ${timeStr}`;
+                      if (isYesterday) return `Yesterday, ${timeStr}`;
+                      return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${timeStr}`;
                     })()
-                  : '15 mins ago'}
+                  : 'Awaiting initial trigger'}
               </span>
             </div>
             <div className="flex items-center justify-between text-[11px]">
@@ -1631,11 +1645,10 @@ export default function DataSyncPage() {
                 {cronConfig?.nextRunAt
                   ? (() => {
                       const d = new Date(cronConfig.nextRunAt);
-                      return !isNaN(d.getTime())
-                        ? d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                        : cronConfig.nextRunAt;
+                      if (isNaN(d.getTime())) return cronConfig.nextRunAt;
+                      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
                     })()
-                  : 'in 1 hour'}
+                  : 'In scheduled cycle'}
               </span>
             </div>
           </div>

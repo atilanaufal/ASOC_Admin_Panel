@@ -166,13 +166,15 @@ export function DatabaseLatencyCard({ data, loading = false }: DatabaseLatencyCa
 
   const isSingleEngine = selectedEngine !== 'all';
 
-  // Evenly spaced X-axis ticks (at most 6 ticks so it never overlaps)
-  const tickStep = Math.max(1, Math.floor((history.length - 1) / 5));
+  // Evenly spaced X-axis ticks (at most 6 ticks, strictly spaced without edge collision)
   const tickIndices = new Set<number>();
-  for (let i = 0; i < history.length; i += tickStep) {
-    tickIndices.add(i);
+  if (history.length > 0) {
+    const numTicks = Math.min(6, history.length);
+    for (let i = 0; i < numTicks; i++) {
+      const idx = Math.round((i / (numTicks - 1)) * (history.length - 1));
+      tickIndices.add(idx);
+    }
   }
-  tickIndices.add(history.length - 1);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs">
