@@ -1587,7 +1587,7 @@ export default function DataSyncPage() {
           {/* Frequency Dropdown */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Schedule Frequency (Cron Expression)
+              Schedule Frequency
             </label>
             <CustomSelect
               value={cronSchedule}
@@ -1606,19 +1606,6 @@ export default function DataSyncPage() {
 
           {/* Schedule Info */}
           <div className="bg-[#F8FAFC] border border-slate-200/60 rounded-xl p-3 text-xs space-y-1.5 font-mono text-slate-700">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-400 font-sans">Execution Runner:</span>
-              <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                Docker Stack (asoc_daemons)
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-400 font-sans">Target Pipeline:</span>
-              <span className="font-bold text-slate-700">
-                cron_hourly_sync.sh
-              </span>
-            </div>
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-slate-400 font-sans">Last Executed:</span>
               <span className="font-bold text-slate-800">

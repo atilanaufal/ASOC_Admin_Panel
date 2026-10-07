@@ -16,6 +16,7 @@ export interface HostCronStatus {
   enabled: boolean;
   active: boolean;
   raw_entry?: string;
+  lastRun?: string;
   error?: string;
 }
 
@@ -43,6 +44,7 @@ export async function getHostCronStatus(): Promise<HostCronStatus> {
       enabled: Boolean(data.enabled),
       active: Boolean(data.active),
       raw_entry: data.raw_entry,
+      lastRun: data.last_run || undefined,
     };
   } catch (err: any) {
     return { success: false, schedule: "0 * * * *", enabled: false, active: false, error: err.message };

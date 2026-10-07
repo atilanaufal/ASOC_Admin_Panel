@@ -319,6 +319,9 @@ export async function GET(req: NextRequest) {
           status = hostCron.active ? "Active" : "Disabled";
           enabled = hostCron.enabled;
           schedule = hostCron.schedule;
+          if (hostCron.lastRun) {
+            lastRunAt = hostCron.lastRun;
+          }
         } else {
           // Fallback to direct shell check if Agent is not reachable
           const crontabRes = await runRemoteScript("sudo crontab -l", 5000);
