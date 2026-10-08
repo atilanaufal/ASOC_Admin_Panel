@@ -46,7 +46,7 @@ export default function CustomSelect({
 
   const selectedOption = options.find((opt) => String(opt.value) === String(value));
 
-  const shouldShowSearch = showSearch !== undefined ? showSearch : options.length > 7;
+  const shouldShowSearch = showSearch !== undefined ? showSearch : options.length > 5;
 
   const filteredOptions = shouldShowSearch && searchQuery.trim()
     ? options.filter((opt) =>
@@ -112,7 +112,7 @@ export default function CustomSelect({
       {/* Dropdown Menu Popover */}
       {isOpen && (
         <div
-          className={`absolute left-0 right-0 mt-1.5 min-w-[200px] bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xl z-50 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-100 ${menuClassName}`}
+          className={`absolute left-0 mt-1.5 min-w-full sm:min-w-[280px] bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-2xl z-50 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-100 ${menuClassName}`}
         >
           {shouldShowSearch && (
             <div className="p-1.5 border-b border-slate-100">
@@ -130,7 +130,7 @@ export default function CustomSelect({
             </div>
           )}
 
-          <div className="max-h-60 overflow-y-auto py-1 scrollbar-thin scrollbar-thumb-slate-200">
+          <div className="max-h-60 overflow-y-auto py-1 scrollbar-thin scrollbar-thumb-slate-200 overscroll-contain">
             {filteredOptions.length === 0 ? (
               <div className="px-3 py-2.5 text-xs text-slate-400 text-center font-medium">
                 No matching options
@@ -152,9 +152,9 @@ export default function CustomSelect({
                         : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900 cursor-pointer'
                     }`}
                   >
-                    <div className="flex items-center gap-2 truncate">
+                    <div className="flex items-center gap-2 truncate min-w-0 flex-1">
                       {opt.icon && <span className="flex-shrink-0">{opt.icon}</span>}
-                      <span className="truncate">{opt.label}</span>
+                      <span className="truncate" title={opt.label}>{opt.label}</span>
                       {opt.subLabel && (
                         <span className="text-[11px] text-slate-400 font-normal truncate">
                           {opt.subLabel}

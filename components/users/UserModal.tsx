@@ -143,10 +143,10 @@ export function UserModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
+      <div className="w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-visible animate-in zoom-in-95 duration-200">
         {/* Modal Header */}
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between rounded-t-3xl bg-white">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-600/10 text-blue-600 flex items-center justify-center font-bold">
               {isEditing ? <Edit3 className="w-5 h-5" /> : <UserPlus className="w-5 h-5" />}
@@ -171,7 +171,7 @@ export function UserModal({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 rounded-b-3xl bg-white">
           {error && (
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -252,6 +252,9 @@ export function UserModal({
                     label: `${t.campus_name} (${t.tenant_code})`,
                   }))}
                   className="w-full"
+                  menuClassName="right-0 left-auto sm:min-w-[340px] max-w-[90vw]"
+                  showSearch={tenants.length > 5}
+                  searchPlaceholder="Search tenant name..."
                 />
               )}
             </div>
