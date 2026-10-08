@@ -3,7 +3,6 @@ import { pingMysql } from './mysql';
 import { pingMongo } from './mongodb';
 import { pingRedis, getActiveRedisClient } from './redis';
 import { pingWazuh, getWazuhAgentSummary } from './wazuh';
-import { pingOpenSearch } from './iris';
 
 export interface ServiceHealthItem {
   id: string;
