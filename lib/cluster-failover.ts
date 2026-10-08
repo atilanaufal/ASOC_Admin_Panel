@@ -20,7 +20,7 @@ interface CircuitStateInfo {
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
 
-function getIndexerNodes(): ClusterNodeConfig[] {
+export function getIndexerNodes(): ClusterNodeConfig[] {
   const n1Host = process.env.INDEXER_HOST || process.env.OPENSEARCH_URL || process.env.INDEXER_NODE1_HOST || "";
   const n1User = process.env.INDEXER_USER || process.env.INDEXER_NODE1_USER || "";
   const n1Pass = process.env.INDEXER_PASS || process.env.INDEXER_NODE1_PASS || "";

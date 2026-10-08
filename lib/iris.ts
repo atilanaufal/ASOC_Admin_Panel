@@ -1,4 +1,5 @@
 import './env-loader';
+import { getIndexerNodes } from './cluster-failover';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
@@ -120,20 +121,34 @@ export async function pingIris(): Promise<{ ok: boolean; latencyMs: number; erro
   }
 }
 
-export async function pingOpenSearch(): Promise<{ ok: boolean; latencyMs: number; error?: string; version?: string }> {
-  const url = getOpenSearchUrl();
-  if (!url) return { ok: false, latencyMs: 0, error: 'OPENSEARCH_URL not configured' };
-  const start = Date.now();
-  try {
-    const res = await httpRequest<any>(url, { timeoutMs: 3000 });
-    const latencyMs = Date.now() - start;
-    // 200 OK or 401 Unauthorized means port is responsive and service is running
-    if (res.statusCode < 500) {
-      const version = res.data?.version?.number || '2.x';
-      return { ok: true, latencyMs, version };
-    }
-    return { ok: false, latencyMs, error: `HTTP ${res.statusCode}` };
-  } catch (err: any) {
-    return { ok: false, latencyMs: Date.now() - start, error: err.message };
+export async function pingOpenSearch(): Promise<{ ok: boolean; latencyMs: number; error?: string; version?: string; activeNode?: string }> {
+  const nodes = getIndexerNodes();
+  const candidateUrls: string[] = nodes.length > 0
+    ? nodes.map((n) => n.url)
+    : [getOpenSearchUrl()].filter(Boolean);
+
+  if (candidateUrls.length === 0) {
+    return { ok: false, latencyMs: 0, error: 'OpenSearch / Indexer host not configured' };
   }
+
+  const startAll = Date.now();
+  let lastError = '';
+
+  for (const url of candidateUrls) {
+    const start = Date.now();
+    try {
+      const res = await httpRequest<any>(url, { timeoutMs: 3000 });
+      const latencyMs = Date.now() - start;
+      // 200 OK, 401 Unauthorized, or 403 means port is responsive and service is running
+      if (res.statusCode < 500) {
+        const version = res.data?.version?.number || '2.x';
+        return { ok: true, latencyMs, version, activeNode: url };
+      }
+      lastError = `HTTP ${res.statusCode}`;
+    } catch (err: any) {
+      lastError = err.message || 'Connection failed';
+    }
+  }
+
+  return { ok: false, latencyMs: Date.now() - startAll, error: lastError || 'All Indexer nodes failed' };
 }
