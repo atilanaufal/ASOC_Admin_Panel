@@ -23,15 +23,15 @@ const httpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true 
 export function getIndexerNodes(): ClusterNodeConfig[] {
   const n1Host = process.env.INDEXER_HOST || process.env.OPENSEARCH_URL || process.env.INDEXER_NODE1_HOST || "";
   const n1User = process.env.INDEXER_USER || process.env.INDEXER_NODE1_USER || "";
-  const n1Pass = process.env.INDEXER_PASS || process.env.INDEXER_NODE1_PASS || "";
+  const n1Pass = process.env.INDEXER_PASS || process.env.INDEXER_PASSWORD || process.env.INDEXER_NODE1_PASS || process.env.INDEXER_NODE1_PASSWORD || "";
 
   const n2Host = process.env.INDEXER_NODE2_HOST || "";
   const n2User = process.env.INDEXER_NODE2_USER || n1User;
-  const n2Pass = process.env.INDEXER_NODE2_PASS || n1Pass;
+  const n2Pass = process.env.INDEXER_NODE2_PASS || process.env.INDEXER_NODE2_PASSWORD || n1Pass;
 
   const n3Host = process.env.INDEXER_NODE3_HOST || "";
   const n3User = process.env.INDEXER_NODE3_USER || n1User;
-  const n3Pass = process.env.INDEXER_NODE3_PASS || n1Pass;
+  const n3Pass = process.env.INDEXER_NODE3_PASS || process.env.INDEXER_NODE3_PASSWORD || n1Pass;
 
   const candidates: ClusterNodeConfig[] = [
     { url: n1Host, user: n1User, pass: n1Pass },
@@ -45,15 +45,15 @@ export function getIndexerNodes(): ClusterNodeConfig[] {
 function getWazuhNodes(): ClusterNodeConfig[] {
   const n1Url = process.env.WAZUH_NODE1_URL || process.env.WAZUH_API_URL || "";
   const n1User = process.env.WAZUH_NODE1_USER || process.env.WAZUH_API_USER || "";
-  const n1Pass = process.env.WAZUH_NODE1_PASS || process.env.WAZUH_API_PASS || process.env.WAZUH_API_PASSWORD || "";
+  const n1Pass = process.env.WAZUH_NODE1_PASS || process.env.WAZUH_NODE1_PASSWORD || process.env.WAZUH_API_PASS || process.env.WAZUH_API_PASSWORD || "";
 
   const n2Url = process.env.WAZUH_NODE2_URL || "";
   const n2User = process.env.WAZUH_NODE2_USER || n1User;
-  const n2Pass = process.env.WAZUH_NODE2_PASS || n1Pass;
+  const n2Pass = process.env.WAZUH_NODE2_PASS || process.env.WAZUH_NODE2_PASSWORD || n1Pass;
 
   const n3Url = process.env.WAZUH_NODE3_URL || "";
   const n3User = process.env.WAZUH_NODE3_USER || n1User;
-  const n3Pass = process.env.WAZUH_NODE3_PASS || n1Pass;
+  const n3Pass = process.env.WAZUH_NODE3_PASS || process.env.WAZUH_NODE3_PASSWORD || n1Pass;
 
   const candidates: ClusterNodeConfig[] = [
     { url: n1Url, user: n1User, pass: n1Pass },
