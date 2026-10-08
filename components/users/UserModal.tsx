@@ -189,7 +189,7 @@ export function UserModal({
               required
               disabled={isEditing}
               value={username}
-              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              onChange={(e) => setUsername(e.target.value)}
               placeholder="e.g. analyst_tnta_1"
               className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
             />
