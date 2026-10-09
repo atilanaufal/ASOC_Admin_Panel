@@ -362,7 +362,7 @@ export async function GET(req: NextRequest) {
 
       cronLogs = await getHostCronLogs(60);
       if (!cronLogs || cronLogs.startsWith("Error") || cronLogs.startsWith("Failed")) {
-        const logRes = await runRemoteScript('tail -n 60 /var/log/multi-tenant-sync.log 2>/dev/null || echo "No log found"', 5000);
+        const logRes = await runRemoteScript('tail -n 60 /var/log/multi-tenant-sync-2.log 2>/dev/null || tail -n 60 /var/log/multi-tenant-sync.log 2>/dev/null || echo "No log found"', 5000);
         if (logRes.success) {
           cronLogs = logRes.stdout;
         }
