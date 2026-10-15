@@ -25,7 +25,7 @@ export async function PUT(
     const userId = /^\d+$/.test(cleanId) ? parseInt(cleanId, 10) : cleanId;
 
     const body = await request.json();
-    const { action, newPassword, role, tenantId } = body;
+    const { action, newPassword, role, tenantId, username } = body;
 
     const pool = (await import('@/lib/mysql')).getMysqlPool();
 
@@ -151,6 +151,7 @@ export async function PUT(
       : currentUser.tenantId;
 
     const result = await updateUser(userId, {
+      username: username ? String(username).trim() : undefined,
       role: isSuperadmin ? role : 'user',
       tenantId: finalTenantId,
     });

@@ -268,6 +268,8 @@ export async function updateUser(
   const pool = getMysqlPool();
 
   try {
+    const rawNewUsername = data.username !== undefined ? data.username.trim() : (data.name !== undefined ? data.name.trim() : undefined);
+
     // 1. Check if admin
     const [adminRows]: any = await pool.query(
       'SELECT id, username FROM admin_users WHERE id = ? OR username = ? LIMIT 1',
@@ -278,20 +280,39 @@ export async function updateUser(
       const admin = adminRows[0];
       const updates: string[] = [];
       const vals: any[] = [];
-      if (data.name || data.username) {
-        updates.push('name = ?');
-        vals.push((data.name || data.username || '').trim());
+
+      if (rawNewUsername && rawNewUsername !== admin.username) {
+        // Validate collision
+        const [adminCheck]: any = await pool.query(
+          'SELECT id FROM admin_users WHERE (username = ? OR name = ?) AND id != ? LIMIT 1',
+          [rawNewUsername, rawNewUsername, admin.id]
+        );
+        if (adminCheck && adminCheck.length > 0) {
+          return { success: false, error: `Username "${rawNewUsername}" already taken by another administrator.` };
+        }
+        const [userCheck]: any = await pool.query(
+          'SELECT id FROM users WHERE name = ? LIMIT 1',
+          [rawNewUsername]
+        );
+        if (userCheck && userCheck.length > 0) {
+          return { success: false, error: `Username "${rawNewUsername}" already taken by a tenant user.` };
+        }
+
+        updates.push('username = ?', 'name = ?');
+        vals.push(rawNewUsername, rawNewUsername);
       }
+
       if (data.role) {
         const adminRole = data.role.toLowerCase() === 'superadmin' ? 'superadmin' : 'admin';
         updates.push('role = ?');
         vals.push(adminRole);
       }
+
       if (updates.length > 0) {
         vals.push(admin.id);
         await pool.query(`UPDATE admin_users SET ${updates.join(', ')} WHERE id = ?`, vals);
       }
-      return { success: true, message: `Admin profile '${admin.username}' successfully updated.` };
+      return { success: true, message: `Admin profile "${rawNewUsername || admin.username}" successfully updated.` };
     }
 
     // 2. Update tenant user in `users`
@@ -304,8 +325,30 @@ export async function updateUser(
       return { success: false, error: 'User not found.' };
     }
 
+    const currentUsername = userRows[0].username;
     const updates: string[] = [];
     const values: any[] = [];
+
+    if (rawNewUsername && rawNewUsername !== currentUsername) {
+      // Validate collision
+      const [adminCheck]: any = await pool.query(
+        'SELECT id FROM admin_users WHERE username = ? OR name = ? LIMIT 1',
+        [rawNewUsername, rawNewUsername]
+      );
+      if (adminCheck && adminCheck.length > 0) {
+        return { success: false, error: `Username "${rawNewUsername}" already taken by an administrator.` };
+      }
+      const [userCheck]: any = await pool.query(
+        'SELECT id FROM users WHERE name = ? AND id != ? LIMIT 1',
+        [rawNewUsername, userId]
+      );
+      if (userCheck && userCheck.length > 0) {
+        return { success: false, error: `Username "${rawNewUsername}" already taken by another user.` };
+      }
+
+      updates.push('name = ?');
+      values.push(rawNewUsername);
+    }
 
     if (data.role !== undefined) {
       updates.push('role = ?');
@@ -315,19 +358,13 @@ export async function updateUser(
       updates.push('tenant_id = ?');
       values.push(data.tenantId);
     }
-    if (data.username !== undefined || data.name !== undefined) {
-      const newName = (data.username || data.name || '').trim();
-      updates.push('name = ?');
-      values.push(newName);
-    }
 
     if (updates.length > 0) {
       values.push(userId);
       await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
     }
 
-    const username = userRows[0].username;
-    return { success: true, message: `User profile '${username}' successfully updated.` };
+    return { success: true, message: `User profile "${rawNewUsername || currentUsername}" successfully updated.` };
   } catch (err: any) {
     console.error('Error updating user:', err);
     return { success: false, error: `Failed to update user: ${err.message}` };

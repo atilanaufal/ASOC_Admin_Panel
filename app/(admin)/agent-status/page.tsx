@@ -386,6 +386,9 @@ export default function AgentStatusPage() {
             placeholder="Select Tenants"
             className="w-full sm:w-56"
             buttonClassName="w-full sm:w-56"
+            menuClassName="right-0 left-auto sm:min-w-[280px] max-w-[90vw]"
+            showSearch={tenants.length > 5}
+            searchPlaceholder="Search tenant..."
           />
         </div>
       </div>
