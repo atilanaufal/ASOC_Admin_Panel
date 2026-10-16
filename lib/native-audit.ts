@@ -654,16 +654,27 @@ export async function auditIrisNative(
   const startDate = dateRange.start || new Date().toISOString().slice(0, 10);
   const endDate = dateRange.end || startDate;
 
-  // Single IRIS Server (10.20.100.133)
-  const irisRes = await queryIrisSingle("/manage/cases/filter", {
-    start_open_date: startDate,
-    end_open_date: endDate,
-    per_page: 100,
-    order_by: "case_id",
-    sort_dir: "asc",
-  });
+  // Paginate through all cases from IRIS to prevent truncation
+  const allCases: any[] = [];
+  let page = 1;
+  const perPage = 100;
+  while (true) {
+    const irisRes = await queryIrisSingle("/manage/cases/filter", {
+      start_open_date: startDate,
+      end_open_date: endDate,
+      page,
+      per_page: perPage,
+      order_by: "case_id",
+      sort_dir: "asc",
+    });
 
-  const allCases = irisRes?.data?.cases || [];
+    const casesOnPage = irisRes?.data?.cases || [];
+    if (casesOnPage.length === 0) break;
+    allCases.push(...casesOnPage);
+    const total = irisRes?.data?.total || 0;
+    if (page * perPage >= total || casesOnPage.length < perPage) break;
+    page++;
+  }
 
   let overallInSync = true;
   const irisTenants = await Promise.all(
