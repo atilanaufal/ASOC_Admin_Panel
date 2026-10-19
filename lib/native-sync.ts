@@ -366,14 +366,14 @@ export async function syncRedisNative(
     }
 
     // 3. Clear and sync vulnerabilities
-    const isWeeklySync = dates.length > 1 && dates[0] <= mondayStr;
+    const isFullRangeSync = dates.length > 1;
     const targetDatesSet = new Set(dates);
     const startStr = dates[0] || todayUtcStr;
     const endStr = dates[dates.length - 1] || todayUtcStr;
     const startDt = new Date(`${startStr}T00:00:00.000Z`);
     const endDt = new Date(`${endStr}T23:59:59.999Z`);
 
-    if (isWeeklySync) {
+    if (isFullRangeSync) {
       const oldVulnKeys = await redis.keys(`${cleanPrefix}:vulnerability:*`).catch(() => []);
       if (oldVulnKeys.length > 0) {
         await redis.del(...oldVulnKeys).catch(() => {});
@@ -398,13 +398,14 @@ export async function syncRedisNative(
       }
     }
 
-    const vulnQuery = isWeeklySync
+    const vulnQuery = isFullRangeSync
       ? {
           $or: [
-            { date: { $gte: mondayStr } },
-            { detected_at: { $gte: mondayDt } },
-            { detected_at: { $gte: mondayStr } },
-            { last_seen: { $gte: mondayStr } },
+            { date: { $in: dates } },
+            { date: { $gte: startStr, $lte: endStr } },
+            { detected_at: { $gte: startDt, $lte: endDt } },
+            { detected_at: { $gte: startStr, $lte: `${endStr}T23:59:59.999Z` } },
+            { last_seen: { $gte: startStr, $lte: `${endStr}T23:59:59.999Z` } },
           ],
         }
       : {
@@ -445,13 +446,13 @@ export async function syncRedisNative(
     }
 
     // 5. Sync reports
-    const repQuery = isWeeklySync
+    const repQuery = isFullRangeSync
       ? {
           $or: [
-            { created_at: { $gte: mondayDt } },
-            { date_generated: { $gte: mondayDt } },
-            { date_generated: { $gte: mondayStr } },
-            { date: { $gte: mondayStr } },
+            { created_at: { $gte: startDt, $lte: endDt } },
+            { date_generated: { $gte: startDt, $lte: endDt } },
+            { date_generated: { $gte: startStr, $lte: `${endStr}T23:59:59.999Z` } },
+            { date: { $in: dates } },
           ],
         }
       : {

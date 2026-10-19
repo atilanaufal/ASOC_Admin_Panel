@@ -504,7 +504,7 @@ export async function POST(req: NextRequest) {
 
       if (pipeline === "mongo-redis" || pipeline === "redis") {
         const p = period.toLowerCase();
-        const redisPeriod = (p === "today" || p === "yesterday") ? p : "this_week";
+        const redisPeriod = (p === "today" || p === "yesterday" || p === "last_7_days") ? p : "this_week";
         const redisDateRange = parsePeriodToDates(redisPeriod);
         const res = await syncRedisNative(syncTargets, redisDateRange.dates, mongoClient);
         return NextResponse.json({

@@ -409,8 +409,12 @@ export async function auditRedisNative(
       effectiveDates = [todayStr];
     }
   } else {
-    const filtered = (targetDates || []).filter(d => d >= mondayStr && d <= todayStr);
-    effectiveDates = filtered.length > 0 ? filtered : weekDates;
+    // If targetDates is provided (e.g. last_7_days, this_week, etc.), use targetDates directly
+    if (targetDates && targetDates.length > 0) {
+      effectiveDates = targetDates;
+    } else {
+      effectiveDates = weekDates;
+    }
   }
 
   return Promise.all(
