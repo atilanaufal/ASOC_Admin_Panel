@@ -467,7 +467,7 @@ export async function syncRedisNative(
     const repDocs = await db.collection("reports").find(repQuery).toArray();
     const cleanReps = repDocs.map(cleanDoc);
     let finalReps = cleanReps;
-    if (!isWeeklySync) {
+    if (!isFullRangeSync) {
       const repRaw = await redis.get(`${prefix}:reports`).catch(() => null);
       let existingReps: any[] = [];
       if (repRaw) {
