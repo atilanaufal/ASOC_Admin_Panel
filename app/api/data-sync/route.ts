@@ -263,7 +263,7 @@ export async function GET(req: NextRequest) {
 
     if (tab === "redis") {
       const p = period.toLowerCase();
-      const redisPeriod = (p === "today" || p === "yesterday") ? p : "this_week";
+      const redisPeriod = (p === "today" || p === "yesterday" || p === "last_7_days") ? p : "this_week";
       const redisDateRange = parsePeriodToDates(redisPeriod);
       const results = await auditRedisNative(tenantsList, redisDateRange.dates, mongoClient, redisClient);
       return NextResponse.json({
@@ -442,7 +442,7 @@ export async function POST(req: NextRequest) {
 
       if (checkScript === "redis" || checkScript === "check-redis") {
         const p = period.toLowerCase();
-        const redisPeriod = (p === "today" || p === "yesterday") ? p : "this_week";
+        const redisPeriod = (p === "today" || p === "yesterday" || p === "last_7_days") ? p : "this_week";
         const redisDateRange = parsePeriodToDates(redisPeriod);
         const results = await auditRedisNative(targetTenants, redisDateRange.dates, mongoClient, redisClient);
         return NextResponse.json({

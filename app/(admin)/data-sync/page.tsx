@@ -217,7 +217,7 @@ export default function DataSyncPage() {
     force = false
   ) => {
     let periodToFetch = period;
-    if (tab === "redis" && periodToFetch !== "TODAY" && periodToFetch !== "YESTERDAY" && periodToFetch !== "THIS_WEEK") {
+    if (tab === "redis" && periodToFetch !== "TODAY" && periodToFetch !== "YESTERDAY" && periodToFetch !== "THIS_WEEK" && periodToFetch !== "LAST_7_DAYS") {
       periodToFetch = "THIS_WEEK";
     }
     setLoading(true);
@@ -291,7 +291,7 @@ export default function DataSyncPage() {
 
   const handleTabChange = (newTab: TabType) => {
     let periodToUse = selectedPeriod;
-    if (newTab === "redis" && selectedPeriod !== "TODAY" && selectedPeriod !== "YESTERDAY" && selectedPeriod !== "THIS_WEEK") {
+    if (newTab === "redis" && selectedPeriod !== "TODAY" && selectedPeriod !== "YESTERDAY" && selectedPeriod !== "THIS_WEEK" && selectedPeriod !== "LAST_7_DAYS") {
       periodToUse = "THIS_WEEK";
       setSelectedPeriod("THIS_WEEK");
     }
@@ -305,7 +305,7 @@ export default function DataSyncPage() {
 
   const handlePeriodChange = (newPeriod: string) => {
     let periodToSet = newPeriod;
-    if (activeTab === "redis" && periodToSet !== "TODAY" && periodToSet !== "YESTERDAY" && periodToSet !== "THIS_WEEK") {
+    if (activeTab === "redis" && periodToSet !== "TODAY" && periodToSet !== "YESTERDAY" && periodToSet !== "THIS_WEEK" && periodToSet !== "LAST_7_DAYS") {
       periodToSet = "THIS_WEEK";
     }
     if (periodToSet === selectedPeriod) return;
@@ -314,7 +314,7 @@ export default function DataSyncPage() {
   };
 
   useEffect(() => {
-    if (activeTab === 'redis' && selectedPeriod !== 'TODAY' && selectedPeriod !== 'YESTERDAY' && selectedPeriod !== 'THIS_WEEK') {
+    if (activeTab === 'redis' && selectedPeriod !== 'TODAY' && selectedPeriod !== 'YESTERDAY' && selectedPeriod !== 'THIS_WEEK' && selectedPeriod !== 'LAST_7_DAYS') {
       setSelectedPeriod('THIS_WEEK');
       loadPeriodData('THIS_WEEK', 'redis', customStartDate, customEndDate);
     }
@@ -499,6 +499,7 @@ export default function DataSyncPage() {
                   { id: 'TODAY', label: 'Today' },
                   { id: 'YESTERDAY', label: 'Yesterday' },
                   { id: 'THIS_WEEK', label: 'This Week' },
+                  { id: 'LAST_7_DAYS', label: 'Last 7 Days' },
                 ]
               : [
                   { id: 'TODAY', label: 'Today' },
