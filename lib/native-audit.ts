@@ -666,6 +666,7 @@ export async function auditIrisNative(
     const irisRes = await queryIrisSingle("/manage/cases/filter", {
       start_open_date: startDate,
       end_open_date: endDate,
+      case_state_id: 9,
       page,
       per_page: perPage,
       order_by: "case_id",

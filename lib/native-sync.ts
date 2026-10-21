@@ -596,6 +596,7 @@ export async function syncIrisNative(
   const res = await queryIrisSingle("/manage/cases/filter", {
     start_open_date: startDate,
     end_open_date: endDate,
+    case_state_id: 9,
     per_page: 200,
     order_by: "case_id",
     sort_dir: "asc",
