@@ -1614,19 +1614,34 @@ export default function DataSyncPage() {
               <span className="font-bold text-slate-800">
                 {cronConfig?.lastRunAt
                   ? (() => {
-                      const d = new Date(cronConfig.lastRunAt);
+                      let raw = String(cronConfig.lastRunAt).trim();
+                      if (!raw.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(raw)) {
+                        raw += "Z";
+                      }
+                      const d = new Date(raw);
                       if (isNaN(d.getTime())) return cronConfig.lastRunAt;
-                      const now = new Date();
-                      const isToday = d.toDateString() === now.toDateString();
-                      const yesterday = new Date(now);
-                      yesterday.setDate(yesterday.getDate() - 1);
-                      const isYesterday = d.toDateString() === yesterday.toDateString();
-                      const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                      if (isToday) return `Today, ${timeStr}`;
-                      if (isYesterday) return `Yesterday, ${timeStr}`;
-                      return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${timeStr}`;
+                      const timeStr = d.toLocaleTimeString("en-US", {
+                        timeZone: "Asia/Jakarta",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: true,
+                      });
+                      const nowWibStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
+                      const targetWibStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(d);
+                      const nowWib = new Date(nowWibStr);
+                      const targetWib = new Date(targetWibStr);
+                      const diffDays = Math.round((nowWib.getTime() - targetWib.getTime()) / (1000 * 3600 * 24));
+                      if (diffDays === 0) return `Today, ${timeStr}`;
+                      if (diffDays === 1) return `Yesterday, ${timeStr}`;
+                      const dateStr = d.toLocaleDateString("en-US", {
+                        timeZone: "Asia/Jakarta",
+                        month: "short",
+                        day: "numeric",
+                      });
+                      return `${dateStr}, ${timeStr}`;
                     })()
-                  : 'Awaiting initial trigger'}
+                  : "Awaiting initial trigger"}
               </span>
             </div>
             <div className="flex items-center justify-between text-[11px]">
@@ -1634,11 +1649,21 @@ export default function DataSyncPage() {
               <span className="font-bold text-[#00BCD4]">
                 {cronConfig?.nextRunAt
                   ? (() => {
-                      const d = new Date(cronConfig.nextRunAt);
+                      let raw = String(cronConfig.nextRunAt).trim();
+                      if (!raw.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(raw)) {
+                        raw += "Z";
+                      }
+                      const d = new Date(raw);
                       if (isNaN(d.getTime())) return cronConfig.nextRunAt;
-                      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                      return d.toLocaleTimeString("en-US", {
+                        timeZone: "Asia/Jakarta",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: true,
+                      });
                     })()
-                  : 'In scheduled cycle'}
+                  : "In scheduled cycle"}
               </span>
             </div>
           </div>

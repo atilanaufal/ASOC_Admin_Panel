@@ -320,7 +320,11 @@ export async function GET(req: NextRequest) {
           enabled = hostCron.enabled;
           schedule = hostCron.schedule;
           if (hostCron.lastRun) {
-            lastRunAt = hostCron.lastRun;
+            let lr = String(hostCron.lastRun).trim();
+            if (!lr.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(lr)) {
+              lr += "Z";
+            }
+            lastRunAt = lr;
           }
         } else {
           // Fallback to direct Docker container check if Agent is not reachable
