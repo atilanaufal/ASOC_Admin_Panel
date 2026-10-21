@@ -713,6 +713,10 @@ export async function auditIrisNative(
 
       // Match IRIS cases to this tenant
       const matchedCases = allCases.filter((c: any) => {
+        const stName = c.state?.state_name || (typeof c.state === "string" ? c.state : "");
+        if (stName && stName.toLowerCase() !== "closed") return false;
+        if (c.state_id && Number(c.state_id) !== 9) return false;
+
         const clientObj = c.client || {};
         const cid = clientObj.customer_id;
         if (t.irisCustomerId && cid && Number(cid) === Number(t.irisCustomerId)) return true;

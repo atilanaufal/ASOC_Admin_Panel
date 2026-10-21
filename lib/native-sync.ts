@@ -612,6 +612,10 @@ export async function syncIrisNative(
     const coll = db.collection("reports");
 
     const matched = allCases.filter((c: any) => {
+      const stName = c.state?.state_name || (typeof c.state === "string" ? c.state : "");
+      if (stName && stName.toLowerCase() !== "closed") return false;
+      if (c.state_id && Number(c.state_id) !== 9) return false;
+
       const clientObj = c.client || {};
       const cid = clientObj.customer_id;
       if (t.irisCustomerId && cid && Number(cid) === Number(t.irisCustomerId)) return true;
@@ -623,12 +627,42 @@ export async function syncIrisNative(
       return false;
     });
 
+    const validIds = matched.map((c: any) => Number(c.case_id)).filter(Boolean);
+    const dtStart = `${startDate} 00:00:00`;
+    const dtEnd = `${endDate} 23:59:59`;
+    const dtStartIso = new Date(`${startDate}T00:00:00.000Z`);
+    const dtEndIso = new Date(`${endDate}T23:59:59.999Z`);
+
+    const dateFilter = {
+      $or: [
+        { date_generated: { $gte: dtStart, $lte: dtEnd } },
+        { date_generated: { $gte: dtStartIso, $lte: dtEndIso } },
+        { date: { $gte: startDate, $lte: endDate } },
+      ],
+    };
+
+    if (validIds.length > 0) {
+      await coll.deleteMany({
+        report_id: { $nin: validIds },
+        ...dateFilter,
+      });
+    } else {
+      await coll.deleteMany(dateFilter);
+    }
+
     for (const c of matched) {
       const caseId = c.case_id;
       const rawName = c.name || "Untitled Case";
       const reportName = rawName.replace(/^#\d+\s*[-:]*\s*/, "");
       const sev = c.severity?.severity_name || c.severity || "Medium";
-      const dtGen = c.open_date ? new Date(c.open_date) : new Date(`${startDate}T00:00:00.000Z`);
+      const rawInit = c.initial_date ? String(c.initial_date).trim() : "";
+      let dtGen: Date;
+      try {
+        dtGen = rawInit ? new Date(rawInit) : new Date();
+        if (isNaN(dtGen.getTime())) dtGen = new Date();
+      } catch {
+        dtGen = new Date();
+      }
 
       const doc = {
         report_id: caseId,
