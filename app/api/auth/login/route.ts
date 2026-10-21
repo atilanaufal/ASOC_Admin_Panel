@@ -60,6 +60,35 @@ export async function POST(request: NextRequest) {
         });
       } catch {}
 
+      const errMessage = result.error || 'Invalid username or password.';
+      const isDbError = (
+        errMessage.toLowerCase().includes('database') ||
+        errMessage.toLowerCase().includes('connection') ||
+        errMessage.toLowerCase().includes('timeout') ||
+        errMessage.toLowerCase().includes('refused')
+      );
+      const isAccessDenied = errMessage.toLowerCase().includes('access denied');
+
+      if (isDbError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Authentication database temporarily unavailable. Please try again shortly.',
+          },
+          { status: 503 }
+        );
+      }
+
+      if (isAccessDenied) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: errMessage,
+          },
+          { status: 403 }
+        );
+      }
+
       return NextResponse.json(
         { success: false, error: 'Invalid username or password.' },
         { status: 401 }

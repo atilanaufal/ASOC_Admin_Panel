@@ -24,8 +24,33 @@ export function getMysqlPool(): mysql.Pool {
       password: MYSQL_PASSWORD,
       database: MYSQL_DATABASE,
       waitForConnections: true,
-      connectionLimit: 10,
-      connectTimeout: 3000,
+      connectionLimit: 20,
+      connectTimeout: 10000,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
+      idleTimeout: 60000,
+      maxIdle: 10,
+    });
+
+    (activePool as any).on('error', (err: any) => {
+      console.error('[MySQL Pool Error]:', err?.message || err);
+      if (
+        err?.code === 'PROTOCOL_CONNECTION_LOST' ||
+        err?.code === 'ECONNRESET' ||
+        err?.code === 'ETIMEDOUT' ||
+        err?.code === 'EPIPE'
+      ) {
+        try {
+          activePool?.end();
+        } catch {}
+        activePool = null;
+      }
+    });
+
+    (activePool as any).on('connection', (connection: any) => {
+      connection.on('error', (err: any) => {
+        console.error('[MySQL Connection Error]:', err?.message || err);
+      });
     });
   }
   return activePool;
@@ -76,18 +101,13 @@ export async function getMysqlConnection(): Promise<mysql.PoolConnection> {
 
 export async function pingMysql(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
   const start = Date.now();
-  let conn: mysql.PoolConnection | null = null;
   try {
-    conn = await getMysqlConnection();
-    await conn.query('SELECT 1');
+    const pool = getMysqlPool();
+    await pool.query('SELECT 1');
     const latencyMs = Date.now() - start;
     return { ok: true, latencyMs };
   } catch (err: any) {
     return { ok: false, latencyMs: Date.now() - start, error: err.message };
-  } finally {
-    if (conn) {
-      try { conn.release(); } catch {}
-    }
   }
 }
 
@@ -102,18 +122,27 @@ export interface UserRecord {
   redis_prefix?: string;
 }
 
+function isSchemaMismatchError(err: any): boolean {
+  if (!err) return false;
+  return (
+    err.code === 'ER_NO_SUCH_TABLE' ||
+    err.code === 'ER_BAD_FIELD_ERROR' ||
+    err.errno === 1146 ||
+    err.errno === 1054
+  );
+}
+
 export async function verifySuperadminCredentials(
   usernameOrEmailInput: string,
   passwordInput: string
 ): Promise<{ success: boolean; user?: UserRecord; error?: string }> {
-  let conn: mysql.PoolConnection | null = null;
   try {
-    conn = await getMysqlConnection();
+    const pool = getMysqlPool();
     let user: any = null;
 
     // 1. Check `admin_users` table first (VM 192.168.30.184 specific)
     try {
-      const [adminRows]: any = await conn.execute(
+      const [adminRows]: any = await pool.query(
         `SELECT id, username, name, password AS password_hash, role
          FROM admin_users
          WHERE username = ?
@@ -130,14 +159,16 @@ export async function verifySuperadminCredentials(
           redis_prefix: 'asoc_master',
         };
       }
-    } catch {
-      // admin_users table might not exist on old schema
+    } catch (err: any) {
+      if (!isSchemaMismatchError(err)) {
+        throw err;
+      }
     }
 
     // 2. Fallback to `users` table (checks both `name` and `username` column variations)
     if (!user) {
       try {
-        const [userRows]: any = await conn.execute(
+        const [userRows]: any = await pool.query(
           `SELECT 
             u.id, 
             u.tenant_id, 
@@ -157,31 +188,41 @@ export async function verifySuperadminCredentials(
         if (Array.isArray(userRows) && userRows.length > 0) {
           user = userRows[0];
         }
-      } catch {
-        // Fallback for legacy schema where column was `username` and `password_hash`
-        try {
-          const [legacyRows]: any = await conn.execute(
-            `SELECT 
-              u.id, 
-              u.tenant_id, 
-              u.username, 
-              COALESCE(u.password_hash, u.password) AS password_hash, 
-              u.email,
-              u.role,
-              t.tenant_code, 
-              t.campus_name, 
-              t.database_name, 
-              t.redis_prefix
-             FROM users u
-             LEFT JOIN tenants t ON u.tenant_id = t.id
-             WHERE u.username = ? OR u.email = ?
-             LIMIT 1`,
-            [usernameOrEmailInput, usernameOrEmailInput]
-          );
-          if (Array.isArray(legacyRows) && legacyRows.length > 0) {
-            user = legacyRows[0];
-          }
-        } catch {}
+      } catch (err: any) {
+        if (!isSchemaMismatchError(err)) {
+          throw err;
+        }
+      }
+    }
+
+    // 3. Fallback for legacy schema where column was `username` and `password_hash`
+    if (!user) {
+      try {
+        const [legacyRows]: any = await pool.query(
+          `SELECT 
+            u.id, 
+            u.tenant_id, 
+            u.username, 
+            COALESCE(u.password_hash, u.password) AS password_hash, 
+            u.email,
+            u.role,
+            t.tenant_code, 
+            t.campus_name, 
+            t.database_name, 
+            t.redis_prefix
+           FROM users u
+           LEFT JOIN tenants t ON u.tenant_id = t.id
+           WHERE u.username = ? OR u.email = ?
+           LIMIT 1`,
+          [usernameOrEmailInput, usernameOrEmailInput]
+        );
+        if (Array.isArray(legacyRows) && legacyRows.length > 0) {
+          user = legacyRows[0];
+        }
+      } catch (err: any) {
+        if (!isSchemaMismatchError(err)) {
+          throw err;
+        }
       }
     }
 
@@ -241,13 +282,15 @@ export async function verifySuperadminCredentials(
     };
   } catch (err: any) {
     console.error(`MySQL Database Connection Error (${getMysqlHost()}:${MYSQL_PORT}):`, err.message);
+    if (activePool) {
+      try {
+        activePool.end();
+      } catch {}
+      activePool = null;
+    }
     return {
       success: false,
       error: 'Authentication database connection failed. Please contact administrator.',
     };
-  } finally {
-    if (conn) {
-      try { conn.release(); } catch {}
-    }
   }
 }
