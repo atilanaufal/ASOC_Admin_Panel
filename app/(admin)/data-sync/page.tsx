@@ -1595,10 +1595,12 @@ export default function DataSyncPage() {
               onChange={(val) => setCronSchedule(String(val))}
               disabled={!cronEnabled}
               options={[
-                { value: '0 * * * *', label: 'Every 1 Hour (Standard Pipeline Default)', badge: '0 * * * *' },
-                { value: '*/30 * * * *', label: 'Every 30 Minutes', badge: '*/30 * * * *' },
-                { value: '*/15 * * * *', label: 'Every 15 Minutes', badge: '*/15 * * * *' },
-                { value: '*/5 * * * *', label: 'Every 5 Minutes (Testing / Rapid Sync)', badge: '*/5 * * * *' },
+                { value: '59 * * * *', label: 'Every 1 Hour (at 59:55 - Recommended)', badge: '59:55' },
+                { value: '29,59 * * * *', label: 'Every 30 Minutes (at 29:55, 59:55)', badge: '29:55' },
+                { value: '9,19,29,39,49,59 * * * *', label: 'Every 10 Minutes (at 9:55, 19:55, ...)', badge: '9:55' },
+                { value: '4,9,14,19,24,29,34,39,44,49,54,59 * * * *', label: 'Every 5 Minutes (at 4:55, 9:55, ...)', badge: '4:55' },
+                { value: '0 * * * *', label: 'Every 1 Hour (at :00 - Legacy)', badge: '0 * * * *' },
+                { value: '*/30 * * * *', label: 'Every 30 Minutes (at :00, :30)', badge: '*/30 * * * *' },
                 { value: '0 0 * * *', label: 'Daily at Midnight', badge: '0 0 * * *' },
               ]}
               className="w-full"
