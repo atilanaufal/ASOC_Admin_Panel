@@ -61,7 +61,22 @@ function computeNextRun(cronExpr: string): string {
           next.setSeconds(0, 0);
         }
 
-        // Check hour part
+        // Check hour part (handles "16", "4,16", "*/12", etc.)
+        if (hourPart.includes(",")) {
+          const hours = hourPart.split(",").map(h => parseInt(h.trim(), 10)).filter(h => !isNaN(h)).sort((a, b) => a - b);
+          for (const h of hours) {
+            const candidate = new Date(next.getTime());
+            candidate.setHours(h);
+            if (candidate > now) {
+              return candidate.toISOString();
+            }
+          }
+          // Next day first hour
+          next.setDate(next.getDate() + 1);
+          next.setHours(hours[0]);
+          return next.toISOString();
+        }
+
         const exactHour = parseInt(hourPart, 10);
         if (!isNaN(exactHour)) {
           next.setHours(exactHour);
