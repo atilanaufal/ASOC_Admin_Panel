@@ -54,6 +54,13 @@ function computeNextRun(cronExpr: string): string {
       if (!isNaN(exactMin)) {
         next.setMinutes(exactMin);
 
+        // If minPart is 59 and cron matches precision 55s
+        if (exactMin === 59 || minPart.includes("59")) {
+          next.setSeconds(55, 0);
+        } else {
+          next.setSeconds(0, 0);
+        }
+
         // Check hour part
         const exactHour = parseInt(hourPart, 10);
         if (!isNaN(exactHour)) {

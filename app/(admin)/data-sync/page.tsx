@@ -1599,6 +1599,8 @@ export default function DataSyncPage() {
                 { value: '29,59 * * * *', label: 'Every 30 Minutes (at 29:55, 59:55)', badge: '29:55' },
                 { value: '9,19,29,39,49,59 * * * *', label: 'Every 10 Minutes (at 9:55, 19:55, ...)', badge: '9:55' },
                 { value: '4,9,14,19,24,29,34,39,44,49,54,59 * * * *', label: 'Every 5 Minutes (at 4:55, 9:55, ...)', badge: '4:55' },
+                { value: '59 16 * * *', label: 'End of Day (at 23:59:55 WIB)', badge: '23:59:55' },
+                { value: '59 23 * * *', label: 'End of Day (at 23:59:55 UTC)', badge: '23:59:55 UTC' },
                 { value: '0 * * * *', label: 'Every 1 Hour (at :00 - Legacy)', badge: '0 * * * *' },
                 { value: '*/30 * * * *', label: 'Every 30 Minutes (at :00, :30)', badge: '*/30 * * * *' },
                 { value: '0 0 * * *', label: 'Daily at Midnight', badge: '0 0 * * *' },
