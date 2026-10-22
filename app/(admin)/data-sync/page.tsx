@@ -1596,9 +1596,8 @@ export default function DataSyncPage() {
               disabled={!cronEnabled}
               options={[
                 { value: '59 * * * *', label: 'Every 1 Hour (59:55)', badge: '59 * * * *' },
-                { value: '59 4,16 * * *', label: 'Every 12 Hours (11:59:55 WIB)', badge: '59 4,16 * * *' },
-                { value: '59 16 * * *', label: 'End of Day (23:59:55 WIB)', badge: '59 16 * * *' },
-                { value: '59 23 * * *', label: 'End of Day (23:59:55 UTC)', badge: '59 23 * * *' },
+                { value: '59 */12 * * *', label: 'Every 12 Hours (11:59:55)', badge: '59 */12 * * *' },
+                { value: '59 23 * * *', label: 'End of Day (23:59:55)', badge: '59 23 * * *' },
               ]}
               className="w-full"
             />

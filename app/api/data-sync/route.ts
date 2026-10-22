@@ -61,7 +61,23 @@ function computeNextRun(cronExpr: string): string {
           next.setSeconds(0, 0);
         }
 
-        // Check hour part (handles "16", "4,16", "*/12", etc.)
+        // Check hour part (handles "23", "*/12", "0,12", etc.)
+        if (hourPart.startsWith("*/")) {
+          const stepHour = parseInt(hourPart.slice(2), 10);
+          if (!isNaN(stepHour) && stepHour > 0) {
+            for (let h = 0; h < 24; h += stepHour) {
+              const candidate = new Date(next.getTime());
+              candidate.setHours(h);
+              if (candidate > now) {
+                return candidate.toISOString();
+              }
+            }
+            next.setDate(next.getDate() + 1);
+            next.setHours(0);
+            return next.toISOString();
+          }
+        }
+
         if (hourPart.includes(",")) {
           const hours = hourPart.split(",").map(h => parseInt(h.trim(), 10)).filter(h => !isNaN(h)).sort((a, b) => a - b);
           for (const h of hours) {
