@@ -1622,7 +1622,7 @@ export default function DataSyncPage() {
                         minute: "2-digit",
                         second: "2-digit",
                         hour12: true,
-                      });
+                      }) + " WIB";
                       const nowWibStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
                       const targetWibStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(d);
                       const nowWib = new Date(nowWibStr);
@@ -1657,7 +1657,7 @@ export default function DataSyncPage() {
                         minute: "2-digit",
                         second: "2-digit",
                         hour12: true,
-                      });
+                      }) + " WIB";
                     })()
                   : "In scheduled cycle"}
               </span>

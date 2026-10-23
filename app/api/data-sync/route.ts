@@ -26,6 +26,8 @@ import {
 import { requireSession, requireSuperadmin, isPlatformAdmin } from "@/lib/session";
 
 function computeNextRun(cronExpr: string): string {
+  // Cron expressions in crontab run against system UTC clock.
+  // Evaluate cron in strict UTC so candidate times never skew due to container local timezone.
   const now = new Date();
   const next = new Date(now.getTime());
 
@@ -35,76 +37,76 @@ function computeNextRun(cronExpr: string): string {
       const minPart = parts[0];
       const hourPart = parts[1];
 
-      next.setSeconds(0, 0);
+      next.setUTCSeconds(0, 0);
 
       // Handle step minutes: */5, */15, */30
       if (minPart.startsWith("*/")) {
         const step = parseInt(minPart.slice(2), 10);
         if (!isNaN(step) && step > 0) {
-          const currentMin = now.getMinutes();
+          const currentMin = now.getUTCMinutes();
           const remainder = currentMin % step;
           const addMin = step - remainder;
-          next.setMinutes(currentMin + addMin);
+          next.setUTCMinutes(currentMin + addMin);
           return next.toISOString();
         }
       }
 
-      // Handle exact minute: "0", "15", etc.
+      // Handle exact minute: "0", "15", "59", etc.
       const exactMin = parseInt(minPart, 10);
       if (!isNaN(exactMin)) {
-        next.setMinutes(exactMin);
+        next.setUTCMinutes(exactMin);
 
-        // If minPart is 59 and cron matches precision 55s
         if (exactMin === 59 || minPart.includes("59")) {
-          next.setSeconds(55, 0);
+          next.setUTCSeconds(55, 0);
         } else {
-          next.setSeconds(0, 0);
+          next.setUTCSeconds(0, 0);
         }
 
-        // Check hour part (handles "23", "*/12", "0,12", etc.)
+        // Step hours: */12
         if (hourPart.startsWith("*/")) {
           const stepHour = parseInt(hourPart.slice(2), 10);
           if (!isNaN(stepHour) && stepHour > 0) {
             for (let h = 0; h < 24; h += stepHour) {
               const candidate = new Date(next.getTime());
-              candidate.setHours(h);
+              candidate.setUTCHours(h);
               if (candidate > now) {
                 return candidate.toISOString();
               }
             }
-            next.setDate(next.getDate() + 1);
-            next.setHours(0);
+            next.setUTCDate(next.getUTCDate() + 1);
+            next.setUTCHours(0);
             return next.toISOString();
           }
         }
 
+        // Multi-hour list: "04,16", "4,16", etc.
         if (hourPart.includes(",")) {
           const hours = hourPart.split(",").map(h => parseInt(h.trim(), 10)).filter(h => !isNaN(h)).sort((a, b) => a - b);
           for (const h of hours) {
             const candidate = new Date(next.getTime());
-            candidate.setHours(h);
+            candidate.setUTCHours(h);
             if (candidate > now) {
               return candidate.toISOString();
             }
           }
-          // Next day first hour
-          next.setDate(next.getDate() + 1);
-          next.setHours(hours[0]);
+          next.setUTCDate(next.getUTCDate() + 1);
+          next.setUTCHours(hours[0]);
           return next.toISOString();
         }
 
+        // Exact single hour: "16", "23", etc.
         const exactHour = parseInt(hourPart, 10);
         if (!isNaN(exactHour)) {
-          next.setHours(exactHour);
+          next.setUTCHours(exactHour);
           if (next <= now) {
-            next.setDate(next.getDate() + 1);
+            next.setUTCDate(next.getUTCDate() + 1);
           }
           return next.toISOString();
         }
 
         // Hourly at exactMin
         if (next <= now) {
-          next.setHours(next.getHours() + 1);
+          next.setUTCHours(next.getUTCHours() + 1);
         }
         return next.toISOString();
       }
@@ -113,8 +115,7 @@ function computeNextRun(cronExpr: string): string {
     console.error("computeNextRun error:", e);
   }
 
-  // Fallback: 1 hour from now
-  next.setHours(next.getHours() + 1);
+  next.setUTCHours(next.getUTCHours() + 1);
   return next.toISOString();
 }
 
