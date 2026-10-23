@@ -15,12 +15,12 @@ import {
   Monitor,
 } from 'lucide-react';
 import { MappedAgentItem } from '@/app/api/wazuh/agents/route';
+import { formatOsDisplay } from '@/lib/tenant-utils';
 
 interface TenantOption {
   id: number;
   tenantCode: string;
   campusName: string;
-  databaseName: string;
 }
 
 interface AgentMappingTableProps {
@@ -75,56 +75,65 @@ export function AgentMappingTable({
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
         <Server className="w-12 h-12 text-slate-400 mx-auto mb-3 opacity-50" />
-        <h3 className="text-base font-bold text-slate-800">Tidak ada agen Wazuh ditemukan</h3>
+        <h3 className="text-base font-bold text-slate-800">No Wazuh agents found</h3>
         <p className="text-xs text-slate-500 mt-1 mb-4">
-          Belum ada agen yang terhubung ke server Wazuh Manager :55000.
+          No agents currently connected to Wazuh Manager :55000.
         </p>
         <button
           onClick={() => onOpenEnrollmentModal()}
           className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
         >
-          <span>Buka Panduan Pendaftaran Agen</span>
+          <span>Open Agent Enrollment Guide</span>
         </button>
       </div>
     );
   }
 
   const renderOsBadge = (os: any) => {
-    const name = os?.name || os?.platform || 'Linux';
-    const lower = name.toLowerCase();
+    const osText = formatOsDisplay(os);
+    const lower = osText.toLowerCase();
 
     let color = 'bg-blue-500/10 text-blue-600 border-blue-500/20';
     if (lower.includes('windows')) {
       color = 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20';
     } else if (lower.includes('ubuntu') || lower.includes('debian')) {
       color = 'bg-orange-500/10 text-orange-600 border-orange-500/20';
-    } else if (lower.includes('centos') || lower.includes('rhel')) {
+    } else if (lower.includes('centos') || lower.includes('rhel') || lower.includes('rocky')) {
       color = 'bg-red-500/10 text-red-600 border-red-500/20';
     }
 
     return (
       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border ${color}`}>
         <Monitor className="w-3 h-3" />
-        <span>{name} {os?.version ? `(${os.version})` : ''}</span>
+        <span>{osText}</span>
       </span>
     );
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-slate-50 text-slate-600 font-bold uppercase border-b border-slate-200">
-            <tr>
-              <th className="p-4 pl-6">ID & Nama Agen</th>
-              <th className="p-4">IP & Detak Jantung (Keepalive)</th>
-              <th className="p-4">Sistem Operasi</th>
-              <th className="p-4">Grup Wazuh Terdaftar</th>
-              <th className="p-4">Pemetaan Kampus / Tenant Target</th>
-              <th className="p-4 pr-6 text-right">Parity Status</th>
+    <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs">
+      <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-bold text-slate-800">Agent Mapping Table</h3>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold">
+            {agents.length}
+          </span>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto mt-3">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="bg-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider">
+              <th className="py-3 px-4 rounded-l-xl">Agent ID & Name</th>
+              <th className="py-3 px-4">IP & Keepalive</th>
+              <th className="py-3 px-4">Sistem Operasi</th>
+              <th className="py-3 px-4">Grup Wazuh</th>
+              <th className="py-3 px-4">Pemetaan Tenant</th>
+              <th className="py-3 px-4 rounded-r-xl text-right">Parity Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 text-slate-800">
+          <tbody className="divide-y divide-slate-100">
             {agents.map((agent) => {
               const isActive = agent.status === 'active';
               const currentTenantCode =
@@ -141,10 +150,10 @@ export function AgentMappingTable({
               return (
                 <tr
                   key={agent.id}
-                  className="hover:bg-slate-50/80 transition-colors"
+                  className="hover:bg-slate-50 transition-colors"
                 >
                   {/* Agent ID & Name */}
-                  <td className="p-4 pl-6">
+                  <td className="py-3.5 px-4">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600/20 to-indigo-600/20 border border-blue-500/30 flex items-center justify-center font-mono font-bold text-blue-500 flex-shrink-0">
                         {agent.id}
@@ -161,7 +170,7 @@ export function AgentMappingTable({
                   </td>
 
                   {/* IP Address & Keepalive */}
-                  <td className="p-4">
+                  <td className="py-3.5 px-4">
                     <div className="space-y-1">
                       <div className="font-mono font-bold text-slate-800 flex items-center gap-1.5">
                         <span
@@ -188,10 +197,10 @@ export function AgentMappingTable({
                   </td>
 
                   {/* OS Info */}
-                  <td className="p-4">{renderOsBadge(agent.os)}</td>
+                  <td className="py-3.5 px-4">{renderOsBadge(agent.os)}</td>
 
                   {/* Wazuh Groups */}
-                  <td className="p-4">
+                  <td className="py-3.5 px-4">
                     <div className="flex flex-wrap gap-1">
                       {agent.groups.map((g, idx) => (
                         <span
@@ -205,15 +214,15 @@ export function AgentMappingTable({
                   </td>
 
                   {/* Campus Mapping Dropdown */}
-                  <td className="p-4">
+                  <td className="py-3.5 px-4">
                     <div className="flex items-center gap-2">
                       <div className="relative">
                         <select
                           value={currentTenantCode}
                           onChange={(e) => handleSelectChange(agent.id, e.target.value)}
-                          className="px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                          className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer transition-all"
                         >
-                          <option value="">-- Belum Dipetakan --</option>
+                          <option value="">-- Unmapped --</option>
                           {tenants.map((t) => (
                             <option key={t.id} value={t.tenantCode}>
                               {t.campusName} ({t.tenantCode})
@@ -241,7 +250,7 @@ export function AgentMappingTable({
                   </td>
 
                   {/* Parity Status */}
-                  <td className="p-4 pr-6 text-right">
+                  <td className="py-3.5 px-4 text-right">
                     {agent.isMapped ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
                         <CheckCircle2 className="w-3.5 h-3.5" />

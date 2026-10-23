@@ -1,591 +1,675 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { getMongoClient } from '@/lib/mongodb';
-import { getActiveRedisClient } from '@/lib/redis';
-import { getMysqlPool } from '@/lib/mysql';
-import { pingIris } from '@/lib/iris';
+import { NextRequest, NextResponse } from "next/server";
+import { getMongoClient } from "@/lib/mongodb";
+import { getMysqlPool } from "@/lib/mysql";
+import { getActiveRedisClient } from "@/lib/redis";
+import { runRemoteScript } from "@/lib/remote";
+import {
+  DateRange,
+  TenantMeta,
+  auditAlertsNative,
+  auditVulnsNative,
+  auditRedisNative,
+  auditIrisNative,
+} from "@/lib/native-audit";
+import {
+  SyncTarget,
+  syncAlertsNative,
+  syncVulnsNative,
+  syncRedisNative,
+  syncIrisNative,
+} from "@/lib/native-sync";
+import {
+  getHostCronStatus,
+  updateHostCron,
+  getHostCronLogs,
+} from "@/lib/cron-manager-client";
+import { requireSession, requireSuperadmin, isPlatformAdmin } from "@/lib/session";
 
-function computeNextRun(schedule: string): string {
+function computeNextRun(cronExpr: string): string {
+  // Cron expressions in crontab run against system UTC clock.
+  // Evaluate cron in strict UTC so candidate times never skew due to container local timezone.
   const now = new Date();
-  switch (schedule) {
-    case '*/1 * * * *':
-      return new Date(now.getTime() + 60 * 1000).toISOString();
-    case '*/5 * * * *':
-      return new Date(now.getTime() + 5 * 60 * 1000).toISOString();
-    case '*/15 * * * *':
-      return new Date(now.getTime() + 15 * 60 * 1000).toISOString();
-    case '0 0 * * *': {
-      const tomorrow = new Date(now);
-      tomorrow.setHours(24, 0, 0, 0);
-      return tomorrow.toISOString();
-    }
-    case '0 * * * *': // Default 1 hour
-    default:
-      return new Date(now.getTime() + 60 * 60 * 1000).toISOString();
-  }
-}
+  const next = new Date(now.getTime());
 
-function getDateRangeForPeriod(period: string): { start?: string; end?: string; label: string } {
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10); // e.g. 2026-09-15
-
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10); // e.g. 2026-09-14
-
-  // Monday of this week
-  const dayOfWeek = now.getDay() || 7; // 1 = Mon, 7 = Sun
-  const monday = new Date(now);
-  monday.setDate(monday.getDate() - (dayOfWeek - 1));
-  const mondayStr = monday.toISOString().slice(0, 10);
-
-  const sevenDaysAgo = new Date(now);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
-
-  const firstDayOfMonth = `${todayStr.slice(0, 7)}-01`;
-
-  switch (period.toUpperCase()) {
-    case 'TODAY':
-      return { start: todayStr, end: todayStr, label: 'TODAY' };
-    case 'YESTERDAY':
-      return { start: yesterdayStr, end: yesterdayStr, label: 'YESTERDAY' };
-    case 'THIS_WEEK':
-      return { start: mondayStr, end: todayStr, label: 'THIS_WEEK' };
-    case 'LAST_7_DAYS':
-      return { start: sevenDaysAgoStr, end: todayStr, label: 'LAST_7_DAYS' };
-    case 'THIS_MONTH':
-      return { start: firstDayOfMonth, end: todayStr, label: 'THIS_MONTH' };
-    case 'ALL':
-    default:
-      return { label: 'ALL' };
-  }
-}
-
-export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const period = searchParams.get('period') || 'THIS_WEEK';
-    const dateRange = getDateRangeForPeriod(period);
+    const parts = cronExpr.trim().split(/\s+/);
+    if (parts.length >= 5) {
+      const minPart = parts[0];
+      const hourPart = parts[1];
 
-    const pool = getMysqlPool();
+      next.setUTCSeconds(0, 0);
 
-    // Ensure system_settings exists
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS system_settings (
-        key_name VARCHAR(100) PRIMARY KEY,
-        value_data TEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Fetch active tenants
-    const [tenantsRows]: any = await pool.query(
-      `SELECT 
-        t.id, 
-        t.tenant_code, 
-        t.campus_name, 
-        t.database_name, 
-        t.redis_prefix,
-        wg.wazuh_group_name,
-        ic.iris_customer_id,
-        ic.iris_customer_name
-      FROM tenants t
-      LEFT JOIN tenant_wazuh_groups wg ON wg.tenant_id = t.id
-      LEFT JOIN tenant_iris_customers ic ON ic.tenant_id = t.id
-      WHERE t.is_active = 1
-      ORDER BY t.id ASC`
-    );
-
-    // Fetch tenant agents
-    const [agentRows]: any = await pool.query(
-      `SELECT tenant_id, agent_id, agent_name FROM tenant_agents ORDER BY tenant_id, agent_id ASC`
-    );
-    const agentsByTenant: Record<number, { ids: string[]; names: string[] }> = {};
-    for (const a of agentRows) {
-      if (!agentsByTenant[a.tenant_id]) {
-        agentsByTenant[a.tenant_id] = { ids: [], names: [] };
-      }
-      agentsByTenant[a.tenant_id].ids.push(a.agent_id);
-      agentsByTenant[a.tenant_id].names.push(a.agent_name);
-    }
-
-    let mongoClient: any = null;
-    let redisClient: any = null;
-    try {
-      mongoClient = await getMongoClient();
-    } catch {}
-    try {
-      redisClient = await getActiveRedisClient();
-    } catch {}
-
-    const auditResults = [];
-
-    for (const t of tenantsRows) {
-      const tenantAgents = agentsByTenant[t.id] || { ids: [], names: [] };
-      const dbName = t.database_name;
-      const groupName = t.wazuh_group_name || `Tenant${t.tenant_code.replace('TNT', '')}`;
-
-      let dateBreakdown: { date: string; indexerMaster: number; totalMongo: number; status: string }[] = [];
-      let totalMongoIncidents = 0;
-      let totalMongoVulns = 0;
-
-      if (mongoClient && dbName) {
-        try {
-          const db = mongoClient.db(dbName);
-
-          const matchStage: any = {};
-          if (dateRange.start && dateRange.end) {
-            matchStage.date = { $gte: dateRange.start, $lte: dateRange.end };
-          } else if (dateRange.start) {
-            matchStage.date = { $gte: dateRange.start };
-          }
-
-          const pipeline: any[] = [];
-          if (Object.keys(matchStage).length > 0) {
-            pipeline.push({ $match: matchStage });
-          }
-          pipeline.push(
-            { $group: { _id: '$date', count: { $sum: 1 } } },
-            { $sort: { _id: -1 } }
-          );
-
-          const agg = await db.collection('incident').aggregate(pipeline).toArray();
-
-          dateBreakdown = agg.map((row: any) => ({
-            date: row._id || 'N/A',
-            indexerMaster: row.count,
-            totalMongo: row.count,
-            status: '[OK] SINKRON 100%',
-          }));
-
-          totalMongoIncidents = dateBreakdown.reduce((sum, r) => sum + r.totalMongo, 0);
-          totalMongoVulns = await db.collection('vulnerability').countDocuments();
-        } catch (e: any) {
-          console.warn(`Mongo audit warning for ${dbName}:`, e.message);
+      // Handle step minutes: */5, */15, */30
+      if (minPart.startsWith("*/")) {
+        const step = parseInt(minPart.slice(2), 10);
+        if (!isNaN(step) && step > 0) {
+          const currentMin = now.getUTCMinutes();
+          const remainder = currentMin % step;
+          const addMin = step - remainder;
+          next.setUTCMinutes(currentMin + addMin);
+          return next.toISOString();
         }
       }
 
-      // Redis check
-      let redisSummaryPresent = false;
-      let redisKeysCount = 0;
-      if (redisClient && t.redis_prefix) {
-        try {
-          const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
-          const keys = await redisClient.keys(`${cleanPrefix}*`);
-          redisKeysCount = keys ? keys.length : 0;
-          const hasSummary = await redisClient.exists(`${cleanPrefix}summary:latest`);
-          redisSummaryPresent = Boolean(hasSummary);
-        } catch {}
-      }
+      // Handle exact minute: "0", "15", "59", etc.
+      const exactMin = parseInt(minPart, 10);
+      if (!isNaN(exactMin)) {
+        next.setUTCMinutes(exactMin);
 
-      auditResults.push({
-        id: t.id,
-        tenantCode: t.tenant_code,
-        campusName: t.campus_name,
-        databaseName: dbName,
-        redisPrefix: t.redis_prefix,
-        wazuhGroups: [groupName],
-        filterAgentIds: tenantAgents.ids,
-        filterAgentNames: tenantAgents.names,
-        irisCustomerId: t.iris_customer_id,
-        irisCustomerName: t.iris_customer_name || 'Unit SOC',
-        totalMongoIncidents,
-        totalMongoVulns,
-        redisKeysCount,
-        redisSummaryPresent,
-        dateBreakdown,
+        if (exactMin === 59 || minPart.includes("59")) {
+          next.setUTCSeconds(55, 0);
+        } else {
+          next.setUTCSeconds(0, 0);
+        }
+
+        // Step hours: */12
+        if (hourPart.startsWith("*/")) {
+          const stepHour = parseInt(hourPart.slice(2), 10);
+          if (!isNaN(stepHour) && stepHour > 0) {
+            for (let h = 0; h < 24; h += stepHour) {
+              const candidate = new Date(next.getTime());
+              candidate.setUTCHours(h);
+              if (candidate > now) {
+                return candidate.toISOString();
+              }
+            }
+            next.setUTCDate(next.getUTCDate() + 1);
+            next.setUTCHours(0);
+            return next.toISOString();
+          }
+        }
+
+        // Multi-hour list: "04,16", "4,16", etc.
+        if (hourPart.includes(",")) {
+          const hours = hourPart.split(",").map(h => parseInt(h.trim(), 10)).filter(h => !isNaN(h)).sort((a, b) => a - b);
+          for (const h of hours) {
+            const candidate = new Date(next.getTime());
+            candidate.setUTCHours(h);
+            if (candidate > now) {
+              return candidate.toISOString();
+            }
+          }
+          next.setUTCDate(next.getUTCDate() + 1);
+          next.setUTCHours(hours[0]);
+          return next.toISOString();
+        }
+
+        // Exact single hour: "16", "23", etc.
+        const exactHour = parseInt(hourPart, 10);
+        if (!isNaN(exactHour)) {
+          next.setUTCHours(exactHour);
+          if (next <= now) {
+            next.setUTCDate(next.getUTCDate() + 1);
+          }
+          return next.toISOString();
+        }
+
+        // Hourly at exactMin
+        if (next <= now) {
+          next.setUTCHours(next.getUTCHours() + 1);
+        }
+        return next.toISOString();
+      }
+    }
+  } catch (e) {
+    console.error("computeNextRun error:", e);
+  }
+
+  next.setUTCHours(next.getUTCHours() + 1);
+  return next.toISOString();
+}
+
+function parsePeriodToDates(period: string, startDate?: string, endDate?: string): { start: string; end: string; dates: string[] } {
+  const p = (period || "today").toLowerCase();
+  const now = new Date();
+  const offsetMs = 7 * 60 * 60 * 1000;
+  const nowWib = new Date(now.getTime() + offsetMs);
+  const todayStr = nowWib.toISOString().slice(0, 10);
+
+  if (p === "custom" && startDate && endDate) {
+    const s = startDate <= endDate ? startDate : endDate;
+    const e = startDate <= endDate ? endDate : startDate;
+    const cur = new Date(`${s}T00:00:00Z`);
+    const end = new Date(`${e}T00:00:00Z`);
+    const dates: string[] = [];
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return { start: s, end: e, dates };
+  }
+
+  if (p === "yesterday") {
+    const y = new Date(nowWib.getTime() - 86400000).toISOString().slice(0, 10);
+    return { start: y, end: y, dates: [y] };
+  }
+
+  if (p === "this_week") {
+    const dayOfWeek = nowWib.getUTCDay() || 7;
+    const mon = new Date(nowWib);
+    mon.setUTCDate(mon.getUTCDate() - (dayOfWeek - 1));
+    const dates: string[] = [];
+    const cur = new Date(mon);
+    while (cur <= nowWib) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return { start: dates[0] || todayStr, end: todayStr, dates };
+  }
+
+  if (p === "last_week" || p === "last_7_days") {
+    const dates: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      dates.push(new Date(nowWib.getTime() - i * 86400000).toISOString().slice(0, 10));
+    }
+    return { start: dates[0], end: dates[dates.length - 1], dates };
+  }
+
+  if (p === "this_month") {
+    const y = nowWib.getUTCFullYear();
+    const m = nowWib.getUTCMonth();
+    const firstDay = new Date(Date.UTC(y, m, 1));
+    const dates: string[] = [];
+    const cur = new Date(firstDay);
+    while (cur <= nowWib) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return { start: dates[0], end: todayStr, dates };
+  }
+
+  if (p === "last_month" || p === "last_30_days") {
+    const dates: string[] = [];
+    for (let i = 29; i >= 0; i--) {
+      dates.push(new Date(nowWib.getTime() - i * 86400000).toISOString().slice(0, 10));
+    }
+    return { start: dates[0], end: dates[dates.length - 1], dates };
+  }
+
+  return { start: todayStr, end: todayStr, dates: [todayStr] };
+}
+
+async function getTenantsData(tenantFilter: string = "all"): Promise<TenantMeta[]> {
+  const pool = getMysqlPool();
+  let query = `
+    SELECT t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix,
+           GROUP_CONCAT(DISTINCT wg.wazuh_group_name) as wazuh_groups,
+           ic.iris_customer_id, ic.iris_customer_name
+    FROM tenants t
+    LEFT JOIN tenant_wazuh_groups wg ON t.id = wg.tenant_id
+    LEFT JOIN tenant_iris_customers ic ON t.id = ic.tenant_id
+    WHERE t.is_active = 1
+  `;
+  const params: any[] = [];
+  if (tenantFilter && tenantFilter !== "all") {
+    query += " AND (t.tenant_code = ? OR t.database_name = ?)";
+    params.push(tenantFilter.toUpperCase(), tenantFilter.toLowerCase());
+  }
+  query += " GROUP BY t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix, ic.iris_customer_id, ic.iris_customer_name ORDER BY t.id ASC";
+
+  const [tenantsRows] = await pool.query<any[]>(query, params);
+
+  const [agentRows] = await pool.query<any[]>(
+    "SELECT tenant_id, agent_id, agent_name FROM tenant_agents ORDER BY tenant_id, agent_id ASC"
+  );
+  const agentsByTenant: Record<number, { ids: string[]; names: string[] }> = {};
+  for (const a of agentRows) {
+    if (!agentsByTenant[a.tenant_id]) {
+      agentsByTenant[a.tenant_id] = { ids: [], names: [] };
+    }
+    agentsByTenant[a.tenant_id].ids.push(String(a.agent_id));
+    agentsByTenant[a.tenant_id].names.push(String(a.agent_name));
+  }
+
+  return tenantsRows.map((r: any) => {
+    const wg = r.wazuh_groups ? r.wazuh_groups.split(",").map((s: string) => s.trim()) : [];
+    const ag = agentsByTenant[r.id] || { ids: [], names: [] };
+    return {
+      id: r.id,
+      tenantCode: r.tenant_code,
+      tenantName: r.campus_name || r.tenant_code,
+      campusName: r.campus_name || r.tenant_code,
+      databaseName: r.database_name,
+      redisPrefix: r.redis_prefix || `${r.database_name}:`,
+      wazuhGroups: wg,
+      filterAgentIds: ag.ids,
+      filterAgentNames: ag.names,
+      irisCustomerId: r.iris_customer_id ? Number(r.iris_customer_id) : null,
+      irisCustomerName: r.iris_customer_name || "-",
+      totalMongoIncidents: 0,
+      totalIndexerIncidents: 0,
+      totalMongoVulns: 0,
+      totalIndexerVulns: 0,
+      totalMongoReports: 0,
+      redisKeysCount: 0,
+      redisSummaryPresent: false,
+      dateBreakdown: [],
+    };
+  });
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const auth = await requireSession(req);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+    const isSuperadmin = currentUser.role === 'superadmin';
+
+    const { searchParams } = new URL(req.url);
+    const tab = searchParams.get("tab") || "alerts";
+    const period = searchParams.get("period") || "today";
+    let tenant = searchParams.get("tenant") || "all";
+    if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
+      tenant = currentUser.tenantCode;
+    }
+    const startDate = searchParams.get("startDate") || undefined;
+    const endDate = searchParams.get("endDate") || undefined;
+
+    const dateRange = parsePeriodToDates(period, startDate, endDate);
+    const tenantsList = await getTenantsData(tenant);
+    const allTenantsList = await getTenantsData("all");
+
+    let mongoClient = null;
+    try {
+      mongoClient = await getMongoClient();
+    } catch (e: any) {
+      console.warn("MongoDB connection warning:", e.message);
+    }
+
+    const redisClient = await getActiveRedisClient();
+
+    if (tab === "alerts") {
+      const results = await auditAlertsNative(tenantsList, dateRange, mongoClient);
+      return NextResponse.json({
+        success: true,
+        tab,
+        period,
+        allTenants: allTenantsList,
+        auditResults: results,
       });
     }
 
-    // Fetch Cron Settings (Default 1 jam: 0 * * * *)
-    const [cronRows]: any = await pool.query(
-      "SELECT value_data FROM system_settings WHERE key_name = 'cron_sync_settings'"
-    );
+    if (tab === "vulnerabilities") {
+      const results = await auditVulnsNative(tenantsList, dateRange, mongoClient);
+      return NextResponse.json({
+        success: true,
+        tab,
+        period,
+        allTenants: allTenantsList,
+        auditResults: results,
+      });
+    }
 
-    let cronConfig = {
-      enabled: true,
-      schedule: '0 * * * *', // Setiap 1 Jam (Standar VM)
-      lastRunAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-      lastStatus: 'SUCCESS',
-      nextRunAt: computeNextRun('0 * * * *'),
-    };
+    if (tab === "redis") {
+      const p = period.toLowerCase();
+      const redisPeriod = (p === "today" || p === "yesterday" || p === "last_7_days") ? p : "this_week";
+      const redisDateRange = parsePeriodToDates(redisPeriod);
+      const results = await auditRedisNative(tenantsList, redisDateRange.dates, mongoClient, redisClient);
+      return NextResponse.json({
+        success: true,
+        tab,
+        period: redisPeriod.toUpperCase(),
+        allTenants: allTenantsList,
+        auditResults: results,
+      });
+    }
 
-    if (cronRows.length > 0 && cronRows[0].value_data) {
+    if (tab === "iris") {
+      const irisAudit = await auditIrisNative(tenantsList, dateRange, mongoClient);
+      return NextResponse.json({
+        success: true,
+        tab,
+        period,
+        allTenants: allTenantsList,
+        irisAudit,
+      });
+    }
+
+    // CronJob Tab (Crontab tetap via sudo crontab -l)
+    let cronConfig: any = null;
+    let cronLogs = "";
+    if (tab === "cronjob") {
       try {
-        const parsed = JSON.parse(cronRows[0].value_data);
-        cronConfig = { ...cronConfig, ...parsed };
-      } catch {}
+        const pool = getMysqlPool();
+        const [cronRows] = await pool.query<any[]>(
+          "SELECT value_data FROM system_settings WHERE key_name = 'cron_sync_config' LIMIT 1"
+        );
+        let schedule = "0 * * * *";
+        let enabled = true;
+        let lastRunAt = "";
+        let nextRunAt = computeNextRun(schedule);
+
+        if (cronRows.length > 0 && cronRows[0].value_data) {
+          try {
+            const parsed = typeof cronRows[0].value_data === "string"
+              ? JSON.parse(cronRows[0].value_data)
+              : cronRows[0].value_data;
+            if (parsed.schedule) schedule = parsed.schedule;
+            if (parsed.enabled !== undefined) enabled = Boolean(parsed.enabled);
+            if (parsed.lastRunAt) lastRunAt = parsed.lastRunAt;
+            if (parsed.nextRunAt) nextRunAt = parsed.nextRunAt;
+          } catch {}
+        }
+
+        // Try Host Cron Manager (Agent API) first for Dockerized or Native compatibility
+        const hostCron = await getHostCronStatus();
+        let status = "Inactive";
+        if (hostCron.success) {
+          status = hostCron.active ? "Active" : "Disabled";
+          enabled = hostCron.enabled;
+          schedule = hostCron.schedule;
+          if (hostCron.lastRun) {
+            let lr = String(hostCron.lastRun).trim();
+            if (!lr.endsWith("Z") && !/[+-]\d{2}:?\d{2}$/.test(lr)) {
+              lr += "Z";
+            }
+            lastRunAt = lr;
+          }
+        } else {
+          // Fallback to direct Docker container check if Agent is not reachable
+          const crontabRes = await runRemoteScript("docker exec asoc_daemons cat /etc/cron.d/asoc-sync-cron 2>/dev/null || sudo crontab -l", 5000);
+          if (crontabRes.success && crontabRes.stdout) {
+            const lines = crontabRes.stdout.split("\n");
+            const cronLine = lines.find((l: string) => l.includes("cron_hourly_sync.sh"));
+            if (cronLine) {
+              const isActive = !cronLine.trim().startsWith("#");
+              status = isActive ? "Active" : "Disabled";
+              enabled = isActive;
+              const clean = cronLine.replace(/^#\s*/, "").trim();
+              const parts = clean.split(/\s+/);
+              if (parts.length >= 5) {
+                schedule = parts.slice(0, 5).join(" ");
+              }
+            }
+          }
+        }
+
+        // Recompute nextRun if nextRunAt is stale or not a valid ISO date
+        let validNextRun = nextRunAt;
+        if (!validNextRun || isNaN(new Date(validNextRun).getTime()) || new Date(validNextRun) <= new Date()) {
+          validNextRun = computeNextRun(schedule);
+        }
+
+        cronConfig = {
+          enabled,
+          schedule,
+          status,
+          nextRun: validNextRun,
+          lastRun: lastRunAt,
+          nextRunAt: validNextRun,
+          lastRunAt,
+        };
+      } catch (err) {
+        console.error("Failed to load cron config:", err);
+      }
+
+      cronLogs = await getHostCronLogs(60);
+      if (!cronLogs || cronLogs.startsWith("Error") || cronLogs.startsWith("Failed")) {
+        const logRes = await runRemoteScript('tail -n 60 /var/log/multi-tenant-sync-2.log 2>/dev/null || tail -n 60 /var/log/multi-tenant-sync.log 2>/dev/null || echo "No log found"', 5000);
+        if (logRes.success) {
+          cronLogs = logRes.stdout;
+        }
+      }
     }
 
     return NextResponse.json({
       success: true,
-      period: dateRange.label,
-      auditResults,
+      tab,
+      period,
+      allTenants: allTenantsList,
+      auditResults: tenantsList,
       cronConfig,
+      cronLogs,
     });
   } catch (err: any) {
-    console.error('API /api/data-sync GET Error:', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat audit data-sync' },
-      { status: 500 }
-    );
+    console.error("Data Sync GET Error:", err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
-export async function POST(request: NextRequest) {
-  const startTime = Date.now();
-
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    const { action = 'run-sync' } = body;
-    const pool = getMysqlPool();
+    const auth = await requireSession(req);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+    const isSuperadmin = currentUser.role === 'superadmin';
 
-    // ----------------------------------------------------
-    // ACTION 1: UPDATE CRONJOB CONFIGURATION (STANDAR 1 JAM VM)
-    // ----------------------------------------------------
-    if (action === 'update-cron') {
-      const { enabled = true, schedule = '0 * * * *' } = body;
-      const nextRunAt = computeNextRun(schedule);
+    const body = await req.json();
+    const { action, pipeline, checkScript, tenant = "all", period = "today", startDate, endDate, enabled, schedule } = body;
+    
+    // BOLA defense: Tenant-confined user can only sync/check their own tenant
+    let targetTenant = tenant === "all" ? "all" : tenant;
+    if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
+      if (tenant !== "all" && tenant.toUpperCase() !== currentUser.tenantCode.toUpperCase()) {
+        return NextResponse.json(
+          { success: false, error: `Forbidden: You do not have permission to sync or audit Tenant '${tenant}'.` },
+          { status: 403 }
+        );
+      }
+      targetTenant = currentUser.tenantCode;
+    }
 
-      const cronData = {
-        enabled: Boolean(enabled),
-        schedule,
-        lastRunAt: new Date().toISOString(),
-        lastStatus: 'CONFIGURED',
-        nextRunAt,
-        updatedAt: new Date().toISOString(),
+    const dateRange = parsePeriodToDates(period, startDate, endDate);
+    const targetTenants = await getTenantsData(targetTenant);
+
+    let mongoClient = null;
+    try {
+      mongoClient = await getMongoClient();
+    } catch (e: any) {
+      console.warn("MongoDB connection warning:", e.message);
+    }
+
+    // -----------------------------------------------------------
+    // NATIVE CHECK VERIFICATION
+    // -----------------------------------------------------------
+    if (action === "run-check") {
+      const redisClient = await getActiveRedisClient();
+
+      if (checkScript === "alerts" || checkScript === "check-alerts") {
+        const results = await auditAlertsNative(targetTenants, dateRange, mongoClient);
+        return NextResponse.json({
+          success: true,
+          message: `Native audit verification completed for ALERTS (${targetTenant.toUpperCase()}, ${period.toUpperCase()}).`,
+          auditResults: results,
+        });
+      }
+
+      if (checkScript === "vulnerabilities" || checkScript === "check-vulnerabilities") {
+        const results = await auditVulnsNative(targetTenants, dateRange, mongoClient);
+        return NextResponse.json({
+          success: true,
+          message: `Native audit verification completed for VULNERABILITIES (${targetTenant.toUpperCase()}, ${period.toUpperCase()}).`,
+          auditResults: results,
+        });
+      }
+
+      if (checkScript === "redis" || checkScript === "check-redis") {
+        const p = period.toLowerCase();
+        const redisPeriod = (p === "today" || p === "yesterday" || p === "last_7_days") ? p : "this_week";
+        const redisDateRange = parsePeriodToDates(redisPeriod);
+        const results = await auditRedisNative(targetTenants, redisDateRange.dates, mongoClient, redisClient);
+        return NextResponse.json({
+          success: true,
+          message: `Native audit verification completed for REDIS (${targetTenant.toUpperCase()}, ${redisPeriod.toUpperCase()}).`,
+          auditResults: results,
+        });
+      }
+
+      if (checkScript === "iris" || checkScript === "check-iris") {
+        const irisAudit = await auditIrisNative(targetTenants, dateRange, mongoClient);
+        return NextResponse.json({
+          success: true,
+          message: `Native audit verification completed for IRIS (${targetTenant.toUpperCase()}, ${period.toUpperCase()}).`,
+          irisAudit,
+        });
+      }
+
+      return NextResponse.json({ success: false, error: `Unknown verification target: ${checkScript}` }, { status: 400 });
+    }
+
+    // -----------------------------------------------------------
+    // NATIVE SYNC PIPELINES
+    // -----------------------------------------------------------
+    if (action === "run-sync") {
+      if (!mongoClient) {
+        return NextResponse.json({ success: false, error: "MongoDB is not accessible" }, { status: 500 });
+      }
+
+      const syncTargets: SyncTarget[] = targetTenants.map(t => ({
+        tenantCode: t.tenantCode,
+        campusName: t.campusName || t.tenantCode,
+        databaseName: t.databaseName,
+        redisPrefix: t.redisPrefix,
+        wazuhGroups: t.wazuhGroups,
+        filterAgentIds: t.filterAgentIds,
+        filterAgentNames: t.filterAgentNames,
+        irisCustomerId: t.irisCustomerId,
+        irisCustomerName: t.irisCustomerName,
+      }));
+
+      if (pipeline === "indexer-mongo-alerts" || pipeline === "alerts") {
+        const res = await syncAlertsNative(syncTargets, dateRange.dates, mongoClient);
+        return NextResponse.json({
+          success: true,
+          message: `Native Synchronization [ALERTS] completed: ${res.totalIngested} documents ingested for ${targetTenant.toUpperCase()}.`,
+          details: res.details,
+        });
+      }
+
+      if (pipeline === "vulnerabilities") {
+        const res = await syncVulnsNative(syncTargets, dateRange.dates, mongoClient);
+        return NextResponse.json({
+          success: true,
+          message: `Native Synchronization [VULNERABILITIES] completed: ${res.totalIngested} documents ingested for ${targetTenant.toUpperCase()}.`,
+          details: res.details,
+        });
+      }
+
+      if (pipeline === "mongo-redis" || pipeline === "redis") {
+        const p = period.toLowerCase();
+        const redisPeriod = (p === "today" || p === "yesterday" || p === "last_7_days") ? p : "this_week";
+        const redisDateRange = parsePeriodToDates(redisPeriod);
+        const res = await syncRedisNative(syncTargets, redisDateRange.dates, mongoClient);
+        return NextResponse.json({
+          success: true,
+          message: `Native Synchronization [REDIS CACHE] completed for ${targetTenant.toUpperCase()} (${redisPeriod.toUpperCase()}).`,
+          details: res.details,
+        });
+      }
+
+      if (pipeline === "iris-mongo" || pipeline === "iris") {
+        const res = await syncIrisNative(syncTargets, dateRange.start, dateRange.end, mongoClient);
+        return NextResponse.json({
+          success: true,
+          message: `Native Synchronization [IRIS REPORTS] completed: ${res.totalIngested} cases synced for ${targetTenant.toUpperCase()}.`,
+          details: res.details,
+        });
+      }
+
+      if (pipeline === "all") {
+        const resAlerts = await syncAlertsNative(syncTargets, dateRange.dates, mongoClient);
+        const resVulns = await syncVulnsNative(syncTargets, dateRange.dates, mongoClient);
+        const resIris = await syncIrisNative(syncTargets, dateRange.start, dateRange.end, mongoClient);
+        const resRedis = await syncRedisNative(syncTargets, dateRange.dates, mongoClient);
+
+        return NextResponse.json({
+          success: true,
+          message: `Native Full Sync completed for ${targetTenant.toUpperCase()} (Alerts: ${resAlerts.totalIngested}, Vulns: ${resVulns.totalIngested}, Iris: ${resIris.totalIngested}).`,
+          details: {
+            alerts: resAlerts.details,
+            vulns: resVulns.details,
+            iris: resIris.details,
+            redis: resRedis.details,
+          },
+        });
+      }
+
+      return NextResponse.json({ success: false, error: `Unknown sync pipeline: ${pipeline}` }, { status: 400 });
+    }
+
+    // -----------------------------------------------------------
+    // UPDATE CRON (Tetap gunakan crontab sistem sesuai instruksi user)
+    // -----------------------------------------------------------
+    if (action === "update-cron") {
+      if (!isSuperadmin) {
+        return NextResponse.json(
+          { success: false, error: "Access denied: Only Superadmin can modify server crontab schedule." },
+          { status: 403 }
+        );
+      }
+
+      const sched = (schedule || "0 * * * *").trim();
+
+      // Strict Cron Regex Validation to eliminate arbitrary shell/command injection
+      const CRON_PART = "(?:\\*|[0-9]+(?:-[0-9]+)?)(?:/[0-9]+)?(?:,(?:\\*|[0-9]+(?:-[0-9]+)?)(?:/[0-9]+)?)*";
+      const CRON_REGEX = new RegExp(`^(?:@(?:annually|yearly|monthly|weekly|daily|hourly|reboot)|(?:${CRON_PART}\\s+){4}${CRON_PART})$`);
+      if (!CRON_REGEX.test(sched) || /[;&|`$\n\r<>]/.test(sched)) {
+        return NextResponse.json(
+          { success: false, error: "Invalid cron expression format. Format must match standard cron schedule (e.g. '0 * * * *')." },
+          { status: 400 }
+        );
+      }
+
+      const isEnabled = Boolean(enabled);
+      const pool = getMysqlPool();
+
+      // Update via Host Cron Manager (Agent API)
+      const agentRes = await updateHostCron(sched, isEnabled);
+      if (!agentRes.success) {
+        // Fallback: update Docker container cron directly if Agent not reachable
+        const readCron = await runRemoteScript("docker exec asoc_daemons cat /etc/cron.d/asoc-sync-cron 2>/dev/null || true", 10000);
+        let lines = (readCron.stdout || "").split("\n").filter((l: string) => l.trim().length > 0);
+        const newEntry = isEnabled
+          ? `${sched} root /opt/multi-tenant/scripts/cron_hourly_sync.sh today all >> /var/log/cron_hourly_sync.log 2>&1`
+          : `# ${sched} root /opt/multi-tenant/scripts/cron_hourly_sync.sh today all >> /var/log/cron_hourly_sync.log 2>&1`;
+        let found = false;
+        lines = lines.map((l: string) => {
+          if (l.includes("cron_hourly_sync.sh")) {
+            found = true;
+            return newEntry;
+          }
+          return l;
+        });
+        if (!found) lines.push(newEntry);
+        const newContent = lines.join("\n") + "\n";
+        const writeCron = await runRemoteScript(
+          `echo -e ${JSON.stringify(newContent)} | docker exec -i asoc_daemons sh -c "cat > /etc/cron.d/asoc-sync-cron && chmod 0644 /etc/cron.d/asoc-sync-cron"`,
+          10000
+        );
+        if (!writeCron.success) {
+          return NextResponse.json({ success: false, error: agentRes.error || writeCron.stderr || "Failed to update Docker crontab" }, { status: 500 });
+        }
+      }
+
+      const now = new Date();
+      const configObj = {
+        enabled: isEnabled,
+        schedule: sched,
+        lastRunAt: now.toISOString(),
+        nextRunAt: computeNextRun(sched),
       };
 
       await pool.query(
-        `INSERT INTO system_settings (key_name, value_data) VALUES ('cron_sync_settings', ?)
-         ON DUPLICATE KEY UPDATE value_data = VALUES(value_data)`,
-        [JSON.stringify(cronData)]
+        `INSERT INTO system_settings (key_name, value_data, updated_at) 
+         VALUES (?, ?, NOW()) 
+         ON DUPLICATE KEY UPDATE value_data = VALUES(value_data), updated_at = NOW()`,
+        ["cron_sync_config", JSON.stringify(configObj)]
       );
 
       return NextResponse.json({
         success: true,
-        message: `Jadwal sinkronisasi otomatis diperbarui (${enabled ? 'Aktif' : 'Non-aktif'}, ${schedule}).`,
-        cronConfig: cronData,
+        message: `Crontab updated successfully (${isEnabled ? "Active" : "Disabled"}, ${sched}).`,
+        cronConfig: {
+          ...configObj,
+          status: isEnabled ? "Active" : "Disabled",
+          nextRun: configObj.nextRunAt,
+        },
       });
     }
 
-    // ----------------------------------------------------
-    // ACTION 2: RUN DATA CHECK SCRIPT (SESUAI SCRIPT VM)
-    // ----------------------------------------------------
-    if (action === 'run-check') {
-      const {
-        checkScript = 'check_alerts_indexer_mongo',
-        period = 'THIS_WEEK',
-      } = body;
-
-      const dateRange = getDateRangeForPeriod(period);
-      const logs: string[] = [];
-      const addLog = (msg: string) => logs.push(msg);
-
-      // Fetch tenants and agents
-      const [tenants]: any = await pool.query(
-        `SELECT t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix, 
-                wg.wazuh_group_name, ic.iris_customer_id, ic.iris_customer_name 
-         FROM tenants t
-         LEFT JOIN tenant_wazuh_groups wg ON wg.tenant_id = t.id
-         LEFT JOIN tenant_iris_customers ic ON ic.tenant_id = t.id
-         WHERE t.is_active = 1
-         ORDER BY t.id ASC`
-      );
-
-      const [agentRows]: any = await pool.query(
-        `SELECT tenant_id, agent_id, agent_name FROM tenant_agents ORDER BY tenant_id, agent_id ASC`
-      );
-      const agentsByTenant: Record<number, { ids: string[]; names: string[] }> = {};
-      for (const a of agentRows) {
-        if (!agentsByTenant[a.tenant_id]) {
-          agentsByTenant[a.tenant_id] = { ids: [], names: [] };
-        }
-        agentsByTenant[a.tenant_id].ids.push(a.agent_id);
-        agentsByTenant[a.tenant_id].names.push(a.agent_name);
-      }
-
-      const mongoClient = await getMongoClient();
-      const redisClient = await getActiveRedisClient();
-
-      const tenantOutputs = [];
-
-      // Execute Check Script: check_alerts_indexer_mongo
-      if (checkScript === 'all' || checkScript === 'check_alerts_indexer_mongo') {
-        for (const t of tenants) {
-          const tAgents = agentsByTenant[t.id] || { ids: [], names: [] };
-          const groupName = t.wazuh_group_name || `Tenant${t.tenant_code.replace('TNT', '')}`;
-          const db = mongoClient.db(t.database_name);
-
-          const matchStage: any = {};
-          if (dateRange.start && dateRange.end) {
-            matchStage.date = { $gte: dateRange.start, $lte: dateRange.end };
-          }
-
-          const pipeline: any[] = [];
-          if (Object.keys(matchStage).length > 0) {
-            pipeline.push({ $match: matchStage });
-          }
-          pipeline.push(
-            { $group: { _id: '$date', count: { $sum: 1 } } },
-            { $sort: { _id: -1 } }
-          );
-
-          const agg = await db.collection('incident').aggregate(pipeline).toArray();
-
-          const rows = agg.map((r: any) => ({
-            date: r._id,
-            indexerMaster: r.count,
-            totalMongo: r.count,
-            status: '[OK] SINKRON 100%',
-          }));
-
-          const total = rows.reduce((acc: number, r: any) => acc + r.totalMongo, 0);
-
-          // ASCII block matching script
-          addLog('================================================================================');
-          addLog(`AUDIT ALERTS SINKRONISASI (INDEXER vs MONGO): [${t.tenant_code}] ${t.campus_name.toUpperCase()} (PERIODE: ${dateRange.label})`);
-          addLog(`Database Tujuan : ${t.database_name}`);
-          addLog(`Wazuh Groups    : ['${groupName}']`);
-          addLog(`Filter Agents   : ${JSON.stringify(tAgents.ids)} / ${JSON.stringify(tAgents.names)}`);
-          addLog('================================================================================');
-          addLog('REKONSILIASI SECURITY INCIDENTS (rule.level >= 7 - EVENT BASED)');
-          addLog('TANGGAL         | INDEXER MASTER | TOTAL MONGO    | STATUS');
-          addLog('--------------------------------------------------------------------------------');
-          for (const r of rows) {
-            const dateStr = String(r.date).padEnd(15, ' ');
-            const idxStr = String(r.indexerMaster).padEnd(14, ' ');
-            const mgoStr = String(r.totalMongo).padEnd(14, ' ');
-            addLog(`${dateStr} | ${idxStr} | ${mgoStr} | ${r.status}`);
-          }
-          addLog('--------------------------------------------------------------------------------');
-          const totIdxStr = String(total).padEnd(14, ' ');
-          const totMgoStr = String(total).padEnd(14, ' ');
-          addLog(`TOTAL           | ${totIdxStr} | ${totMgoStr} | [OK] SINKRON 100%`);
-          addLog('');
-
-          tenantOutputs.push({
-            tenantCode: t.tenant_code,
-            campusName: t.campus_name,
-            databaseName: t.database_name,
-            groupName,
-            agentIds: tAgents.ids,
-            agentNames: tAgents.names,
-            rows,
-            total,
-          });
-        }
-      }
-
-      // Execute Check Script: check_vulnerability_indexer_mongo
-      if (checkScript === 'check_vulnerability_indexer_mongo') {
-        for (const t of tenants) {
-          const db = mongoClient.db(t.database_name);
-          const critCount = await db.collection('vulnerability').countDocuments({ severity: { $regex: /critical/i } });
-          const highCount = await db.collection('vulnerability').countDocuments({ severity: { $regex: /high/i } });
-          const medCount = await db.collection('vulnerability').countDocuments({ severity: { $regex: /medium/i } });
-          const totalVuln = critCount + highCount + medCount;
-
-          addLog('================================================================================');
-          addLog(`AUDIT VULNERABILITY SINKRONISASI (INDEXER vs MONGO): [${t.tenant_code}] ${t.campus_name.toUpperCase()} (PERIODE: ${dateRange.label})`);
-          addLog(`Database Tujuan : ${t.database_name}`);
-          addLog(`Filter Severity : Critical, High, Medium`);
-          addLog('================================================================================');
-          addLog('SEVERITY        | INDEXER MASTER | TOTAL MONGO    | STATUS');
-          addLog('--------------------------------------------------------------------------------');
-          addLog(`Critical        | ${String(critCount).padEnd(14, ' ')} | ${String(critCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog(`High            | ${String(highCount).padEnd(14, ' ')} | ${String(highCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog(`Medium          | ${String(medCount).padEnd(14, ' ')} | ${String(medCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog('--------------------------------------------------------------------------------');
-          addLog(`TOTAL           | ${String(totalVuln).padEnd(14, ' ')} | ${String(totalVuln).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog('');
-        }
-      }
-
-      // Execute Check Script: check_mongo_redis_multitenant
-      if (checkScript === 'check_mongo_redis_multitenant') {
-        for (const t of tenants) {
-          let incCount = 0;
-          let keysCount = 0;
-          let hasSummary = false;
-          try {
-            incCount = await mongoClient.db(t.database_name).collection('incident').countDocuments();
-          } catch {}
-          if (redisClient && t.redis_prefix) {
-            try {
-              const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
-              const keys = await redisClient.keys(`${cleanPrefix}*`);
-              keysCount = keys ? keys.length : 0;
-              hasSummary = Boolean(await redisClient.exists(`${cleanPrefix}summary:latest`));
-            } catch {}
-          }
-
-          addLog('================================================================================');
-          addLog(`AUDIT CACHE L1 MULTI-TENANT (MONGO vs REDIS): [${t.tenant_code}] ${t.campus_name.toUpperCase()}`);
-          addLog(`Database Source : ${t.database_name}`);
-          addLog(`Redis Namespace : ${t.redis_prefix}`);
-          addLog('================================================================================');
-          addLog('KOMPONEN        | NILAI MONGO    | NILAI REDIS    | STATUS');
-          addLog('--------------------------------------------------------------------------------');
-          addLog(`Incident Count  | ${String(incCount).padEnd(14, ' ')} | ${String(incCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog(`Snapshot Key    | Valid          | ${hasSummary ? 'Warm (ADA)     ' : 'Expired        '} | [OK] SINKRON 100%`);
-          addLog(`Total Key Cache | -              | ${String(keysCount).padEnd(14, ' ')} | [OK] SINKRON 100%`);
-          addLog('--------------------------------------------------------------------------------');
-          addLog('');
-        }
-      }
-
-      // Execute Check Script: check_iris_reports
-      if (checkScript === 'check_iris_reports') {
-        const irisHealth = await pingIris().catch(() => ({ ok: false, latencyMs: 0 }));
-        addLog('================================================================================');
-        addLog(`AUDIT INTEGRASI DFIR-IRIS vs TENANT KAMPUS`);
-        addLog(`Endpoint IRIS   : https://10.20.100.133:8443 (Status: ${irisHealth.ok ? 'ONLINE' : 'OFFLINE'})`);
-        addLog('================================================================================');
-        addLog('TENANT          | CUSTOMER ID    | NAMA CUSTOMER  | STATUS');
-        addLog('--------------------------------------------------------------------------------');
-        for (const t of tenants) {
-          const tCode = `[${t.tenant_code}] ${t.campus_name}`.padEnd(15, ' ');
-          const cId = t.iris_customer_id ? `#${t.iris_customer_id}`.padEnd(14, ' ') : '-             ';
-          const cName = (t.iris_customer_name || '-').padEnd(14, ' ');
-          addLog(`${tCode} | ${cId} | ${cName} | [OK] TERIKAT 100%`);
-        }
-        addLog('--------------------------------------------------------------------------------');
-        addLog('');
-      }
-
-      const durationMs = Date.now() - startTime;
-
-      return NextResponse.json({
-        success: true,
-        action: 'run-check',
-        checkScript,
-        period: dateRange.label,
-        durationMs,
-        logs,
-        tenantOutputs,
-      });
-    }
-
-    // ----------------------------------------------------
-    // ACTION 3: RUN PIPELINE SYNCHRONIZATION
-    // Options: 'indexer-mongo' | 'mongo-redis' | 'iris-mongo' | 'all'
-    // ----------------------------------------------------
-    const {
-      pipeline = 'indexer-mongo',
-      tenant = 'all',
-      period = 'THIS_WEEK',
-    } = body;
-
-    const dateRange = getDateRangeForPeriod(period);
-    const logs: string[] = [];
-    const addLog = (msg: string) => logs.push(msg);
-
-    addLog('================================================================================');
-    addLog(`EKSEKUSI PIPELINE SINKRONISASI: [${pipeline.toUpperCase()}]`);
-    addLog(`Target Kampus : ${tenant.toUpperCase()}`);
-    addLog(`Periode Data  : ${dateRange.label}`);
-    addLog('================================================================================');
-
-    let tenantQuery = `
-      SELECT t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix,
-             wg.wazuh_group_name, ic.iris_customer_id, ic.iris_customer_name
-      FROM tenants t
-      LEFT JOIN tenant_wazuh_groups wg ON wg.tenant_id = t.id
-      LEFT JOIN tenant_iris_customers ic ON ic.tenant_id = t.id
-      WHERE t.is_active = 1
-    `;
-    const queryParams: any[] = [];
-    if (tenant !== 'all') {
-      tenantQuery += ' AND t.tenant_code = ?';
-      queryParams.push(tenant.toUpperCase());
-    }
-
-    const [tenantsRows]: any = await pool.query(tenantQuery, queryParams);
-    const targetTenants = Array.isArray(tenantsRows) ? tenantsRows : [];
-
-    if (targetTenants.length === 0) {
-      return NextResponse.json({ success: false, error: `Tenant ${tenant} tidak ditemukan.` }, { status: 404 });
-    }
-
-    const mongoClient = await getMongoClient();
-    const redisClient = await getActiveRedisClient();
-
-    for (const t of targetTenants) {
-      addLog(`==> Memproses [${t.tenant_code}] - ${t.campus_name} (Database: ${t.database_name})`);
-
-      const db = mongoClient.db(t.database_name);
-
-      // PIPELINE 1: indexer-mongo
-      if (pipeline === 'all' || pipeline === 'indexer-mongo') {
-        try {
-          const incCount = await db.collection('incident').countDocuments();
-          const vulnCount = await db.collection('vulnerability').countDocuments();
-          addLog(`  ✓ [indexer-mongo] Rekonsiliasi ${incCount} incident & ${vulnCount} vulnerability dokumen selesai.`);
-        } catch (e: any) {
-          addLog(`  ✕ [indexer-mongo] Error: ${e.message}`);
-        }
-      }
-
-      // PIPELINE 2: mongo-redis
-      if (pipeline === 'all' || pipeline === 'mongo-redis') {
-        if (redisClient && t.redis_prefix) {
-          try {
-            const incCount = await db.collection('incident').countDocuments();
-            const vulnCount = await db.collection('vulnerability').countDocuments();
-            const summaryKey = `${t.redis_prefix}:summary:latest`;
-
-            const snapshot = {
-              tenantCode: t.tenant_code,
-              campusName: t.campus_name,
-              wazuhGroup: t.wazuh_group_name || 'default',
-              irisCustomerId: t.iris_customer_id || null,
-              incidentCount: incCount,
-              vulnCount: vulnCount,
-              lastSyncAt: new Date().toISOString(),
-            };
-
-            await redisClient.set(summaryKey, JSON.stringify(snapshot), 'EX', 86400);
-            addLog(`  ✓ [mongo-redis] Snapshot L1 "${summaryKey}" diperbarui (TTL 24 Jam).`);
-          } catch (e: any) {
-            addLog(`  ✕ [mongo-redis] Error: ${e.message}`);
-          }
-        }
-      }
-
-      // PIPELINE 3: iris-mongo
-      if (pipeline === 'all' || pipeline === 'iris-mongo') {
-        try {
-          if (t.iris_customer_id) {
-            addLog(`  ✓ [iris-mongo] Binding IRIS Customer #${t.iris_customer_id} (${t.iris_customer_name || 'SOC'}) tersinkron.`);
-          } else {
-            addLog(`  ! [iris-mongo] Tenant belum memiliki Customer ID IRIS.`);
-          }
-        } catch (e: any) {
-          addLog(`  ✕ [iris-mongo] Error: ${e.message}`);
-        }
-      }
-    }
-
-    const durationMs = Date.now() - startTime;
-    addLog('--------------------------------------------------------------------------------');
-    addLog(`SINKRONISASI SELESAI [OK] SINKRON 100% (${durationMs}ms)`);
-    addLog('================================================================================');
-
-    return NextResponse.json({
-      success: true,
-      action: 'run-sync',
-      pipeline,
-      period: dateRange.label,
-      durationMs,
-      logs,
-    });
+    return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
   } catch (err: any) {
-    console.error('API /api/data-sync POST Error:', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Gagal menjalankan sinkronisasi' },
-      { status: 500 }
-    );
+    console.error("Data Sync POST Error:", err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

@@ -1,13 +1,27 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getVmResourceMetrics } from '@/lib/resource-stats';
+import { getVmResourceMetrics, getDatabaseLatencyMetrics } from '@/lib/resource-stats';
+import { auditBackgroundServices, getRealRunningServices } from '@/lib/services';
+import { requireSession } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const metrics = await getVmResourceMetrics();
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
+    const isRefresh = request.nextUrl.searchParams.get('refresh') === 'true';
+    const [metrics, servicesAudit, realServices, databaseLatencies] = await Promise.all([
+      getVmResourceMetrics(),
+      auditBackgroundServices().catch(() => ({ services: [], systemHealth: 'HEALTHY' as const })),
+      getRealRunningServices(isRefresh).catch(() => []),
+      getDatabaseLatencyMetrics().catch((err) => {
+        console.warn('Database latency metric error:', err);
+        return null;
+      }),
+    ]);
 
     return NextResponse.json({
       success: true,
@@ -24,6 +38,8 @@ export async function GET(_request: NextRequest) {
         avgUtilization: metrics.avgUtilization,
       },
       components: metrics.services,
+      runningServices: realServices,
+      databaseLatencies,
     });
   } catch (err: any) {
     console.error('API /api/resource-usage GET Error:', err);

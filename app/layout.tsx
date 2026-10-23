@@ -2,8 +2,11 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'ASOC Superadmin Portal | Multi-Tenant Management',
+  title: 'ASOC Admin Portal',
   description: 'Academic Security Operations Center Central Administration & Diagnostic Portal',
+  icons: {
+    icon: '/infoguard.png',
+  },
 };
 
 export default function RootLayout({
@@ -12,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="id">
+    <html lang="en">
       <body className="antialiased bg-slate-50 text-slate-900 min-h-screen">
         {children}
       </body>

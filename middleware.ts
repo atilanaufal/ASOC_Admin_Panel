@@ -1,78 +1,152 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import {
+  SESSION_COOKIE_NAME,
+  CLIENT_USER_COOKIE_NAME,
+  verifySessionToken,
+  signSessionPayload,
+  getCookieOptions,
+  getClientCookieOptions,
+} from '@/lib/session-core';
 
-export function middleware(request: NextRequest) {
+function attachSecurityHeaders(res: NextResponse): NextResponse {
+  res.headers.set('X-DNS-Prefetch-Control', 'on');
+  res.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  res.headers.set('X-XSS-Protection', '1; mode=block');
+  res.headers.set('X-Frame-Options', 'SAMEORIGIN');
+  res.headers.set('X-Content-Type-Options', 'nosniff');
+  res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), browsing-topics=()');
+  res.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  res.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+  res.headers.set(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests;"
+  );
+  return res;
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Read session cookie
-  const authSessionCookie = request.cookies.get('auth_session')?.value;
-  const betterAuthToken =
-    request.cookies.get('better-auth.session_token')?.value ||
-    request.cookies.get('__Secure-better-auth.session_token')?.value;
+  // Retrieve origin from reverse proxy headers
+  const defaultHost = (process.env.HOSTNAME ? `${process.env.HOSTNAME}:${process.env.PORT || '3001'}` : null) || 'localhost:3001';
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || defaultHost;
+  const proto = request.headers.get('x-forwarded-proto') || 'https';
+  const baseUrl = `${proto}://${host}`;
 
-  let isSuperadmin = false;
-  let hasValidSession = false;
+  // Dedicated Admin Panel cryptographically signed cookie
+  const adminSessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
 
-  if (authSessionCookie) {
-    try {
-      const decoded = decodeURIComponent(authSessionCookie);
-      const user = JSON.parse(decoded);
-      if (user && (user.role === 'superadmin' || user.role === 'admin')) {
-        isSuperadmin = true;
-        hasValidSession = true;
-      }
-    } catch {
-      hasValidSession = false;
-    }
-  } else if (betterAuthToken) {
-    // If better auth token exists
-    hasValidSession = true;
-    isSuperadmin = true; // By default Better-Auth on this portal issues superadmin sessions
-  }
+  // Verify cryptographic signature (HMAC-SHA256)
+  const sessionUser = await verifySessionToken(adminSessionCookie);
+  const hasValidSession = Boolean(sessionUser);
+  const isAdmin = Boolean(sessionUser && (sessionUser.role === 'superadmin' || sessionUser.role === 'admin'));
 
-  // 1. If user is at `/login`
+  // 1. If accessing login route
   if (pathname === '/login') {
-    if (hasValidSession && isSuperadmin) {
-      return NextResponse.redirect(new URL('/', request.url));
+    const errorParam = request.nextUrl.searchParams.get('error');
+    if (errorParam) {
+      const res = NextResponse.next();
+      res.cookies.delete(SESSION_COOKIE_NAME);
+      res.cookies.delete(CLIENT_USER_COOKIE_NAME);
+      res.cookies.delete('asoc_admin_token');
+      res.cookies.delete('auth_session');
+      return attachSecurityHeaders(res);
     }
-    return NextResponse.next();
+
+    if (hasValidSession && isAdmin) {
+      return attachSecurityHeaders(NextResponse.redirect(new URL('/database-status', baseUrl)));
+    }
+
+    const res = NextResponse.next();
+    if (adminSessionCookie && !hasValidSession) {
+      res.cookies.delete(SESSION_COOKIE_NAME);
+      res.cookies.delete(CLIENT_USER_COOKIE_NAME);
+    }
+    return attachSecurityHeaders(res);
   }
 
-  // 2. Protect Admin UI Routes
+  // 2. Protect admin routes & API
   const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/api/auth');
   const isPublicAsset =
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon.ico') ||
-    pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)$/);
+    pathname.match(/\.(png|jpg|jpeg|gif|webp)$/);
 
   if (!isAuthRoute && !isPublicAsset) {
-    // API route protection
+    // API Route Protection
     if (pathname.startsWith('/api/')) {
-      if (!hasValidSession || !isSuperadmin) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Unauthorized. Akses ditolak. Hanya Superadmin yang diizinkan.',
-          },
-          { status: 401 }
+      if (!hasValidSession || !isAdmin) {
+        return attachSecurityHeaders(
+          NextResponse.json(
+            {
+              success: false,
+              error: 'Unauthorized. Invalid, tampered, or expired session. Access denied.',
+            },
+            { status: 401 }
+          )
         );
       }
-      return NextResponse.next();
+
+      // Only slide session on explicit user actions (mutations, heartbeat, or active signal)
+      // Passive GET polling (agent status, db status, resource usage) must NOT extend inactivity session!
+      const isMutation = request.method !== 'GET';
+      const isExplicitActivity =
+        request.headers.get('x-user-active') === 'true' || pathname === '/api/auth/refresh';
+
+      const apiRes = NextResponse.next();
+      if (isMutation || isExplicitActivity) {
+        try {
+          const refreshedToken = await signSessionPayload(sessionUser!);
+          const cookieOpts = getCookieOptions(request);
+          apiRes.cookies.set(SESSION_COOKIE_NAME, refreshedToken, cookieOpts);
+        } catch {}
+      }
+      return attachSecurityHeaders(apiRes);
     }
 
-    // Admin pages protection
-    if (!hasValidSession || !isSuperadmin) {
-      const loginUrl = new URL('/login', request.url);
-      if (authSessionCookie && !isSuperadmin) {
-        loginUrl.searchParams.set('error', 'tenant_forbidden');
-      } else {
-        loginUrl.searchParams.set('from', pathname);
-      }
-      return NextResponse.redirect(loginUrl);
+    // Page Route Protection
+    if (!hasValidSession || !isAdmin) {
+      const loginUrl = new URL('/login', baseUrl);
+      const isExpired = Boolean(adminSessionCookie && !hasValidSession);
+      loginUrl.searchParams.set('error', isExpired ? 'session_expired' : 'unauthorized');
+      loginUrl.searchParams.set('from', pathname);
+
+      const res = NextResponse.redirect(loginUrl);
+      res.cookies.delete(SESSION_COOKIE_NAME);
+      res.cookies.delete(CLIENT_USER_COOKIE_NAME);
+      res.cookies.delete('asoc_admin_token');
+      res.cookies.delete('auth_session');
+      return attachSecurityHeaders(res);
     }
+
+    // Slide session on page navigation
+    const nextRes = NextResponse.next();
+    try {
+      const refreshedToken = await signSessionPayload(sessionUser!);
+      const cookieOpts = getCookieOptions(request);
+      nextRes.cookies.set(SESSION_COOKIE_NAME, refreshedToken, cookieOpts);
+
+      // Also refresh safe client cookie for UI display
+      const clientOpts = getClientCookieOptions(request);
+      nextRes.cookies.set(
+        CLIENT_USER_COOKIE_NAME,
+        encodeURIComponent(
+          JSON.stringify({
+            username: sessionUser!.username,
+            role: sessionUser!.role,
+            campusName: sessionUser!.campusName,
+            tenantCode: sessionUser!.tenantCode,
+          })
+        ),
+        clientOpts
+      );
+    } catch {}
+    return attachSecurityHeaders(nextRes);
   }
 
-  return NextResponse.next();
+  return attachSecurityHeaders(NextResponse.next());
 }
 
 export const config = {

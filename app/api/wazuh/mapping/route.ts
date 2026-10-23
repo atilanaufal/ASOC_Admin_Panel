@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { setAgentGroup } from '@/lib/wazuh';
 import { getMysqlPool } from '@/lib/mysql';
 import { getMongoClient } from '@/lib/mongodb';
+import { requireTenantScope } from '@/lib/session';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,10 +11,14 @@ export async function POST(request: NextRequest) {
 
     if (!agentId || !tenantCode) {
       return NextResponse.json(
-        { success: false, error: 'Agent ID dan Kode Tenant Kampus wajib diisi.' },
+        { success: false, error: 'Agent ID and Tenant Code are required.' },
         { status: 400 }
       );
     }
+
+    // BOLA defense: Enforce caller ownership of target tenant
+    const auth = await requireTenantScope(request, undefined, tenantCode);
+    if (auth.errorResponse) return auth.errorResponse;
 
     // 1. Fetch tenant detail from MySQL
     const pool = getMysqlPool();
@@ -24,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     if (!rows || rows.length === 0) {
       return NextResponse.json(
-        { success: false, error: `Tenant '${tenantCode}' tidak ditemukan di MySQL.` },
+        { success: false, error: `Tenant '${tenantCode}' not found in MySQL.` },
         { status: 404 }
       );
     }
@@ -105,7 +110,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Agen ${agentId} (${agentName || 'Agent'}) berhasil dipetakan ke ${tenant.campus_name} (${tenant.tenant_code}).`,
+      message: `Agen ${agentId} (${agentName || 'Agent'}) successfully mapped to ${tenant.campus_name} (${tenant.tenant_code}).`,
       wazuhGroupUpdated: wazuhRes.success,
       mongoDevicesUpdated: mongoUpdated,
       tenant: {
@@ -117,7 +122,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/wazuh/mapping POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memperbarui pemetaan agen' },
+      { success: false, error: err.message || 'Failed to update agent mapping' },
       { status: 500 }
     );
   }

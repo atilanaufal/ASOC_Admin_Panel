@@ -5,8 +5,7 @@ import {
   X,
   Edit3,
   Building2,
-  Mail,
-  Phone,
+  Database,
   AlertCircle,
   Loader2,
 } from 'lucide-react';
@@ -25,20 +24,15 @@ export function TenantEditModal({
   onSuccess,
   tenant,
 }: TenantEditModalProps) {
-  const [campusName, setCampusName] = useState('');
-  const [picName, setPicName] = useState('');
-  const [picEmail, setPicEmail] = useState('');
-  const [picPhone, setPicPhone] = useState('');
-
+  const [tenantName, setTenantName] = useState('');
+  const [databaseName, setDatabaseName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (tenant) {
-      setCampusName(tenant.campus_name || '');
-      setPicName(tenant.pic_name !== '-' ? tenant.pic_name || '' : '');
-      setPicEmail(tenant.pic_email !== '-' ? tenant.pic_email || '' : '');
-      setPicPhone(tenant.pic_phone !== '-' ? tenant.pic_phone || '' : '');
+      setTenantName(tenant.campus_name || '');
+      setDatabaseName(tenant.database_name || '');
       setError(null);
     }
   }, [tenant, isOpen]);
@@ -47,8 +41,12 @@ export function TenantEditModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!campusName.trim()) {
-      setError('Nama kampus wajib diisi.');
+    if (!tenantName.trim()) {
+      setError('Tenant name is required.');
+      return;
+    }
+    if (!databaseName.trim()) {
+      setError('Database name is required.');
       return;
     }
 
@@ -60,19 +58,17 @@ export function TenantEditModal({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          campusName: campusName.trim(),
-          picName: picName.trim() || undefined,
-          picEmail: picEmail.trim() || undefined,
-          picPhone: picPhone.trim() || undefined,
+          campusName: tenantName.trim(),
+          databaseName: databaseName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'),
         }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Gagal memperbarui data kampus');
+        throw new Error(json.error || 'Failed to update tenant profile.');
       }
 
-      onSuccess(`Data tenant ${campusName} updated successfully.`);
+      onSuccess(`Tenant ${tenantName} updated successfully.`);
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -92,16 +88,16 @@ export function TenantEditModal({
             </div>
             <div>
               <h3 className="font-extrabold text-base text-slate-900">
-                Edit Profil Kampus ({tenant.tenant_code})
+                Edit Profil Tenant ({tenant.tenant_code})
               </h3>
               <p className="text-xs text-slate-500 font-mono">
-                Database: {tenant.database_name}
+                ID: {tenant.id} • Kode: {tenant.tenant_code}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -119,58 +115,34 @@ export function TenantEditModal({
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
               <Building2 className="w-3.5 h-3.5 text-slate-400" />
-              <span>Nama Resmi Kampus</span>
+              <span>Official Tenant / Campus Name</span>
             </label>
             <input
               type="text"
               required
-              value={campusName}
-              onChange={(e) => setCampusName(e.target.value)}
+              value={tenantName}
+              onChange={(e) => setTenantName(e.target.value)}
+              placeholder="e.g. Universitas Indonesia"
               className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Nama PIC SOC Kampus
+            <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5 text-slate-400" />
+              <span>MongoDB Database Name</span>
             </label>
             <input
               type="text"
-              value={picName}
-              onChange={(e) => setPicName(e.target.value)}
-              placeholder="Admin SOC Kampus"
-              className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+              value={databaseName}
+              onChange={(e) => setDatabaseName(e.target.value)}
+              placeholder="e.g. tenant_a"
+              className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-slate-400" />
-                <span>Email PIC</span>
-              </label>
-              <input
-                type="email"
-                value={picEmail}
-                onChange={(e) => setPicEmail(e.target.value)}
-                placeholder="soc@kampus.ac.id"
-                className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-slate-400" />
-                <span>No. Telepon PIC</span>
-              </label>
-              <input
-                type="text"
-                value={picPhone}
-                onChange={(e) => setPicPhone(e.target.value)}
-                placeholder="+62-..."
-                className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Target MongoDB database storing tenant incident and vulnerability telemetry.
+            </p>
           </div>
 
           {/* Footer */}

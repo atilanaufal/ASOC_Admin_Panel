@@ -6,7 +6,6 @@ import {
   UserPlus,
   Edit3,
   Building2,
-  Mail,
   Lock,
   Shield,
   Eye,
@@ -16,6 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import type { UserItem } from '@/lib/users';
+import CustomSelect from '@/components/ui/CustomSelect';
 
 interface TenantOption {
   id: number;
@@ -29,6 +29,7 @@ interface UserModalProps {
   onSuccess: () => void;
   userToEdit?: UserItem | null;
   tenants: TenantOption[];
+  currentUserRole?: string;
 }
 
 export function UserModal({
@@ -37,13 +38,13 @@ export function UserModal({
   onSuccess,
   userToEdit,
   tenants,
+  currentUserRole,
 }: UserModalProps) {
   const isEditing = Boolean(userToEdit);
 
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('tenant');
+  const [role, setRole] = useState('user');
   const [tenantId, setTenantId] = useState<number>(1);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -53,15 +54,13 @@ export function UserModal({
   useEffect(() => {
     if (userToEdit) {
       setUsername(userToEdit.username);
-      setEmail(userToEdit.email || '');
-      setRole(userToEdit.role || 'tenant');
+      setRole(userToEdit.role || 'user');
       setTenantId(userToEdit.tenant_id || (tenants[0]?.id ?? 1));
       setPassword('');
     } else {
       setUsername('');
-      setEmail('');
       setPassword('');
-      setRole('tenant');
+      setRole('user');
       if (tenants.length > 0) {
         setTenantId(tenants[0].id);
       }
@@ -84,6 +83,17 @@ export function UserModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (currentUserRole !== 'superadmin') {
+      if (isEditing && userToEdit?.role === 'superadmin') {
+        setError('Access denied: You do not have permission to modify a Superadmin account.');
+        return;
+      }
+      if (role === 'superadmin') {
+        setError('Access denied: Only Superadmin can grant the Superadmin role.');
+        return;
+      }
+    }
     setLoading(true);
 
     try {
@@ -93,19 +103,19 @@ export function UserModal({
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            email,
+            username: username.trim(),
             role,
-            tenantId: Number(tenantId),
+            tenantId: role === 'admin' ? undefined : Number(tenantId),
           }),
         });
         const json = await res.json();
         if (!res.ok || !json.success) {
-          throw new Error(json.error || 'Gagal memperbarui pengguna');
+          throw new Error(json.error || 'Failed to update user');
         }
       } else {
         // Create user
         if (!username.trim() || !password) {
-          throw new Error('Username dan Password wajib diisi.');
+          throw new Error('Username and Password are required.');
         }
 
         const res = await fetch('/api/users', {
@@ -113,15 +123,14 @@ export function UserModal({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             username: username.trim(),
-            email: email.trim() || undefined,
             password,
             role,
-            tenantId: Number(tenantId),
+            tenantId: role === 'admin' ? undefined : Number(tenantId),
           }),
         });
         const json = await res.json();
         if (!res.ok || !json.success) {
-          throw new Error(json.error || 'Gagal membuat pengguna');
+          throw new Error(json.error || 'Failed to create user');
         }
       }
 
@@ -135,22 +144,22 @@ export function UserModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
+      <div className="w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-visible animate-in zoom-in-95 duration-200">
         {/* Modal Header */}
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between rounded-t-3xl bg-white">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-600/10 text-blue-600 flex items-center justify-center font-bold">
               {isEditing ? <Edit3 className="w-5 h-5" /> : <UserPlus className="w-5 h-5" />}
             </div>
             <div>
               <h3 className="font-extrabold text-base text-slate-900">
-                {isEditing ? 'Edit Profil Pengguna' : 'Add New User Baru'}
+                {isEditing ? 'Edit User Profile' : 'Add New User'}
               </h3>
               <p className="text-xs text-slate-500">
                 {isEditing
-                  ? `Memperbarui hak akses dan metadata untuk @${userToEdit?.username}`
-                  : 'Daftarkan akun analis baru ke MySQL auth_db & Better-Auth'}
+                  ? `Update permissions and metadata for @${userToEdit?.username}`
+                  : 'Register new analyst account to MySQL auth_db & Better-Auth'}
               </p>
             </div>
           </div>
@@ -163,7 +172,7 @@ export function UserModal({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 rounded-b-3xl bg-white">
           {error && (
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -179,31 +188,14 @@ export function UserModal({
             <input
               type="text"
               required
-              disabled={isEditing}
               value={username}
-              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-              placeholder="contoh: analyst_ui_2"
-              className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. analyst_tnta_1"
+              className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            {isEditing && (
-              <p className="text-[11px] text-slate-400 mt-1">Username tidak dapat diubah setelah terdaftar.</p>
-            )}
           </div>
 
-          {/* Email */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-slate-400" />
-              <span>Alamat Email (Opsional)</span>
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="contoh: soc@kampus.ac.id"
-              className="w-full px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+
 
           {/* Role & Tenant ID in 2 columns */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -211,37 +203,57 @@ export function UserModal({
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-slate-400" />
-                <span>Hak Akses (Role)</span>
+                <span>Role / Access Level</span>
               </label>
-              <select
+              <CustomSelect
                 value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-              >
-                <option value="tenant">Campus Analysts (Tenant)</option>
-                <option value="tenant_admin">Campus Admin (Tenant Admin)</option>
-                <option value="superadmin">Superadmin (Global Portal)</option>
-              </select>
+                onChange={(val) => setRole(String(val))}
+                options={
+                  currentUserRole === 'superadmin'
+                    ? [
+                        { value: 'superadmin', label: 'Superadmin' },
+                        { value: 'admin', label: 'Admin' },
+                        { value: 'user', label: 'User' },
+                      ]
+                    : [
+                        { value: 'admin', label: 'Admin' },
+                        { value: 'user', label: 'User' },
+                      ]
+                }
+                className="w-full"
+              />
             </div>
 
-            {/* Tenant Campus */}
+            {/* Tenant Selection */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                <span>Kampus / Tenant Terikat</span>
+                <span>Assigned Tenant</span>
               </label>
-              <select
-                value={tenantId}
-                disabled={role === 'superadmin'}
-                onChange={(e) => setTenantId(Number(e.target.value))}
-                className="w-full px-3 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
-              >
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.campus_name} ({t.tenant_code})
-                  </option>
-                ))}
-              </select>
+              {role === 'superadmin' || role === 'admin' ? (
+                <div className="w-full px-3.5 py-2.5 bg-slate-100 rounded-xl border border-slate-200 text-xs text-slate-600 font-medium flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>{role === 'superadmin' ? 'Superadmin Platform' : 'Admin Platform'} (All Tenants)</span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                    GLOBAL
+                  </span>
+                </div>
+              ) : (
+                <CustomSelect
+                  value={tenantId}
+                  onChange={(val) => setTenantId(Number(val))}
+                  options={tenants.map((t) => ({
+                    value: t.id,
+                    label: `${t.campus_name} (${t.tenant_code})`,
+                  }))}
+                  className="w-full"
+                  menuClassName="right-0 left-auto sm:min-w-[340px] max-w-[90vw]"
+                  showSearch={tenants.length > 5}
+                  searchPlaceholder="Search tenant name..."
+                />
+              )}
             </div>
           </div>
 
@@ -251,7 +263,7 @@ export function UserModal({
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Password Akun</span>
+                  <span>Account Password</span>
                   <span className="text-rose-500">*</span>
                 </label>
                 <button
@@ -269,7 +281,7 @@ export function UserModal({
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimal 6 karakter"
+                  placeholder="Minimum 6 characters"
                   className="w-full px-4 py-2.5 pr-10 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
@@ -298,7 +310,7 @@ export function UserModal({
               className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/20 transition-all cursor-pointer disabled:opacity-50"
             >
               {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>{isEditing ? 'Save Changes' : 'Buat Pengguna'}</span>
+              <span>{isEditing ? 'Save Changes' : 'Create User'}</span>
             </button>
           </div>
         </form>

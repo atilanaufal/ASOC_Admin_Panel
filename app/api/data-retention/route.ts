@@ -1,65 +1,60 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getMongoClient } from '@/lib/mongodb';
-import { getActiveRedisClient } from '@/lib/redis';
 import { getMysqlPool } from '@/lib/mysql';
-import { formatBytes } from '@/lib/tenant-utils';
+import { getActiveRedisClient } from '@/lib/redis';
+import { requireSession, isPlatformAdmin } from '@/lib/session';
+
+function formatBytes(bytes: number, decimals = 2) {
+  if (!+bytes) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KiB', 'MiB', 'GiB', 'TiB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
 
 export async function GET(_request: NextRequest) {
   try {
+    const auth = await requireSession(_request);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const pool = getMysqlPool();
     const [tenantsRows]: any = await pool.query(
       'SELECT id, tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE is_active = 1 ORDER BY id ASC'
     );
 
     let mongoClient: any = null;
-    let redisClient: any = null;
     try {
       mongoClient = await getMongoClient();
     } catch {}
-    try {
-      redisClient = await getActiveRedisClient();
-    } catch {}
 
-    // Check system_settings for stored retention policies
-    let storedPolicies: Record<string, any> = {};
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS system_settings (
-          key_name VARCHAR(100) PRIMARY KEY,
-          value_data TEXT,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        )
-      `);
-      const [settingsRows]: any = await pool.query(
-        "SELECT key_name, value_data FROM system_settings WHERE key_name LIKE 'retention_%'"
-      );
-      for (const row of settingsRows) {
-        try {
-          storedPolicies[row.key_name] = JSON.parse(row.value_data);
-        } catch {
-          storedPolicies[row.key_name] = row.value_data;
-        }
-      }
-    } catch (e) {
-      console.warn('System settings fetch warning:', e);
-    }
-
+    const redis = await getActiveRedisClient();
     const tenantRetentionList = [];
 
     for (const t of tenantsRows) {
       const dbName = t.database_name;
+      const cleanPrefix = (t.redis_prefix || `${t.database_name}:`).replace(/:\*$/, '').replace(/:$/, '');
+
       let incidentCount = 0;
       let vulnCount = 0;
       let diskBytes = 0;
-      let mongoTtlDays = 30; // Default 30 days
-      let redisTtlSeconds = 86400; // Default 24 hours
+      let mongoTtlDays = 30;
+      let redisKeysCount = 0;
+      let redisAvgTtlSeconds = 604800; // 7 days
 
-      // Check stored custom policy
-      const policyKey = `retention_tenant_${t.id}`;
-      if (storedPolicies[policyKey]) {
-        mongoTtlDays = storedPolicies[policyKey].mongoTtlDays ?? mongoTtlDays;
-        redisTtlSeconds = storedPolicies[policyKey].redisTtlSeconds ?? redisTtlSeconds;
+      if (redis) {
+        try {
+          const keys = await redis.keys(`${cleanPrefix}*`);
+          redisKeysCount = keys.length;
+          if (keys.length > 0) {
+            const sampleKeys = keys.slice(0, 15);
+            const ttls = await Promise.all(sampleKeys.map((k) => redis.ttl(k)));
+            const validTtls = ttls.filter((val) => val > 0);
+            if (validTtls.length > 0) {
+              redisAvgTtlSeconds = Math.round(validTtls.reduce((a, b) => a + b, 0) / validTtls.length);
+            }
+          }
+        } catch {}
       }
 
       if (mongoClient && dbName) {
@@ -70,21 +65,11 @@ export async function GET(_request: NextRequest) {
           const stats = await db.stats();
           diskBytes = stats.storageSize || stats.dataSize || 0;
 
-          // Check if index with expireAfterSeconds exists on incident collection
           const indexes = await db.collection('incident').indexes();
           const ttlIdx = indexes.find((idx: any) => idx.expireAfterSeconds !== undefined);
           if (ttlIdx && ttlIdx.expireAfterSeconds) {
             mongoTtlDays = Math.round(ttlIdx.expireAfterSeconds / 86400);
           }
-        } catch {}
-      }
-
-      let redisKeysCount = 0;
-      if (redisClient && t.redis_prefix) {
-        try {
-          const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
-          const keys = await redisClient.keys(`${cleanPrefix}*`);
-          redisKeysCount = keys ? keys.length : 0;
         } catch {}
       }
 
@@ -100,24 +85,52 @@ export async function GET(_request: NextRequest) {
         vulnCount,
         redisKeysCount,
         mongoTtlDays,
-        redisTtlSeconds,
+        redisTtlDays: Math.round(redisAvgTtlSeconds / 86400) || 7,
+        redisTtlSeconds: redisAvgTtlSeconds,
         policyStatus: 'ACTIVE',
       });
     }
 
+    // Dynamically calculate effective TTL policy from active tenant databases
+    let effectiveMongoTtl = 30;
+    let effectiveRedisTtl = 7;
+    if (tenantRetentionList.length > 0) {
+      const mongoFreq: Record<number, number> = {};
+      const redisFreq: Record<number, number> = {};
+      for (const t of tenantRetentionList) {
+        if (t.mongoTtlDays) {
+          mongoFreq[t.mongoTtlDays] = (mongoFreq[t.mongoTtlDays] || 0) + 1;
+        }
+        if (t.redisTtlDays) {
+          redisFreq[t.redisTtlDays] = (redisFreq[t.redisTtlDays] || 0) + 1;
+        }
+      }
+      const mongoKeys = Object.keys(mongoFreq);
+      if (mongoKeys.length > 0) {
+        effectiveMongoTtl = Number(mongoKeys.reduce((a, b) => (mongoFreq[Number(a)] >= mongoFreq[Number(b)] ? a : b)));
+      }
+      const redisKeys = Object.keys(redisFreq);
+      if (redisKeys.length > 0) {
+        effectiveRedisTtl = Number(redisKeys.reduce((a, b) => (redisFreq[Number(a)] >= redisFreq[Number(b)] ? a : b)));
+      }
+    }
+
+    const globalPolicy = {
+      mongoTtlDays: effectiveMongoTtl,
+      redisTtlDays: effectiveRedisTtl,
+      redisTtlSeconds: effectiveRedisTtl * 86400,
+      targetCollections: ['incident', 'vulnerability', 'reports', 'historical_statistics'],
+    };
+
     return NextResponse.json({
       success: true,
-      globalPolicy: storedPolicies['retention_global'] || {
-        mongoTtlDays: 30,
-        redisTtlSeconds: 86400,
-        targetCollections: ['incident', 'vulnerability', 'alerts'],
-      },
+      globalPolicy,
       tenants: tenantRetentionList,
     });
   } catch (err: any) {
     console.error('API /api/data-retention GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat konfigurasi data retention' },
+      { success: false, error: err.message || 'Failed to load data retention configuration' },
       { status: 500 }
     );
   }
@@ -125,118 +138,117 @@ export async function GET(_request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+    const isSuperadmin = currentUser.role === 'superadmin';
+
     const body = await request.json();
-    const {
+    let {
       tenantId = 'all',
+      action,
       mongoTtlDays = 30,
-      redisTtlSeconds = 86400,
-      targetCollections = ['incident', 'vulnerability'],
+      redisTtlSeconds = 604800,
     } = body;
 
-    const pool = getMysqlPool();
-    const mongoClient = await getMongoClient();
-    const redisClient = await getActiveRedisClient();
+    // BOLA Defense: Platform admins can configure all tenants; tenant-confined users only their own
+    if (!isPlatformAdmin(currentUser)) {
+      if (tenantId === 'all' || Number(tenantId) !== currentUser.tenantId) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: You can only configure data retention for your own tenant.' },
+          { status: 403 }
+        );
+      }
+      tenantId = currentUser.tenantId;
+    }
 
-    // Fetch target tenants
-    let query = 'SELECT id, tenant_code, database_name, redis_prefix FROM tenants WHERE is_active = 1';
+    const pool = getMysqlPool();
+    let query = 'SELECT id, tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE is_active = 1';
     const params: any[] = [];
     if (tenantId !== 'all') {
       query += ' AND id = ?';
       params.push(tenantId);
     }
+    const [targetTenants]: any = await pool.query(query, params);
 
-    const [tenants]: any = await pool.query(query, params);
-    const targetTenants = Array.isArray(tenants) ? tenants : [];
+    const mongoClient = await getMongoClient();
+    const redis = await getActiveRedisClient();
 
-    if (targetTenants.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Tenant tidak ditemukan.' },
-        { status: 404 }
-      );
-    }
+    const targetMongoDays = action === 'reset-default' ? 30 : Number(mongoTtlDays);
+    const targetRedisDays = action === 'reset-default' ? 7 : (body.redisDays !== undefined ? Number(body.redisDays) : Math.round(Number(redisTtlSeconds) / 86400));
+    const targetMongoSec = targetMongoDays * 86400;
+    const targetHistSec = targetMongoDays * 2 * 86400;
+    const targetRedisSec = targetRedisDays * 86400;
 
-    const ttlSeconds = Number(mongoTtlDays) * 86400;
-    const cleanRedisTtl = Number(redisTtlSeconds);
-
-    const updatedDatabases: string[] = [];
-
-    // 1. Apply MongoDB TTL Index
+    // 1. Update MongoDB TTL Indexes
     for (const t of targetTenants) {
+      if (!t.database_name) continue;
       const db = mongoClient.db(t.database_name);
 
-      for (const colName of targetCollections) {
-        try {
-          const col = db.collection(colName);
-          const indexes = await col.indexes();
-          const existingTtlIdx = indexes.find((idx: any) => idx.name === 'ttl_retention_idx');
+      const configs = [
+        { col: 'incident', field: 'first_observed', idx: 'first_observed_ttl', sec: targetMongoSec },
+        { col: 'vulnerability', field: 'detected_at', idx: 'detected_at_ttl', sec: targetMongoSec },
+        { col: 'reports', field: 'date_generated', idx: 'date_generated_ttl', sec: targetMongoSec },
+        { col: 'historical_statistics', field: 'created_at', idx: 'created_at_ttl', sec: targetHistSec },
+      ];
 
-          if (existingTtlIdx) {
-            // Modify TTL using collMod or drop and recreate
-            try {
-              await db.command({
-                collMod: colName,
-                index: {
-                  name: 'ttl_retention_idx',
-                  expireAfterSeconds: ttlSeconds,
-                },
-              });
-            } catch {
-              await col.dropIndex('ttl_retention_idx');
-              await col.createIndex({ timestamp: 1 }, { expireAfterSeconds: ttlSeconds, name: 'ttl_retention_idx' });
-            }
-          } else {
-            await col.createIndex({ timestamp: 1 }, { expireAfterSeconds: ttlSeconds, name: 'ttl_retention_idx' });
+      for (const cfg of configs) {
+        try {
+          const col = db.collection(cfg.col);
+          const indexes = await col.indexes().catch(() => []);
+          const existing = indexes.find((i: any) => i.name === cfg.idx || (i.key && i.key[cfg.field] === 1 && i.expireAfterSeconds !== undefined));
+
+          if (existing && existing.expireAfterSeconds === cfg.sec) {
+            continue;
           }
-        } catch (colErr: any) {
-          console.warn(`Warning setting TTL on ${t.database_name}.${colName}:`, colErr.message);
+
+          try {
+            await db.command({
+              collMod: cfg.col,
+              index: {
+                keyPattern: { [cfg.field]: 1 },
+                expireAfterSeconds: cfg.sec,
+              },
+            });
+          } catch {
+            if (existing) {
+              if (existing.name) await col.dropIndex(existing.name);
+            }
+            await col.createIndex({ [cfg.field]: 1 }, { expireAfterSeconds: cfg.sec, name: cfg.idx });
+          }
+        } catch (err: any) {
+          console.warn(`Failed to update TTL for ${t.database_name}.${cfg.col}:`, err.message);
         }
       }
+    }
 
-      // 2. Apply Redis default TTL to existing tenant keys
-      if (redisClient && t.redis_prefix) {
+    // 2. Update Redis TTLs
+    if (redis) {
+      for (const t of targetTenants) {
+        const cleanPrefix = (t.redis_prefix || `${t.database_name}:`).replace(/:\*$/, '').replace(/:$/, '');
         try {
-          const cleanPrefix = t.redis_prefix.endsWith(':') ? t.redis_prefix : `${t.redis_prefix}:`;
-          const keys = await redisClient.keys(`${cleanPrefix}*`);
-          if (keys && keys.length > 0) {
-            const pipeline = redisClient.pipeline();
+          const keys = await redis.keys(`${cleanPrefix}*`);
+          if (keys.length > 0) {
+            const pipeline = redis.pipeline();
             for (const k of keys) {
-              pipeline.expire(k, cleanRedisTtl);
+              pipeline.expire(k, targetRedisSec);
             }
             await pipeline.exec();
           }
-        } catch (rErr: any) {
-          console.warn(`Warning applying TTL to Redis keys for ${t.tenant_code}:`, rErr.message);
+        } catch (err: any) {
+          console.warn(`Failed to update Redis TTL for prefix ${cleanPrefix}:`, err.message);
         }
       }
-
-      updatedDatabases.push(t.database_name);
-
-      // Save policy in system_settings
-      const policyKey = tenantId === 'all' ? 'retention_global' : `retention_tenant_${t.id}`;
-      const policyValue = JSON.stringify({
-        tenantId: t.id,
-        mongoTtlDays,
-        redisTtlSeconds: cleanRedisTtl,
-        targetCollections,
-        updatedAt: new Date().toISOString(),
-      });
-
-      await pool.query(
-        `INSERT INTO system_settings (key_name, value_data) VALUES (?, ?)
-         ON DUPLICATE KEY UPDATE value_data = VALUES(value_data)`,
-        [policyKey, policyValue]
-      );
     }
 
     return NextResponse.json({
       success: true,
-      message: `Kebijakan data retention berhasil diperbarui: MongoDB TTL ${mongoTtlDays} hari (${ttlSeconds} detik) dan Redis L1 TTL ${cleanRedisTtl} detik untuk ${updatedDatabases.length} database tenant.`,
-      updatedDatabases,
+      message: `Native TTL policy applied: MongoDB ${targetMongoDays} Days, Redis ${targetRedisDays} Days (${targetRedisSec}s) for [${tenantId === 'all' ? 'ALL TENANTS' : targetTenants[0]?.tenant_code}].`,
     });
   } catch (err: any) {
     console.error('API /api/data-retention POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal menyimpan konfigurasi data retention.' },
+      { success: false, error: err.message || 'Failed to apply data retention policy.' },
       { status: 500 }
     );
   }

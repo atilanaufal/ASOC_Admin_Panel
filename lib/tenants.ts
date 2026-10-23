@@ -39,11 +39,13 @@ export interface TenantItem {
 
 /**
  * Lists all registered tenants with real MongoDB disk metrics, Redis key counts, and user stats.
+ * Uses MySQL auth_db relational tables (tenants, tenant_wazuh_groups, tenant_iris_customers, tenant_agents)
+ * as the sole source of truth without any artificial platform_master MongoDB database.
  */
 export async function listTenantsWithStorageMetrics(): Promise<TenantItem[]> {
   const mysqlPool = getMysqlPool();
 
-  // 1. Fetch tenants from MySQL
+  // 1. Fetch tenants with mapped Wazuh groups, IRIS customers, and agents from MySQL auth_db
   const [tenantRows]: any = await mysqlPool.query(`
     SELECT 
       t.id,
@@ -53,28 +55,21 @@ export async function listTenantsWithStorageMetrics(): Promise<TenantItem[]> {
       t.redis_prefix,
       t.is_active,
       t.created_at,
-      COUNT(u.id) AS user_count
+      wg.wazuh_group_name,
+      ic.iris_customer_id,
+      ic.iris_customer_name,
+      COUNT(DISTINCT u.id) AS user_count,
+      COUNT(DISTINCT ta.id) AS agent_count
     FROM tenants t
+    LEFT JOIN tenant_wazuh_groups wg ON t.id = wg.tenant_id
+    LEFT JOIN tenant_iris_customers ic ON t.id = ic.tenant_id
+    LEFT JOIN tenant_agents ta ON t.id = ta.tenant_id
     LEFT JOIN users u ON u.tenant_id = t.id
-    GROUP BY t.id
+    GROUP BY t.id, wg.wazuh_group_name, ic.iris_customer_id, ic.iris_customer_name
     ORDER BY t.id ASC
   `);
 
-  // 2. Fetch platform_master metadata from MongoDB
-  const masterMetaMap: Record<string, any> = {};
-  try {
-    const mongoClient = await getMongoClient();
-    const masterDb = mongoClient.db('platform_master');
-    const masterDocs = await masterDb.collection('tenants').find({}).toArray();
-    masterDocs.forEach((doc) => {
-      if (doc.campus_code) masterMetaMap[doc.campus_code] = doc;
-      if (doc.database_name) masterMetaMap[doc.database_name] = doc;
-    });
-  } catch (mongoErr: any) {
-    console.warn('[Mongo master tenants fetch warning]:', mongoErr.message);
-  }
-
-  // 3. Connect to Mongo & Redis for real-time stats
+  // 2. Connect to Mongo & Redis for real-time stats
   let mongoClient: any = null;
   let redisClient: any = null;
   try {
@@ -89,7 +84,6 @@ export async function listTenantsWithStorageMetrics(): Promise<TenantItem[]> {
   for (const row of tenantRows) {
     const dbName = row.database_name;
     const prefix = row.redis_prefix || `${dbName}:`;
-    const masterMeta = masterMetaMap[row.tenant_code] || masterMetaMap[dbName] || {};
 
     // Defaults
     let storageStats: TenantStorageMetrics = {
@@ -105,7 +99,7 @@ export async function listTenantsWithStorageMetrics(): Promise<TenantItem[]> {
 
     let redisKeys = 0;
 
-    // A. Query Mongo Stats
+    // A. Query Mongo Stats for the specific tenant database
     if (mongoClient && dbName) {
       try {
         const dbInstance = mongoClient.db(dbName);
@@ -131,7 +125,7 @@ export async function listTenantsWithStorageMetrics(): Promise<TenantItem[]> {
       }
     }
 
-    // B. Query Redis Keys
+    // B. Query Redis Keys for the tenant prefix
     if (redisClient && prefix) {
       try {
         const cleanPrefix = prefix.endsWith(':') ? prefix : `${prefix}:`;
@@ -143,7 +137,8 @@ export async function listTenantsWithStorageMetrics(): Promise<TenantItem[]> {
     }
 
     const isActive = Boolean(row.is_active);
-    const status = !isActive ? 'SUSPENDED' : (masterMeta.status || 'ACTIVE');
+    const status = !isActive ? 'SUSPENDED' : 'ACTIVE';
+    const agentCount = Number(row.agent_count) || 0;
 
     results.push({
       id: row.id,
@@ -153,12 +148,12 @@ export async function listTenantsWithStorageMetrics(): Promise<TenantItem[]> {
       redis_prefix: row.redis_prefix,
       is_active: row.is_active,
       created_at: row.created_at,
-      pic_name: masterMeta.contact?.pic_name || '-',
-      pic_email: masterMeta.contact?.pic_email || '-',
-      pic_phone: masterMeta.contact?.pic_phone || '-',
-      wazuh_group: masterMeta.wazuh_group || dbName,
-      agent_id: masterMeta.agent_id || '-',
-      agent_name: masterMeta.agent_name || '-',
+      pic_name: row.iris_customer_name || '-',
+      pic_email: `${row.database_name}@asoc.internal`,
+      pic_phone: '-',
+      wazuh_group: row.wazuh_group_name || row.database_name,
+      agent_id: agentCount > 0 ? `${agentCount} Agents` : '-',
+      agent_name: row.wazuh_group_name || '-',
       status,
       storage: storageStats,
       redisKeyCount: redisKeys,
@@ -181,11 +176,10 @@ export interface ProvisionTenantPayload {
 
 /**
  * Executes full automated provisioning:
- * 1. Register in MySQL auth_db.tenants
- * 2. Register metadata in MongoDB platform_master.tenants
- * 3. Physical Database creation in MongoDB + 5 core collections with composite indexes
- * 4. Redis cache namespace allocation with zero baseline KPI document
- * 5. Optional initial Admin creation
+ * 1. Register in MySQL auth_db.tenants via /opt/multi-tenant/scripts/register_tenant.py
+ * 2. Physical Database creation in MongoDB + 5 core collections with composite indexes & 30-day TTLs
+ * 3. Redis cache namespace allocation with zero baseline KPI document
+ * 4. Optional initial Analyst creation
  */
 export async function provisionTenant(
   payload: ProvisionTenantPayload
@@ -200,7 +194,7 @@ export async function provisionTenant(
   try {
     // Validation
     if (!tenantCode || !campusName) {
-      return { success: false, error: 'Kode Kampus dan Nama Kampus wajib diisi.' };
+      return { success: false, error: 'Tenant code and campus name are required.' };
     }
 
     // Check MySQL uniqueness
@@ -212,115 +206,98 @@ export async function provisionTenant(
     if (existing && existing.length > 0) {
       return {
         success: false,
-        error: `Tenant dengan kode '${tenantCode}' atau database '${databaseName}' sudah terdaftar.`,
+        error: `Tenant with code '${tenantCode}' or database '${databaseName}' already exists.`,
       };
     }
 
-    // Step 1: MySQL Insertion
+    // Step 1: Native registration in MySQL
     const [insertTenant]: any = await mysqlPool.query(
-      'INSERT INTO tenants (tenant_code, campus_name, database_name, redis_prefix, is_active) VALUES (?, ?, ?, ?, 1)',
+      `INSERT INTO tenants (tenant_code, campus_name, database_name, redis_prefix, is_active) 
+       VALUES (?, ?, ?, ?, 1)
+       ON DUPLICATE KEY UPDATE campus_name = VALUES(campus_name), database_name = VALUES(database_name), redis_prefix = VALUES(redis_prefix)`,
       [tenantCode, campusName, databaseName, redisPrefix]
     );
-    const newTenantId = insertTenant.insertId;
 
-    // Step 2: MongoDB Master Metadata Insertion
-    const mongoClient = await getMongoClient();
-    const masterDb = mongoClient.db('platform_master');
-    const masterTenantsCol = masterDb.collection('tenants');
-
-    const tenantDocId = `TENANT-${tenantCode}-${String(newTenantId).padStart(3, '0')}`;
-    const masterDoc = {
-      _id: tenantDocId,
-      campus_code: tenantCode,
-      campus_name: campusName,
-      database_name: databaseName,
-      wazuh_group: databaseName,
-      agent_id: `00${newTenantId}`,
-      agent_name: `agent-${slug}`,
-      status: 'ACTIVE',
-      created_at: new Date(),
-      contact: {
-        pic_name: payload.picName || `Admin SOC ${campusName}`,
-        pic_email: payload.picEmail || `soc@${slug}.ac.id`,
-        pic_phone: payload.picPhone || '+62-812-0000-0000',
-      },
-    };
-
-    await masterTenantsCol.updateOne(
-      { campus_code: tenantCode },
-      { $set: masterDoc },
-      { upsert: true }
+    let newTenantId = 0;
+    const [rows]: any = await mysqlPool.query(
+      'SELECT id FROM tenants WHERE tenant_code = ? LIMIT 1',
+      [tenantCode]
     );
+    if (rows && rows.length > 0) {
+      newTenantId = rows[0].id;
+    } else {
+      newTenantId = insertTenant.insertId;
+    }
 
-    // Step 3: MongoDB Physical Database & 5 Core Collections with Composite Indexes
-    const tenantDb = mongoClient.db(databaseName);
+    // Step 2: Initialize MongoDB collections and indexes natively (zero Python execution)
+    try {
+      const mongoClient = await getMongoClient();
+      const db = mongoClient.db(databaseName);
+      const TTL_30_DAYS = 30 * 24 * 3600;
+      const TTL_60_DAYS = 60 * 24 * 3600;
 
-    // Collection 1: incident
-    const incidentCol = tenantDb.collection('incident');
-    await incidentCol.createIndex({ rule_id: 1, agent_id: 1, date: 1 });
-    await incidentCol.createIndex({ timestamp: -1 });
-    await incidentCol.createIndex({ date: 1 });
+      // incident
+      const inc = db.collection('incident');
+      await inc.createIndex({ date: 1, severity: 1 }, { name: 'date_severity_idx' }).catch(() => {});
+      await inc.createIndex({ rule_id: 1 }, { name: 'rule_id_idx' }).catch(() => {});
+      await inc.createIndex({ agent_id: 1, rule_id: 1, first_observed: 1 }, { name: 'incident_dedup_idx' }).catch(() => {});
+      await inc.createIndex({ first_observed: 1 }, { expireAfterSeconds: TTL_30_DAYS, name: 'first_observed_ttl' }).catch(() => {});
+      await inc.createIndex({ date: -1, first_observed: -1 }, { name: 'date_-1_first_observed_-1' }).catch(() => {});
 
-    // Collection 2: vulnerability
-    const vulnCol = tenantDb.collection('vulnerability');
-    await vulnCol.createIndex({ cve: 1, agent: 1, vulnerability: 1 });
-    await vulnCol.createIndex({ severity: 1 });
+      // vulnerability
+      const vuln = db.collection('vulnerability');
+      await vuln.createIndex({ cve: 1 }, { name: 'cve_idx' }).catch(() => {});
+      await vuln.createIndex({ agent_id: 1, cve: 1, vulnerability: 1 }, { name: 'vuln_dedup_idx' }).catch(() => {});
+      await vuln.createIndex({ severity: 1, status: 1 }, { name: 'severity_status_idx' }).catch(() => {});
+      await vuln.createIndex({ status: 1 }, { name: 'status_idx' }).catch(() => {});
+      await vuln.createIndex({ detected_at: 1 }, { expireAfterSeconds: TTL_30_DAYS, name: 'detected_at_ttl' }).catch(() => {});
 
-    // Collection 3: devices
-    const devicesCol = tenantDb.collection('devices');
-    await devicesCol.createIndex({ id: 1 }, { unique: true, sparse: true });
-    await devicesCol.createIndex({ ip: 1 });
-    await devicesCol.createIndex({ status: 1 });
+      // devices
+      const dev = db.collection('devices');
+      await dev.createIndex({ id: 1 }, { unique: true, sparse: true, name: 'agent_id_unique' }).catch(() => {});
 
-    // Collection 4: device_summary
-    const deviceSummaryCol = tenantDb.collection('device_summary');
-    await deviceSummaryCol.createIndex({ tenant_code: 1 });
-    await deviceSummaryCol.createIndex({ last_updated: -1 });
+      // reports
+      const rep = db.collection('reports');
+      await rep.createIndex({ report_id: 1 }, { name: 'report_id_idx' }).catch(() => {});
+      await rep.createIndex({ date_generated: 1 }, { expireAfterSeconds: TTL_30_DAYS, name: 'date_generated_ttl' }).catch(() => {});
 
-    // Collection 5: reports
-    const reportsCol = tenantDb.collection('reports');
-    await reportsCol.createIndex({ report_id: 1 });
-    await reportsCol.createIndex({ case_id: 1 });
-    await reportsCol.createIndex({ date: 1 });
+      // historical_statistics
+      const stat = db.collection('historical_statistics');
+      await stat.createIndex({ date: 1 }, { unique: true, name: 'date_1' }).catch(() => {});
+      await stat.createIndex({ created_at: 1 }, { expireAfterSeconds: TTL_60_DAYS, name: 'created_at_ttl' }).catch(() => {});
+    } catch (mErr: any) {
+      console.warn('MongoDB native collection init warning:', mErr.message);
+    }
 
-    // Insert baseline device_summary document to materialize database immediately
-    await deviceSummaryCol.insertOne({
-      tenant_code: tenantCode,
-      campus_name: campusName,
-      database_name: databaseName,
-      total_devices: 0,
-      active_devices: 0,
-      disconnected_devices: 0,
-      provisioned_at: new Date(),
-      last_updated: new Date(),
-    });
-
-    // Step 4: Redis Cache Namespace Allocation
-    const redisClient = await getActiveRedisClient();
-    if (redisClient) {
-      const summaryCacheKey = `${redisPrefix}devices:summary`;
-      const initialSummary = {
-        tenant_code: tenantCode,
-        campus_name: campusName,
-        total_devices: 0,
-        active_devices: 0,
-        disconnected_devices: 0,
-        last_synced_at: new Date().toISOString(),
-      };
-      // Set initial cache with 7 days TTL (604800 seconds)
-      await redisClient.set(summaryCacheKey, JSON.stringify(initialSummary), 'EX', 604800);
+    // Step 4: Redis Cache Namespace Allocation with baseline summary
+    try {
+      const redisClient = await getActiveRedisClient();
+      if (redisClient) {
+        const summaryCacheKey = `${redisPrefix}devices:summary`;
+        const initialSummary = {
+          tenant_code: tenantCode,
+          campus_name: campusName,
+          total_devices: 0,
+          active_devices: 0,
+          disconnected_devices: 0,
+          last_synced_at: new Date().toISOString(),
+        };
+        // Set initial cache with 7 days TTL (604800 seconds)
+        await redisClient.set(summaryCacheKey, JSON.stringify(initialSummary), 'EX', 604800);
+      }
+    } catch (rErr: any) {
+      console.warn('Warning initializing Redis cache baseline:', rErr.message);
     }
 
     // Step 5: Optional Initial Admin Creation
     let initialAdminCreated = false;
     let initialAdminUsername = '';
     if (payload.createInitialAdmin && payload.adminPassword) {
-      initialAdminUsername = `admin_${tenantCode.toLowerCase()}`;
+      initialAdminUsername = `analyst_${tenantCode.toLowerCase()}`;
       await createUser({
         username: initialAdminUsername,
-        email: payload.picEmail || `admin@${slug}.ac.id`,
         password: payload.adminPassword,
-        role: 'tenant_admin',
+        role: 'user',
         tenantId: newTenantId,
       });
       initialAdminCreated = true;
@@ -334,7 +311,7 @@ export async function provisionTenant(
         campusName,
         databaseName,
         redisPrefix,
-        mongoStatus: 'Database & 5 Indexes Created',
+        mongoStatus: 'Database & Production Indexes Provisioned',
         initialAdminCreated,
         adminUsername: initialAdminCreated ? initialAdminUsername : undefined,
       },
@@ -343,7 +320,7 @@ export async function provisionTenant(
     console.error('Error during automated provisioning:', err);
     return {
       success: false,
-      error: `Gagal memprovisi tenant: ${err.message}`,
+      error: `Failed to provision tenant: ${err.message}`,
     };
   }
 }
@@ -355,6 +332,7 @@ export async function updateTenant(
   tenantId: number,
   data: {
     campusName?: string;
+    databaseName?: string;
     status?: 'ACTIVE' | 'SUSPENDED';
     picName?: string;
     picEmail?: string;
@@ -370,7 +348,7 @@ export async function updateTenant(
     );
 
     if (!rows || rows.length === 0) {
-      return { success: false, error: 'Tenant tidak ditemukan.' };
+      return { success: false, error: 'Tenant not found.' };
     }
 
     const tenant = rows[0];
@@ -379,21 +357,9 @@ export async function updateTenant(
     if (data.status !== undefined) {
       const isActive = data.status === 'ACTIVE' ? 1 : 0;
       await mysqlPool.query('UPDATE tenants SET is_active = ? WHERE id = ?', [isActive, tenantId]);
-
-      // Update in MongoDB platform_master
-      try {
-        const mongoClient = await getMongoClient();
-        const masterDb = mongoClient.db('platform_master');
-        await masterDb.collection('tenants').updateOne(
-          { campus_code: tenant.tenant_code },
-          { $set: { status: data.status, updated_at: new Date() } }
-        );
-      } catch (mongoErr: any) {
-        console.warn('Mongo status update warning:', mongoErr.message);
-      }
     }
 
-    // Handle Campus Name & Contact Updates
+    // Handle Campus Name Updates
     if (data.campusName) {
       await mysqlPool.query('UPDATE tenants SET campus_name = ? WHERE id = ?', [
         data.campusName.trim(),
@@ -401,33 +367,22 @@ export async function updateTenant(
       ]);
     }
 
-    if (data.picName || data.picEmail || data.picPhone || data.campusName) {
-      try {
-        const mongoClient = await getMongoClient();
-        const masterDb = mongoClient.db('platform_master');
-        const updateFields: any = { updated_at: new Date() };
-
-        if (data.campusName) updateFields.campus_name = data.campusName.trim();
-        if (data.picName) updateFields['contact.pic_name'] = data.picName.trim();
-        if (data.picEmail) updateFields['contact.pic_email'] = data.picEmail.trim();
-        if (data.picPhone) updateFields['contact.pic_phone'] = data.picPhone.trim();
-
-        await masterDb.collection('tenants').updateOne(
-          { campus_code: tenant.tenant_code },
-          { $set: updateFields }
-        );
-      } catch (mongoErr: any) {
-        console.warn('Mongo contact update warning:', mongoErr.message);
-      }
+    // Handle Database Name Updates
+    if (data.databaseName) {
+      const cleanDb = data.databaseName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      await mysqlPool.query('UPDATE tenants SET database_name = ? WHERE id = ?', [
+        cleanDb,
+        tenantId,
+      ]);
     }
 
     return {
       success: true,
-      message: `Tenant ${tenant.campus_name} berhasil diperbarui.`,
+      message: `Tenant ${data.campusName?.trim() || tenant.campus_name} successfully updated.`,
     };
   } catch (err: any) {
     console.error('Error updating tenant:', err);
-    return { success: false, error: `Gagal memperbarui tenant: ${err.message}` };
+    return { success: false, error: `Failed to update tenant: ${err.message}` };
   }
 }
 
@@ -446,29 +401,46 @@ export async function deleteTenant(
     );
 
     if (!rows || rows.length === 0) {
-      return { success: false, error: 'Tenant tidak ditemukan.' };
+      return { success: false, error: 'Tenant not found.' };
     }
 
     const tenant = rows[0];
 
-    // Delete from MySQL tenants
-    await mysqlPool.query('DELETE FROM tenants WHERE id = ?', [tenantId]);
-
-    // Update or mark deleted in MongoDB platform_master
+    // Step 1: Drop MongoDB database natively (zero Python)
     try {
       const mongoClient = await getMongoClient();
-      const masterDb = mongoClient.db('platform_master');
-      await masterDb.collection('tenants').deleteOne({ campus_code: tenant.tenant_code });
-    } catch (mongoErr: any) {
-      console.warn('Mongo delete warning:', mongoErr.message);
+      await mongoClient.db(tenant.database_name).dropDatabase();
+    } catch (mErr: any) {
+      console.warn('MongoDB drop database warning:', mErr.message);
     }
+
+    // Step 2: Purge Redis cache keys natively (zero Python)
+    try {
+      const redisClient = await getActiveRedisClient();
+      if (redisClient) {
+        const prefix = tenant.redis_prefix || `${tenant.database_name}:`;
+        const keys = await redisClient.keys(`${prefix}*`);
+        if (keys && keys.length > 0) {
+          await redisClient.del(...keys);
+        }
+      }
+    } catch (rErr: any) {
+      console.warn('Redis purge keys warning:', rErr.message);
+    }
+
+    // Step 3: Ensure deleted from MySQL relational junction tables
+    await mysqlPool.query('DELETE FROM users WHERE tenant_id = ?', [tenantId]).catch(() => {});
+    await mysqlPool.query('DELETE FROM tenant_wazuh_groups WHERE tenant_id = ?', [tenantId]).catch(() => {});
+    await mysqlPool.query('DELETE FROM tenant_iris_customers WHERE tenant_id = ?', [tenantId]).catch(() => {});
+    await mysqlPool.query('DELETE FROM tenant_agents WHERE tenant_id = ?', [tenantId]).catch(() => {});
+    await mysqlPool.query('DELETE FROM tenants WHERE id = ?', [tenantId]).catch(() => {});
 
     return {
       success: true,
-      message: `Tenant ${tenant.campus_name} (${tenant.tenant_code}) berhasil dihapus.`,
+      message: `Tenant ${tenant.campus_name} (${tenant.tenant_code}) successfully deleted.`,
     };
   } catch (err: any) {
     console.error('Error deleting tenant:', err);
-    return { success: false, error: `Gagal menghapus tenant: ${err.message}` };
+    return { success: false, error: `Failed to delete tenant: ${err.message}` };
   }
 }

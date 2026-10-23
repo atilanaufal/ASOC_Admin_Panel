@@ -3,9 +3,23 @@ import type { NextRequest } from 'next/server';
 import { getActiveRedisClient } from '@/lib/redis';
 import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
+import { requireSuperadmin } from '@/lib/session';
+import { checkRateLimit } from '@/lib/rate-limiter';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSuperadmin(request);
+    if (auth.errorResponse) return auth.errorResponse;
+
+    // Rate limit benchmark runs to prevent server resource exhaustion
+    const rateCheck = await checkRateLimit('benchmark:cluster', 2, 60);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { success: false, error: 'Benchmark rate limit exceeded. Please wait 60 seconds before triggering another cluster benchmark.' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const iterations = Math.min(Math.max(body.iterations || 100, 10), 500);
 
@@ -61,7 +75,7 @@ export async function POST(request: NextRequest) {
     // 2. Benchmark MongoDB (Insert & Find)
     try {
       const mongoClient = await getMongoClient();
-      const db = mongoClient.db('platform_master');
+      const db = mongoClient.db('tenant_a');
       const testCol = db.collection('benchmark_test');
 
       const mongoStart = performance.now();
@@ -88,7 +102,7 @@ export async function POST(request: NextRequest) {
       const opsSec = Math.round((iterations * 2 / (totalMongoTime / 1000)));
 
       benchmarkResults['mongodb'] = {
-        engine: 'MongoDB 7.0 (Document SSOT)',
+        engine: 'MongoDB 7.0 (Document Database)',
         status: 'PASSED',
         iterations,
         insertLatencyAvgMs: Number((insertDuration / iterations).toFixed(3)),
@@ -136,7 +150,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Benchmark API Error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Gagal menjalankan benchmark database.' },
+      { success: false, error: error.message || 'Failed to execute database benchmark.' },
       { status: 500 }
     );
   }

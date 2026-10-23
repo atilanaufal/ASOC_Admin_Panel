@@ -1,7 +1,8 @@
+import './env-loader';
 import Redis from 'ioredis';
 
 function getRedisConfig() {
-  const host = process.env.REDIS_HOST;
+  const host = process.env.REDIS_HOST || '127.0.0.1';
   const port = parseInt(process.env.REDIS_PORT || '6379', 10);
   const password = process.env.REDIS_PASSWORD || undefined;
 
@@ -67,6 +68,11 @@ export async function getActiveRedisClient(): Promise<Redis | null> {
   }
 
   try {
+    if (redisClient && (redisClient.status === 'end' || redisClient.status === 'close')) {
+      try { redisClient.disconnect(); } catch {}
+      redisClient = null;
+    }
+
     if (!redisClient) {
       redisClient = createClientInstance(host, port, password);
     }
@@ -75,10 +81,16 @@ export async function getActiveRedisClient(): Promise<Redis | null> {
       lastFailTime = 0;
       return redisClient;
     } else {
+      try { redisClient.disconnect(); } catch {}
+      redisClient = null;
       lastFailTime = now;
       return null;
     }
   } catch {
+    if (redisClient) {
+      try { redisClient.disconnect(); } catch {}
+      redisClient = null;
+    }
     lastFailTime = now;
     return null;
   }

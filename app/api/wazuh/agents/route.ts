@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchWazuhAgents, WazuhAgent } from '@/lib/wazuh';
+import { getMongoClient } from '@/lib/mongodb';
 import { getMysqlPool } from '@/lib/mysql';
+import { syncAgentsNative, SyncTarget } from '@/lib/native-sync';
+import { requireSession, isPlatformAdmin } from '@/lib/session';
 
 export interface MappedAgentItem {
   id: string;
@@ -18,194 +20,232 @@ export interface MappedAgentItem {
   assignedTenant: {
     tenantCode: string;
     campusName: string;
-    databaseName: string;
   } | null;
   isMapped: boolean;
 }
 
 export async function GET(_request: NextRequest) {
+  const auth = await requireSession(_request);
+  if (auth.errorResponse) return auth.errorResponse;
+  const { user: currentUser } = auth;
+  const isSuperadmin = currentUser.role === 'superadmin';
+
+  const shouldSync = _request.nextUrl.searchParams.get('sync') === 'true';
+  let syncResult: any = null;
+
   try {
-    const [rawAgents, tenantsRows, wazuhGroupRows, tenantAgentRows] = await Promise.all([
-      fetchWazuhAgents(500, 0),
-      (async () => {
-        try {
-          const pool = getMysqlPool();
-          const [rows]: any = await pool.query(
-            'SELECT id, tenant_code, campus_name, database_name, redis_prefix FROM tenants WHERE is_active = 1'
-          );
-          return Array.isArray(rows) ? rows : [];
-        } catch (dbErr) {
-          console.error('Error querying tenants for agent mapping:', dbErr);
-          return [];
-        }
-      })(),
-      (async () => {
-        try {
-          const pool = getMysqlPool();
-          const [rows]: any = await pool.query(
-            'SELECT tenant_id, wazuh_group_name FROM tenant_wazuh_groups'
-          );
-          return Array.isArray(rows) ? rows : [];
-        } catch (dbErr) {
-          console.error('Error querying tenant_wazuh_groups:', dbErr);
-          return [];
-        }
-      })(),
-      (async () => {
-        try {
-          const pool = getMysqlPool();
-          const [rows]: any = await pool.query(
-            'SELECT tenant_id, agent_id, agent_name FROM tenant_agents'
-          );
-          return Array.isArray(rows) ? rows : [];
-        } catch (dbErr) {
-          console.error('Error querying tenant_agents:', dbErr);
-          return [];
-        }
-      })(),
-    ]);
+    const pool = getMysqlPool();
+    const [tenantsRows]: any = await pool.query(`
+      SELECT t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix,
+             GROUP_CONCAT(DISTINCT wg.wazuh_group_name) as wazuh_groups
+      FROM tenants t
+      LEFT JOIN tenant_wazuh_groups wg ON t.id = wg.tenant_id
+      WHERE t.is_active = 1
+      GROUP BY t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix
+      ORDER BY t.id ASC
+    `);
+    const tenants = Array.isArray(tenantsRows) ? tenantsRows : [];
+    const mongoClient = await getMongoClient();
 
-    // Fast lookup maps
-    const tenantById: Record<number, any> = {};
-    const tenantMap: Record<string, any> = {};
-    for (const t of tenantsRows) {
-      tenantById[t.id] = t;
-      if (t.database_name) tenantMap[t.database_name.toLowerCase()] = t;
-      if (t.tenant_code) tenantMap[t.tenant_code.toLowerCase()] = t;
-      if (t.campus_name) {
-        const cLower = t.campus_name.toLowerCase().trim();
-        tenantMap[cLower] = t;
-        tenantMap[cLower.replace(/\s+/g, '')] = t;
-        tenantMap[cLower.replace(/\s+/g, '_')] = t;
+    // If sync requested via query param (?sync=true)
+    if (shouldSync) {
+      const syncStartTime = Date.now();
+      let tenantParam = _request.nextUrl.searchParams.get('tenant') || 'all';
+      if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
+        tenantParam = currentUser.tenantCode;
       }
+      const targetList = tenantParam === 'all' 
+        ? tenants 
+        : tenants.filter((t: any) => t.tenant_code.toLowerCase() === tenantParam.toLowerCase());
+
+      const syncTargets: SyncTarget[] = targetList.map((t: any) => ({
+        tenantCode: t.tenant_code,
+        campusName: t.campus_name,
+        databaseName: t.database_name,
+        redisPrefix: t.redis_prefix || `${t.database_name}:`,
+        wazuhGroups: t.wazuh_groups ? t.wazuh_groups.split(',').map((g: string) => g.trim()) : [],
+        filterAgentIds: [],
+        filterAgentNames: [],
+      }));
+
+      const res = await syncAgentsNative(syncTargets, mongoClient);
+      const durationMs = Date.now() - syncStartTime;
+      syncResult = {
+        success: res.success,
+        durationMs,
+        native: true,
+        message: 'Native synchronization of Wazuh agents completed successfully.',
+        totalAgents: res.totalAgents,
+        details: res.details,
+      };
     }
 
-    // Map Wazuh group name -> tenant
-    const groupToTenant: Record<string, any> = {};
-    for (const wg of wazuhGroupRows) {
-      const t = tenantById[wg.tenant_id];
-      if (t && wg.wazuh_group_name) {
-        const gName = wg.wazuh_group_name.toLowerCase().trim();
-        groupToTenant[gName] = t;
-        groupToTenant[gName.replace(/\s+/g, '')] = t;
-        groupToTenant[gName.replace(/\s+/g, '_')] = t;
-      }
-    }
-
-    // Map explicit agent_id -> tenant
-    const agentIdToTenant: Record<string, any> = {};
-    for (const ta of tenantAgentRows) {
-      const t = tenantById[ta.tenant_id];
-      if (t && ta.agent_id) {
-        agentIdToTenant[String(ta.agent_id)] = t;
-        agentIdToTenant[String(ta.agent_id).padStart(3, '0')] = t;
-        const numId = Number(ta.agent_id);
-        if (!isNaN(numId)) agentIdToTenant[String(numId)] = t;
-      }
-    }
-
-    // Filter out Wazuh Manager (ID 000 or 0)
-    const realEndpointAgents = rawAgents.filter(
-      (agent: WazuhAgent) => agent.id !== '000' && agent.id !== '0' && agent.name.toLowerCase() !== 'wazuh-manager'
-    );
-
+    const mappedAgents: MappedAgentItem[] = [];
     let activeCount = 0;
     let disconnectedCount = 0;
-    let unassignedCount = 0;
 
-    const mappedAgents: MappedAgentItem[] = realEndpointAgents.map((agent: WazuhAgent) => {
-      const groups = Array.isArray(agent.group) ? agent.group : agent.group ? [agent.group] : ['default'];
-      
-      // 1. Check direct agent_id mapping from tenant_agents table
-      let matchedTenant: any =
-        agentIdToTenant[agent.id] ||
-        agentIdToTenant[String(agent.id).padStart(3, '0')] ||
-        agentIdToTenant[String(Number(agent.id))];
+    for (const t of tenants) {
+      if (!t.database_name) continue;
+      try {
+        const db = mongoClient.db(t.database_name);
+        const docs = await db.collection('devices').find({}).toArray();
 
-      // 2. Check group-based mapping from tenant_wazuh_groups table
-      if (!matchedTenant) {
-        for (const g of groups) {
-          const cleanG = g.toLowerCase().trim();
-          if (groupToTenant[cleanG] || groupToTenant[cleanG.replace(/\s+/g, '')]) {
-            matchedTenant = groupToTenant[cleanG] || groupToTenant[cleanG.replace(/\s+/g, '')];
-            break;
-          }
-        }
-      }
+        for (const doc of docs) {
+          const rawStatus = String(doc.status || '').toLowerCase();
+          const isActive = rawStatus === 'online' || rawStatus === 'active';
+          const status = isActive ? 'active' : 'disconnected';
 
-      // 3. Check fallback tenant code / database name matching
-      if (!matchedTenant) {
-        for (const g of groups) {
-          const cleanG = g.toLowerCase().trim();
-          if (tenantMap[cleanG] || tenantMap[cleanG.replace(/\s+/g, '')]) {
-            matchedTenant = tenantMap[cleanG] || tenantMap[cleanG.replace(/\s+/g, '')];
-            break;
-          }
-        }
-      }
+          if (isActive) activeCount++;
+          else disconnectedCount++;
 
-      // 4. Name heuristic match
-      if (!matchedTenant) {
-        const lowerName = agent.name.toLowerCase();
-        for (const [key, t] of Object.entries(tenantMap)) {
-          if (key.length >= 3 && lowerName.includes(key)) {
-            matchedTenant = t;
-            break;
-          }
-        }
-      }
+          let osObj: { name?: string; platform?: string; version?: string } = {
+            name: 'Linux',
+            platform: 'linux',
+            version: '',
+          };
 
-      const isMapped = Boolean(matchedTenant);
+          if (typeof doc.os === 'string') {
+            const raw = doc.os.trim();
+            const uMatch = raw.match(/^Ubuntu\s*(.*)$/i);
+            const rMatch = raw.match(/^Rocky(?:\s+Linux)?\s*(.*)$/i);
+            const dMatch = raw.match(/^Debian\s*(.*)$/i);
+            const wMatch = raw.match(/^Windows(?:\s+Server)?\s*(.*)$/i);
 
-      const status = agent.status || 'disconnected';
-      if (status === 'active') activeCount++;
-      else disconnectedCount++;
-
-      if (!isMapped) unassignedCount++;
-
-      return {
-        id: agent.id,
-        name: agent.name || `Agent ${agent.id}`,
-        ip: agent.ip || '-',
-        status,
-        version: agent.version || 'Wazuh v4.14.6',
-        os: agent.os || { name: 'Unknown', platform: 'linux', version: '-' },
-        groups,
-        lastKeepAlive: agent.lastKeepAlive || '-',
-        assignedTenant: matchedTenant
-          ? {
-              tenantCode: matchedTenant.tenant_code,
-              campusName: matchedTenant.campus_name,
-              databaseName: matchedTenant.database_name,
+            if (uMatch) {
+              osObj = { name: 'Ubuntu', platform: 'ubuntu', version: uMatch[1] || '' };
+            } else if (rMatch) {
+              osObj = { name: 'Rocky Linux', platform: 'centos', version: rMatch[1] || '' };
+            } else if (dMatch) {
+              osObj = { name: 'Debian', platform: 'debian', version: dMatch[1] || '' };
+            } else if (wMatch) {
+              osObj = { name: 'Windows', platform: 'windows', version: wMatch[1] || '' };
+            } else {
+              osObj = { name: raw || 'Linux', platform: 'linux', version: '' };
             }
-          : null,
-        isMapped,
-      };
-    });
+          } else if (typeof doc.os === 'object' && doc.os !== null) {
+            let n = String(doc.os.name || 'Linux').trim();
+            let v = String(doc.os.version || '').trim();
+            if (v && n.toLowerCase().includes(v.toLowerCase())) {
+              n = n.split(v).join('').trim() || n;
+            } else if (n.toLowerCase() === v.toLowerCase()) {
+              v = '';
+            }
+            osObj = {
+              name: n || 'Linux',
+              platform: doc.os.platform || 'linux',
+              version: v,
+            };
+          }
 
+          const groups = Array.isArray(doc.group)
+            ? doc.group
+            : doc.group
+            ? [doc.group]
+            : [t.tenant_code];
+
+          mappedAgents.push({
+            id: String(doc.id || doc.agent_id || '001'),
+            name: doc.name || doc.agent || doc.hostname || `Agent-${doc.id}`,
+            ip: doc.ip || doc.agent_ip || '-',
+            status,
+            version: doc.version || doc.agent_version || 'Wazuh v4.14.3',
+            os: osObj,
+            groups,
+            lastKeepAlive: doc.last_keepalive || doc.lastKeepAlive || '-',
+            assignedTenant: {
+              tenantCode: t.tenant_code,
+              campusName: t.campus_name,
+            },
+            isMapped: true,
+          });
+        }
+      } catch (dbErr) {
+        console.error(`Error querying devices from MongoDB ${t.database_name}:`, dbErr);
+      }
+    }
 
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
+      syncResult,
       summary: {
         total: mappedAgents.length,
         active: activeCount,
         disconnected: disconnectedCount,
-        unassigned: unassignedCount,
+        unassigned: 0,
       },
       agents: mappedAgents,
-      tenants: tenantsRows.map((t: any) => ({
+      tenants: tenants.map((t: any) => ({
         id: t.id,
         tenantCode: t.tenant_code,
         campusName: t.campus_name,
-        databaseName: t.database_name,
       })),
     });
   } catch (err: any) {
-    console.error('API /api/wazuh/agents GET Error:', err);
-    return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat inventaris agen Wazuh' },
-      { status: 500 }
-    );
+    const { safeErrorResponse } = await import('@/lib/api-response');
+    return safeErrorResponse(err, 'Failed to load agent inventory from MongoDB');
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const syncStartTime = Date.now();
+  try {
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+    const isSuperadmin = currentUser.role === 'superadmin';
+
+    const body = await request.json().catch(() => ({}));
+    let tenantParam = body.tenant || 'all';
+    if (!isPlatformAdmin(currentUser) && currentUser.tenantCode && currentUser.tenantCode !== 'MASTER') {
+      tenantParam = currentUser.tenantCode;
+    }
+
+    const pool = getMysqlPool();
+    const [tenantsRows]: any = await pool.query(`
+      SELECT t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix,
+             GROUP_CONCAT(DISTINCT wg.wazuh_group_name) as wazuh_groups
+      FROM tenants t
+      LEFT JOIN tenant_wazuh_groups wg ON t.id = wg.tenant_id
+      WHERE t.is_active = 1
+      GROUP BY t.id, t.tenant_code, t.campus_name, t.database_name, t.redis_prefix
+      ORDER BY t.id ASC
+    `);
+    const tenants = Array.isArray(tenantsRows) ? tenantsRows : [];
+    const targetList = tenantParam === 'all' 
+      ? tenants 
+      : tenants.filter((t: any) => t.tenant_code.toLowerCase() === tenantParam.toLowerCase());
+
+    const mongoClient = await getMongoClient();
+
+    const syncTargets: SyncTarget[] = targetList.map((t: any) => ({
+      tenantCode: t.tenant_code,
+      campusName: t.campus_name,
+      databaseName: t.database_name,
+      redisPrefix: t.redis_prefix || `${t.database_name}:`,
+      wazuhGroups: t.wazuh_groups ? t.wazuh_groups.split(',').map((g: string) => g.trim()) : [],
+      filterAgentIds: [],
+      filterAgentNames: [],
+    }));
+
+    const res = await syncAgentsNative(syncTargets, mongoClient);
+    const durationMs = Date.now() - syncStartTime;
+
+    return NextResponse.json({
+      success: res.success,
+      durationMs,
+      native: true,
+      message: `Native refresh agents completed successfully (${res.totalAgents} agents updated).`,
+      output: {
+        status: "success",
+        action: "sync",
+        tenant: tenantParam.toUpperCase(),
+        total_agents: res.totalAgents,
+        details: res.details,
+      },
+    });
+  } catch (err: any) {
+    const { safeErrorResponse } = await import('@/lib/api-response');
+    return safeErrorResponse(err, 'Failed to execute native sync_wazuh_agents');
   }
 }

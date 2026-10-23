@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listTenantsWithStorageMetrics, provisionTenant } from '@/lib/tenants';
+import { requireSession, requireSuperadmin, isPlatformAdmin } from '@/lib/session';
 
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const tenants = await listTenantsWithStorageMetrics();
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+
+    const allTenants = await listTenantsWithStorageMetrics();
+
+    // BOLA defense: Platform admins see all tenants; tenant-confined users only see their own tenant
+    const tenants = isPlatformAdmin(currentUser)
+      ? allTenants
+      : allTenants.filter((t) => t.id === currentUser.tenantId);
 
     // Summary calculations
     const totalTenants = tenants.length;
@@ -30,7 +40,7 @@ export async function GET(_request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/tenants GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat data tenant' },
+      { success: false, error: err.message || 'Failed to load tenant data' },
       { status: 500 }
     );
   }
@@ -38,6 +48,11 @@ export async function GET(_request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Only Superadmin can provision new tenants and allocate databases
+    const auth = await requireSuperadmin(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
+
     const body = await request.json();
     const {
       tenantCode,
@@ -51,14 +66,14 @@ export async function POST(request: NextRequest) {
 
     if (!tenantCode || !campusName) {
       return NextResponse.json(
-        { success: false, error: 'Kode Kampus dan Nama Kampus wajib diisi.' },
+        { success: false, error: 'Tenant code and campus name are required.' },
         { status: 400 }
       );
     }
 
     if (createInitialAdmin && !adminPassword) {
       return NextResponse.json(
-        { success: false, error: 'Password Admin awal wajib diisi jika opsi admin dicentang.' },
+        { success: false, error: 'Initial Admin password is required if admin option is checked.' },
         { status: 400 }
       );
     }
@@ -85,21 +100,19 @@ export async function POST(request: NextRequest) {
       const { logAdminActivity } = await import('@/lib/audit-logger');
       await logAdminActivity({
         req: request,
-        actionType: 'TENANT_CREATE',
-        targetResource: `tenant:${result.tenant?.tenantCode}`,
+        adminId: typeof currentUser.id === 'number' ? currentUser.id : undefined,
+        adminUsername: currentUser.username,
+        actionType: 'TENANT_PROVISION',
+        targetResource: `tenant:${tenantCode}`,
         status: 'SUCCESS',
-        details: {
-          tenantCode: result.tenant?.tenantCode,
-          campusName: result.tenant?.campusName,
-          databaseName: result.tenant?.databaseName,
-        },
+        details: { tenantCode, campusName },
       });
     } catch {}
 
     return NextResponse.json(
       {
         success: true,
-        message: `Tenant ${result.tenant?.campusName} dan database fisik '${result.tenant?.databaseName}' berhasil diprovisi 100%.`,
+        message: `Tenant ${campusName} (${tenantCode}) provisioned successfully.`,
         tenant: result.tenant,
       },
       { status: 201 }
@@ -107,7 +120,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/tenants POST Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memproses automated provisioning' },
+      { success: false, error: err.message || 'Failed to provision tenant' },
       { status: 500 }
     );
   }

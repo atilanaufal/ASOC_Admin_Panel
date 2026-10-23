@@ -50,31 +50,14 @@ export default function ServiceMonitorPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
-      {/* Top Banner Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-              <Server className="w-6 h-6 text-blue-600" />
-              <span>Monitoring Background Services & Daemon Pipeline</span>
-            </h1>
-          </div>
-          <p className="text-xs md:text-sm text-slate-500">
-            Real-time health monitoring of ASOC background microservices and pipeline daemons.
-          </p>
-        </div>
-
-        {/* Action Button */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => fetchServiceStatus(true)}
-            disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-600/20 transition-all cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>{refreshing ? 'Auditing Services...' : 'Audit Services'}</span>
-          </button>
-        </div>
+      {/* Page Title */}
+      <div>
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900">
+          Monitoring Background Services & Daemon Pipeline
+        </h1>
+        <p className="text-xs md:text-sm text-slate-500 mt-1">
+          Real-time health monitoring of ASOC background microservices and pipeline daemons.
+        </p>
       </div>
 
       {/* System Health Status Summary Card */}

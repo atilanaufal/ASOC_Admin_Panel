@@ -13,7 +13,11 @@ import {
   X,
   Zap,
   Calendar,
+  RotateCcw,
 } from 'lucide-react';
+import { MorphismSummary } from '@/components/ui/MorphismSummary';
+import CustomSelect from '@/components/ui/CustomSelect';
+import { getClientCache, setClientCache } from '@/lib/client-cache';
 
 interface TenantRetentionItem {
   id: number;
@@ -27,6 +31,7 @@ interface TenantRetentionItem {
   vulnCount: number;
   redisKeysCount: number;
   mongoTtlDays: number;
+  redisTtlDays: number;
   redisTtlSeconds: number;
   policyStatus: string;
 }
@@ -41,7 +46,13 @@ export default function DataRetentionPage() {
   // Edit Modal State
   const [selectedTenant, setSelectedTenant] = useState<TenantRetentionItem | 'global' | null>(null);
   const [mongoDaysInput, setMongoDaysInput] = useState<number>(30);
-  const [redisHoursInput, setRedisHoursInput] = useState<number>(24);
+  const [isCustomMongo, setIsCustomMongo] = useState<boolean>(false);
+  const [customMongoDays, setCustomMongoDays] = useState<number>(30);
+
+  const [redisDaysInput, setRedisDaysInput] = useState<number>(7);
+  const [isCustomRedis, setIsCustomRedis] = useState<boolean>(false);
+  const [customRedisDays, setCustomRedisDays] = useState<number>(7);
+
   const [saving, setSaving] = useState(false);
 
   // Toast
@@ -53,6 +64,15 @@ export default function DataRetentionPage() {
   };
 
   const fetchData = async (isManual = false) => {
+    if (!isManual) {
+      const cached = getClientCache<any>('data-retention');
+      if (cached) {
+        setTenants(cached.tenants || []);
+        setGlobalPolicy(cached.globalPolicy || null);
+        setLoading(false);
+        return;
+      }
+    }
     if (isManual) setRefreshing(true);
     try {
       const res = await fetch('/api/data-retention');
@@ -60,6 +80,10 @@ export default function DataRetentionPage() {
         const data = await res.json();
         setTenants(data.tenants || []);
         setGlobalPolicy(data.globalPolicy || null);
+        setClientCache('data-retention', {
+          tenants: data.tenants || [],
+          globalPolicy: data.globalPolicy || null,
+        });
         if (isManual) showToast('Retention policy data updated successfully.');
       } else {
         throw new Error('Failed to fetch retention policies');
@@ -79,13 +103,19 @@ export default function DataRetentionPage() {
 
   const openEditModal = (t: TenantRetentionItem | 'global') => {
     setSelectedTenant(t);
-    if (t === 'global') {
-      setMongoDaysInput(globalPolicy?.mongoTtlDays || 30);
-      setRedisHoursInput(Math.round((globalPolicy?.redisTtlSeconds || 86400) / 3600));
-    } else {
-      setMongoDaysInput(t.mongoTtlDays || 30);
-      setRedisHoursInput(Math.round((t.redisTtlSeconds || 86400) / 3600));
-    }
+    const mDays = t === 'global' ? (globalPolicy?.mongoTtlDays || 30) : (t.mongoTtlDays || 30);
+    const rDays = t === 'global' ? (globalPolicy?.redisTtlDays || 7) : (t.redisTtlDays || 7);
+
+    const isPresetMongo = [7, 14, 30, 60, 90, 180, 365].includes(mDays);
+    const isPresetRedis = [1, 3, 7, 14, 30].includes(rDays);
+
+    setMongoDaysInput(isPresetMongo ? mDays : -1);
+    setIsCustomMongo(!isPresetMongo);
+    setCustomMongoDays(mDays);
+
+    setRedisDaysInput(isPresetRedis ? rDays : -1);
+    setIsCustomRedis(!isPresetRedis);
+    setCustomRedisDays(rDays);
   };
 
   const handleSavePolicy = async () => {
@@ -94,7 +124,9 @@ export default function DataRetentionPage() {
 
     const isGlobal = selectedTenant === 'global';
     const tenantId = isGlobal ? 'all' : selectedTenant.id;
-    const redisTtlSeconds = Number(redisHoursInput) * 3600;
+
+    const finalMongoDays = isCustomMongo ? Math.max(1, Number(customMongoDays) || 30) : Number(mongoDaysInput);
+    const finalRedisDays = isCustomRedis ? Math.max(1, Number(customRedisDays) || 7) : Number(redisDaysInput);
 
     try {
       const res = await fetch('/api/data-retention', {
@@ -102,8 +134,9 @@ export default function DataRetentionPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId,
-          mongoTtlDays: Number(mongoDaysInput),
-          redisTtlSeconds,
+          mongoTtlDays: finalMongoDays,
+          redisDays: finalRedisDays,
+          redisTtlSeconds: finalRedisDays * 86400,
           targetCollections: ['incident', 'vulnerability', 'alerts'],
         }),
       });
@@ -115,11 +148,34 @@ export default function DataRetentionPage() {
 
       showToast(data.message || 'Retention policy applied successfully.');
       setSelectedTenant(null);
-      fetchData();
+      fetchData(true);
     } catch (err: any) {
       showToast(err.message, 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleResetDefault = async () => {
+    if (!confirm('Reset all retention policies to standard default (MongoDB: 30 Days, Redis: 7 Days)?')) return;
+    setRefreshing(true);
+    try {
+      const res = await fetch('/api/data-retention', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset-default' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || 'Reset to defaults successful.');
+        fetchData(true);
+      } else {
+        throw new Error(data.error || 'Failed to reset defaults');
+      }
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -135,6 +191,8 @@ export default function DataRetentionPage() {
       t.databaseName.toLowerCase().includes(q)
     );
   });
+
+  const totalRedisKeys = tenants.reduce((sum, t) => sum + t.redisKeysCount, 0);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -156,220 +214,217 @@ export default function DataRetentionPage() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-violet-600/10 text-violet-600 flex items-center justify-center font-bold">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-xl font-black text-slate-900 tracking-tight">
-              Data Retention & TTL Policies
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Safe automated lifecycle configuration for MongoDB telemetry data and Redis L1 cache expiration per-tenant.
-            </p>
-          </div>
+      {/* Morphism Top Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-800">
+            Data Retention & TTL Lifecycle Policies
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Safe automated lifecycle configuration for MongoDB telemetry data and Redis cache expiration per-tenant.
+          </p>
         </div>
 
         <div className="flex items-center gap-3 self-start md:self-auto">
           <button
-            onClick={() => openEditModal('global')}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition-all shadow-sm cursor-pointer"
+            onClick={handleResetDefault}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200/80 shadow-2xs rounded-xl transition-all cursor-pointer"
+            title="Reset TTL to 30d Mongo / 7d Redis default"
           >
-            <Clock className="w-3.5 h-3.5" />
-            <span>Configure Global Policy</span>
+            <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+            <span>Reset Defaults</span>
           </button>
 
           <button
             onClick={() => fetchData(true)}
             disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+            className="flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/80 shadow-2xs rounded-xl transition-all disabled:opacity-50 cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-violet-600' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#00BCD4]' : ''}`} />
             <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+
+          <button
+            onClick={() => openEditModal('global')}
+            className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition-all cursor-pointer"
+          >
+            <Clock className="w-4 h-4" />
+            <span>Configure Global Policy</span>
           </button>
         </div>
       </div>
 
-      {/* KPI Stat Cards */}
+      {/* Variative KPI Cards (Clean Morphism Style, No Donut) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Total Multi-Tenant Campuses
-            </span>
-            <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
-              <Building2 className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Managed Databases
+          </span>
+          <div className="my-2 flex items-center justify-between">
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
               {loading ? '...' : tenants.length}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">databases</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">All registered campus databases</p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-violet-600">
-              Default MongoDB TTL
-            </span>
-            <div className="p-2 rounded-xl bg-violet-50 text-violet-600">
-              <Calendar className="w-4 h-4" />
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <Database className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-violet-600">
+
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            MongoDB TTL Policy
+          </span>
+          <div className="my-2 flex items-center justify-between">
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
               {loading ? '...' : `${globalPolicy?.mongoTtlDays ?? 30} Days`}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">retention</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">Automated expiration via MongoDB TTL index</p>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
-              Default Redis L1 TTL
-            </span>
-            <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
-              <Zap className="w-4 h-4" />
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+              <Calendar className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-indigo-600">
-              {loading ? '...' : `${Math.round((globalPolicy?.redisTtlSeconds ?? 86400) / 3600)} Hours`}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">expiration</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">Auto-expire key namespace cache</p>
+
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">
-              Total Active Documents
-            </span>
-            <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
-              <Database className="w-4 h-4" />
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Redis Cache TTL
+          </span>
+          <div className="my-2 flex items-center justify-between">
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
+              {loading ? '...' : `${globalPolicy?.redisTtlDays ?? 7} Days`}
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <Clock className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-600">
-              {loading ? '...' : totalIncidents + totalVulns}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">records</span>
+
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+          <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
+            Total Telemetry Docs
+          </span>
+          <div className="my-2 flex items-center justify-between">
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
+              {loading ? '...' : (totalIncidents + totalVulns).toLocaleString()}
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-cyan-50 text-[#00BCD4] flex items-center justify-center font-bold">
+              <Zap className="w-5 h-5" />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            {totalIncidents} incidents, {totalVulns} vulnerabilities
-          </p>
+
         </div>
       </div>
 
       {/* Search Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-3.5 shadow-xs flex items-center gap-3">
+        <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search campus name, tenant code, or database..."
+            placeholder="Search tenant name, tenant code, or database..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 focus:bg-white transition-all text-slate-800 placeholder-slate-400"
+            className="w-full pl-10 pr-8 py-2.5 text-xs bg-[#F0F4F8] hover:bg-[#E9EEF5] focus:bg-white rounded-xl outline-none border border-transparent focus:border-[#00BCD4] transition-all text-slate-800 placeholder-slate-400"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
       {/* Retention Policy Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-xs">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-800">Retention Policy Table</h3>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold">
+              {filteredTenants.length}
+            </span>
+          </div>
+        </div>
+
         {loading ? (
-          <div className="p-10 space-y-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-14 bg-slate-100 rounded-xl animate-pulse" />
-            ))}
+          <div className="py-16 text-center text-xs font-semibold text-slate-400 animate-pulse">
+            Loading retention policy telemetry...
           </div>
         ) : filteredTenants.length === 0 ? (
-          <div className="p-12 text-center">
-            <Database className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-sm font-bold text-slate-700">No tenant databases found</h3>
+          <div className="py-16 text-center text-xs font-semibold text-slate-400">
+            No tenant retention policies found matching criteria.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-600 font-bold uppercase border-b border-slate-200">
-                <tr>
-                  <th className="p-4 pl-6">Campus Tenant Profile</th>
-                  <th className="p-4">MongoDB Database</th>
-                  <th className="p-4">Stored Documents</th>
-                  <th className="p-4">Disk Capacity</th>
-                  <th className="p-4">MongoDB TTL Policy</th>
-                  <th className="p-4">Default Redis TTL</th>
-                  <th className="p-4 pr-6 text-right">Action</th>
+          <div className="overflow-x-auto mt-3">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="bg-slate-100 text-slate-800 font-bold text-xs uppercase tracking-wider">
+                  <th className="py-3 px-4 rounded-l-xl">Tenant Profile</th>
+                  <th className="py-3 px-4">MongoDB</th>
+                  <th className="py-3 px-4">Stored Documents</th>
+                  <th className="py-3 px-4">Disk Usage</th>
+                  <th className="py-3 px-4">MongoDB TTL</th>
+                  <th className="py-3 px-4">Redis TTL</th>
+                  <th className="py-3 px-4 rounded-r-xl text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-800">
+              <tbody className="divide-y divide-slate-100">
                 {filteredTenants.map((t) => {
-                  const redisHours = Math.round(t.redisTtlSeconds / 3600);
-
                   return (
-                    <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                       {/* Campus */}
-                      <td className="p-4 pl-6">
+                      <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-violet-50 border border-violet-200/60 flex items-center justify-center font-mono font-bold text-violet-700 text-xs flex-shrink-0">
+                          <div className="w-9 h-9 rounded-xl bg-[#F0F4F8] border border-slate-200/80 flex items-center justify-center font-mono font-bold text-[#00BCD4] text-xs flex-shrink-0 shadow-2xs">
                             {t.tenantCode}
                           </div>
                           <div>
-                            <div className="font-extrabold text-slate-900 text-xs">{t.campusName}</div>
-                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">Namespace: {t.redisPrefix}</div>
+                            <div className="font-semibold text-slate-800 text-sm">{t.campusName}</div>
                           </div>
                         </div>
                       </td>
 
                       {/* DB Name */}
-                      <td className="p-4 font-mono text-slate-600 text-[11px]">
+                      <td className="py-3.5 px-4 font-mono text-slate-700 text-sm font-medium">
                         {t.databaseName}
                       </td>
 
                       {/* Document Counts */}
-                      <td className="p-4">
-                        <div className="font-bold text-slate-800 text-xs">
-                          {t.incidentCount + t.vulnCount} docs
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5">
-                          {t.incidentCount} inc • {t.vulnCount} vuln
+                      <td className="py-3.5 px-4">
+                        <div className="font-semibold text-slate-800 text-sm">
+                          {(t.incidentCount + t.vulnCount).toLocaleString()} docs
                         </div>
                       </td>
 
                       {/* Disk Size */}
-                      <td className="p-4 font-mono text-slate-600 text-xs font-bold">
+                      <td className="py-3.5 px-4 font-mono text-slate-700 text-sm font-semibold">
                         {t.diskFormatted}
                       </td>
 
                       {/* Mongo TTL */}
-                      <td className="p-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-violet-50 text-violet-800 border border-violet-200/60 font-mono">
-                          <Clock className="w-3.5 h-3.5 text-violet-600" />
+                      <td className="py-3.5 px-4">
+                        <span className="font-mono text-sm font-semibold text-slate-700">
                           {t.mongoTtlDays} Days
                         </span>
                       </td>
 
                       {/* Redis TTL */}
-                      <td className="p-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-800 border border-indigo-200/60 font-mono">
-                          <Zap className="w-3.5 h-3.5 text-indigo-600" />
-                          {redisHours} Hours ({t.redisTtlSeconds}s)
+                      <td className="py-3.5 px-4">
+                        <span className="font-mono text-sm font-semibold text-slate-700">
+                          {t.redisTtlDays || 7} Days
                         </span>
                       </td>
 
                       {/* Action */}
-                      <td className="p-4 pr-6 text-right">
+                      <td className="py-3.5 px-4 text-right">
                         <button
                           onClick={() => openEditModal(t)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200/60 rounded-xl transition-all cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#00BCD4] bg-cyan-50 hover:bg-cyan-100 rounded-xl transition-all cursor-pointer"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                           <span>Set TTL</span>
@@ -386,16 +441,16 @@ export default function DataRetentionPage() {
 
       {/* Modal Edit TTL Policy */}
       {selectedTenant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200/60 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-base font-bold text-slate-900">
+                <h3 className="text-base font-bold text-slate-800">
                   {selectedTenant === 'global' ? 'Configure Global Retention Policy' : `Set TTL: ${selectedTenant.campusName}`}
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {selectedTenant === 'global'
-                    ? 'Applies to all campus tenant databases'
+                    ? 'Applies to all tenant databases'
                     : `Database: ${selectedTenant.databaseName}`}
                 </p>
               </div>
@@ -411,47 +466,102 @@ export default function DataRetentionPage() {
               {/* MongoDB TTL Days */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>MongoDB Document Retention Period (Days)</span>
-                  <span className="font-mono text-violet-600 font-extrabold">{mongoDaysInput} Days</span>
+                  <span>MongoDB Document Retention Period</span>
+                  <span className="font-mono text-[#00BCD4] font-extrabold">
+                    {isCustomMongo ? `${customMongoDays} Days (Custom)` : `${mongoDaysInput} Days`}
+                  </span>
                 </label>
-                <select
-                  value={mongoDaysInput}
-                  onChange={(e) => setMongoDaysInput(Number(e.target.value))}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-violet-500 mb-2 cursor-pointer"
-                >
-                  <option value={7}>7 Days (1 Week)</option>
-                  <option value={14}>14 Days (2 Weeks)</option>
-                  <option value={30}>30 Days (1 Month)</option>
-                  <option value={60}>60 Days (2 Months)</option>
-                  <option value={90}>90 Days (3 Months)</option>
-                  <option value={180}>180 Days (6 Months)</option>
-                  <option value={365}>365 Days (1 Year)</option>
-                </select>
+                <CustomSelect
+                  value={isCustomMongo ? -1 : mongoDaysInput}
+                  onChange={(val) => {
+                    const num = Number(val);
+                    if (num === -1) {
+                      setIsCustomMongo(true);
+                    } else {
+                      setIsCustomMongo(false);
+                      setMongoDaysInput(num);
+                    }
+                  }}
+                  options={[
+                    { value: 7, label: '7 Days (1 Week)', badge: '7d' },
+                    { value: 14, label: '14 Days (2 Weeks)', badge: '14d' },
+                    { value: 30, label: '30 Days (Standard Default)', badge: '30d' },
+                    { value: 60, label: '60 Days (2 Months)', badge: '60d' },
+                    { value: 90, label: '90 Days (3 Months)', badge: '90d' },
+                    { value: 180, label: '180 Days (6 Months)', badge: '180d' },
+                    { value: 365, label: '365 Days (1 Year)', badge: '365d' },
+                    { value: -1, label: 'Custom Duration...', badge: 'custom' },
+                  ]}
+                  className="w-full mb-1.5"
+                />
+
+                {isCustomMongo && (
+                  <div className="flex items-center gap-2 mb-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-xs text-slate-600 font-semibold">Custom Days:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="730"
+                      value={customMongoDays}
+                      onChange={(e) => setCustomMongoDays(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-24 px-2.5 py-1 text-xs font-mono font-bold text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#00BCD4]"
+                    />
+                    <span className="text-xs text-slate-500 font-medium">Days</span>
+                  </div>
+                )}
+
                 <p className="text-[10px] text-slate-400">
-                  Documents older than this threshold will automatically expire via MongoDB TTL indexes on <code className="font-mono text-violet-600">incident</code> and <code className="font-mono text-violet-600">vulnerability</code> collections.
+                  Documents older than this threshold will automatically expire via MongoDB TTL indexes.
                 </p>
               </div>
 
-              {/* Redis TTL Hours */}
+              {/* Redis TTL Days (NO HOURS) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Redis L1 Cache Default Expiration (Hours)</span>
-                  <span className="font-mono text-indigo-600 font-extrabold">{redisHoursInput} Hours</span>
+                  <span>Redis Cache Expiration Duration</span>
+                  <span className="font-mono text-indigo-600 font-extrabold">
+                    {isCustomRedis ? `${customRedisDays} Days (Custom)` : `${redisDaysInput} Days`}
+                  </span>
                 </label>
-                <select
-                  value={redisHoursInput}
-                  onChange={(e) => setRedisHoursInput(Number(e.target.value))}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-2 cursor-pointer"
-                >
-                  <option value={1}>1 Hour (3,600 seconds)</option>
-                  <option value={6}>6 Hours (21,600 seconds)</option>
-                  <option value={12}>12 Hours (43,200 seconds)</option>
-                  <option value={24}>24 Hours (1 Day - 86,400 seconds)</option>
-                  <option value={72}>72 Hours (3 Days - 259,200 seconds)</option>
-                  <option value={168}>168 Hours (7 Days - 604,800 seconds)</option>
-                </select>
+                <CustomSelect
+                  value={isCustomRedis ? -1 : redisDaysInput}
+                  onChange={(val) => {
+                    const num = Number(val);
+                    if (num === -1) {
+                      setIsCustomRedis(true);
+                    } else {
+                      setIsCustomRedis(false);
+                      setRedisDaysInput(num);
+                    }
+                  }}
+                  options={[
+                    { value: 1, label: '1 Day', badge: '1d' },
+                    { value: 3, label: '3 Days', badge: '3d' },
+                    { value: 7, label: '7 Days (Standard Default)', badge: '7d' },
+                    { value: 14, label: '14 Days (2 Weeks)', badge: '14d' },
+                    { value: 30, label: '30 Days (1 Month)', badge: '30d' },
+                    { value: -1, label: 'Custom Duration...', badge: 'custom' },
+                  ]}
+                  className="w-full mb-1.5"
+                />
+
+                {isCustomRedis && (
+                  <div className="flex items-center gap-2 mb-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-xs text-slate-600 font-semibold">Custom Days:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="90"
+                      value={customRedisDays}
+                      onChange={(e) => setCustomRedisDays(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-24 px-2.5 py-1 text-xs font-mono font-bold text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <span className="text-xs text-slate-500 font-medium">Days</span>
+                  </div>
+                )}
+
                 <p className="text-[10px] text-slate-400">
-                  Redis L1 cache keys for tenant namespaces will automatically expire after this duration to prevent memory bloat.
+                  Directly sets key expiration across tenant Redis namespaces.
                 </p>
               </div>
             </div>
@@ -460,14 +570,14 @@ export default function DataRetentionPage() {
               <button
                 onClick={() => setSelectedTenant(null)}
                 disabled={saving}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSavePolicy}
                 disabled={saving}
-                className="px-4 py-2 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 text-xs font-bold text-white bg-[#00BCD4] hover:bg-[#00ACC1] rounded-xl shadow-xs transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
               >
                 {saving ? (
                   <>

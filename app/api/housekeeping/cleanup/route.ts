@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanupMongoHistoricData } from '@/lib/housekeeping';
 import { logAdminActivity } from '@/lib/audit-logger';
+import { requireTenantScope } from '@/lib/session';
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,10 +10,15 @@ export async function POST(request: NextRequest) {
 
     if (!tenantCode) {
       return NextResponse.json(
-        { success: false, error: 'Kode Kampus (tenantCode) wajib diisi.' },
+        { success: false, error: 'Tenant code (tenantCode) is required.' },
         { status: 400 }
       );
     }
+
+    // BOLA defense: Enforce tenant ownership (Superadmin can clean any; Tenant Admin only their own)
+    const auth = await requireTenantScope(request, undefined, tenantCode);
+    if (auth.errorResponse) return auth.errorResponse;
+    const { user: currentUser } = auth;
 
     const isDryRun = dryRun === undefined ? true : Boolean(dryRun);
 
@@ -28,6 +34,8 @@ export async function POST(request: NextRequest) {
     if (!isDryRun) {
       await logAdminActivity({
         req: request,
+        adminId: typeof currentUser.id === 'number' ? currentUser.id : undefined,
+        adminUsername: currentUser.username,
         actionType: 'MONGO_DATA_CLEANUP',
         targetResource: `mongodb:${result.databaseName}:${result.collection}`,
         status: 'SUCCESS',
@@ -57,7 +65,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memproses pembersihan data MongoDB' },
+      { success: false, error: err.message || 'Failed to process MongoDB data cleanup' },
       { status: 500 }
     );
   }

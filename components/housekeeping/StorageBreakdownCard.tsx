@@ -56,7 +56,7 @@ export function StorageBreakdownCard({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-xs font-semibold text-slate-500">Total Alokasi Disk Mongo</span>
+            <span className="text-xs font-semibold text-slate-500">Total Mongo Disk Allocated</span>
             <div className="text-2xl font-extrabold text-slate-900 mt-1">
               {formatBytes(totalStorageBytes)}
             </div>
@@ -69,7 +69,7 @@ export function StorageBreakdownCard({
 
         <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-xs font-semibold text-slate-500">Total Ukuran Dokumen Bersih</span>
+            <span className="text-xs font-semibold text-slate-500">Total Net Document Size</span>
             <div className="text-2xl font-extrabold text-emerald-600 mt-1">
               {formatBytes(totalDataBytes)}
             </div>
@@ -82,7 +82,7 @@ export function StorageBreakdownCard({
 
         <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-xs font-semibold text-slate-500">Total Kunci Cache Redis L1</span>
+            <span className="text-xs font-semibold text-slate-500">Total Redis Keys</span>
             <div className="text-2xl font-extrabold text-indigo-600 mt-1">
               {totalKeys} Keys
             </div>
@@ -100,10 +100,10 @@ export function StorageBreakdownCard({
           <div>
             <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
               <Layers className="w-4 h-4 text-blue-500" />
-              <span>Storage & Cache Capacity Breakdown by Campus</span>
+              <span>Storage & Cache Capacity Breakdown by Tenant</span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Kelola retensi data dan selective flush secara granular per database instansi
+              Manage data retention and selective cache flushes granularly per tenant database
             </p>
           </div>
         </div>
@@ -118,7 +118,7 @@ export function StorageBreakdownCard({
                 key={t.id}
                 className="p-5 hover:bg-slate-50/70 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4"
               >
-                {/* Left: Campus info */}
+                {/* Left: Tenant info */}
                 <div className="space-y-1 md:w-1/3">
                   <div className="flex items-center gap-2">
                     <span className="font-extrabold text-sm text-slate-900">
@@ -131,7 +131,7 @@ export function StorageBreakdownCard({
                   <div className="text-xs font-mono text-slate-400 flex items-center gap-2">
                     <span>DB: {t.databaseName}</span>
                     <span>•</span>
-                    <span>{t.storage?.collectionsCount || 0} Koleksi</span>
+                    <span>{t.storage?.collectionsCount || 0} Collections</span>
                   </div>
                 </div>
 

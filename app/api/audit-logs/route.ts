@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryAuditLogs } from '@/lib/audit-logger';
+import { requireSession, isPlatformAdmin } from '@/lib/session';
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireSession(request);
+    if (auth.errorResponse) return auth.errorResponse;
+    if (!isPlatformAdmin(auth.user)) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '25', 10);
@@ -59,7 +65,7 @@ export async function GET(request: NextRequest) {
   } catch (err: any) {
     console.error('API /api/audit-logs GET Error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Gagal memuat log riwayat audit' },
+      { success: false, error: err.message || 'Failed to load audit history logs' },
       { status: 500 }
     );
   }

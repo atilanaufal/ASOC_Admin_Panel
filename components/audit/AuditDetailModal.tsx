@@ -75,7 +75,7 @@ export function AuditDetailModal({
               <span className="font-bold text-blue-500 text-xs">{log.ipAddress}</span>
             </div>
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/60">
-              <span className="text-slate-400 text-[10px] block font-sans">Tipe Aksi</span>
+              <span className="text-slate-400 text-[10px] block font-sans">Action Type</span>
               <span className="font-bold text-indigo-500 text-xs">{log.actionType}</span>
             </div>
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/60">
@@ -108,7 +108,7 @@ export function AuditDetailModal({
                 className="flex items-center gap-1 text-[11px] font-bold text-blue-500 hover:underline cursor-pointer"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Tersalin' : 'Salin JSON'}</span>
+                <span>{copied ? 'Copied' : 'Copy JSON'}</span>
               </button>
             </div>
             <pre className="p-4 rounded-2xl bg-slate-950 text-emerald-400 font-mono text-[11px] overflow-x-auto border border-slate-800 max-h-56">
